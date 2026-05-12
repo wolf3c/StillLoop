@@ -1,0 +1,26 @@
+.DS_Store
+
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# App archives and local output
+*.xcarchive
+*.ipa
+build/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+*.local
