@@ -52,4 +52,23 @@ if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-"$MACOS_DIR/StillLoop"
+OPEN_ARGS=(
+  -n
+  -W
+  "$APP_DIR"
+  --env "STILLLOOP_SKIP_MODEL_DOWNLOAD=$STILLLOOP_SKIP_MODEL_DOWNLOAD"
+)
+
+if [[ -n "${STILLLOOP_USE_LOCAL_LLM:-}" ]]; then
+  OPEN_ARGS+=(--env "STILLLOOP_USE_LOCAL_LLM=$STILLLOOP_USE_LOCAL_LLM")
+fi
+
+if [[ -n "${STILLLOOP_LLM_BASE_URL:-}" ]]; then
+  OPEN_ARGS+=(--env "STILLLOOP_LLM_BASE_URL=$STILLLOOP_LLM_BASE_URL")
+fi
+
+if [[ -n "${STILLLOOP_LLM_MODEL:-}" ]]; then
+  OPEN_ARGS+=(--env "STILLLOOP_LLM_MODEL=$STILLLOOP_LLM_MODEL")
+fi
+
+/usr/bin/open "${OPEN_ARGS[@]}"

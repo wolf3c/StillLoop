@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        sharedAppModel.refreshPermissionStatuses()
+    }
+
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp, let button = statusItem?.button {
             statusMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)

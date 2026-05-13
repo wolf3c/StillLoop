@@ -74,4 +74,11 @@ final class PermissionPresentationTests: XCTestCase {
             ]
         )
     }
+
+    func testAppRefreshesPermissionsWhenItBecomesActive() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/AppDelegate.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("func applicationDidBecomeActive"))
+        XCTAssertTrue(source.contains("sharedAppModel.refreshPermissionStatuses()"))
+    }
 }
