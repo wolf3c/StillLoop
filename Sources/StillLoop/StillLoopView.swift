@@ -154,59 +154,127 @@ private struct ModelSetupView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("模型准备")
                 .font(.largeTitle.weight(.semibold))
-            Text("StillLoop 默认使用本机模型评估专注状态。你可以下载内置模型，也可以连接本地或线上 OpenAI-compatible HTTP 模型服务。")
+            Text("StillLoop 默认使用应用自带模型评估专注状态。你也可以手动连接本地或线上 OpenAI-compatible HTTP 模型服务。")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            ModelReadinessCard()
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Button(model.isCheckingModelConnection ? "检查中" : "检查连接") {
-                        model.checkModelConnection()
-                    }
-                    .disabled(model.isCheckingModelConnection)
-                    Button("跳过模型继续") {
-                        model.useLocalLLM = false
-                        model.configureLocalLLM()
-                        model.screen = .taskSetup
-                    }
-                    Button("继续") {
-                        model.continueAfterModelCheck()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Text(model.modelConnectionStatus)
-                    .foregroundStyle(model.isModelConnectionUsable ? .green : .secondary)
-                Text(model.modelConnectionDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                DisclosureGroup("高级模型配置", isExpanded: $model.isAdvancedModelConfigExpanded) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("Base URL", text: $model.llmBaseURLText)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: model.llmBaseURLText) { _ in
-                                model.modelConfigurationChanged()
-                            }
-                        TextField("Model", text: $model.llmModelText)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: model.llmModelText) { _ in
-                                model.modelConfigurationChanged()
-                            }
-                    }
-                    .padding(.top, 8)
-                }
+            Picker("模型来源", selection: $model.modelSetupSelection.source) {
+                Text("应用自带模型").tag(ModelSetupSelection.Source.bundled)
+                Text("手动配置大模型").tag(ModelSetupSelection.Source.manual)
             }
-            .padding(14)
-            .frame(maxWidth: 620, alignment: .leading)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .pickerStyle(.radioGroup)
+
+            switch model.modelSetupSelection.source {
+            case .bundled:
+                bundledModelSection
+            case .manual:
+                manualModelSection
+            }
 
             Spacer()
         }
         .padding(40)
+    }
+
+    private var bundledModelSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ModelReadinessCard()
+            HStack {
+                Button("下载并继续") {
+                    model.downloadBundledModelAndContinue()
+                }
+                .buttonStyle(.borderedProminent)
+
+                if model.modelReadiness.isDownloading {
+                    Button("暂停下载") { model.pauseModelDownload() }
+                    Button("取消下载") { model.cancelModelDownload() }
+                } else if model.modelReadiness == .paused || model.modelReadiness == .failed {
+                    Button("继续下载") { model.startModelDownloadIfNeeded() }
+                }
+            }
+            Text("点击后会直接进入新建任务页面，下载在后台继续。你仍可返回本页切换到手动配置。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: 620, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var manualModelSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("服务类型", selection: $model.modelSetupSelection.manualService) {
+                Text("本地模型 HTTP 服务").tag(ModelSetupSelection.ManualService.localHTTP)
+                Text("在线模型服务").tag(ModelSetupSelection.ManualService.online)
+            }
+            .pickerStyle(.radioGroup)
+            .onChange(of: model.modelSetupSelection.manualService) { service in
+                model.selectManualModelService(service)
+            }
+
+            manualModelForm
+        }
+        .padding(14)
+        .frame(maxWidth: 620, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var manualModelForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField(model.modelSetupSelection.manualService == .online ? "服务地址，例如 https://api.openai.com/v1" : "服务地址，例如 http://127.0.0.1:8080/v1", text: $model.llmBaseURLText)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: model.llmBaseURLText) { _ in
+                    model.modelConfigurationChanged()
+                }
+            TextField("模型名称", text: $model.llmModelText)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: model.llmModelText) { _ in
+                    model.modelConfigurationChanged()
+                }
+            if model.modelSetupSelection.manualService == .online {
+                SecureField("API Key", text: $model.onlineAPIKeyText)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: model.onlineAPIKeyText) { _ in
+                        model.modelConfigurationChanged()
+                    }
+            }
+
+            HStack {
+                Button(model.isCheckingModelConnection ? "检查中" : "检查连接") {
+                    model.checkModelConnection()
+                }
+                .disabled(model.isCheckingModelConnection)
+                Button("继续") {
+                    model.continueAfterModelCheck()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Text(model.modelConnectionStatus)
+                .foregroundStyle(model.isModelConnectionUsable ? .green : .secondary)
+            Text(model.modelConnectionDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if model.modelReadiness.isDownloading || model.modelReadiness == .paused {
+                Divider()
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("应用自带模型下载不受当前配置影响")
+                            .font(.headline)
+                        Text(model.modelReadiness.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if model.modelReadiness.isDownloading {
+                        Button("暂停下载") { model.pauseModelDownload() }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,10 +294,21 @@ private struct TaskSetupView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 64)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
-            if model.modelReadiness.shouldShowInTaskSetup {
-                ModelReadinessCard()
+            if model.modelReadiness.shouldShowInTaskSetup || model.modelReadiness.isDownloading {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("应用自带模型下载进度")
+                            .font(.headline)
+                        Spacer()
+                        if model.modelReadiness.isDownloading {
+                            Button("暂停") { model.pauseModelDownload() }
+                            Button("取消") { model.cancelModelDownload() }
+                        }
+                    }
+                    ModelReadinessCard()
+                }
             }
-            Toggle("使用本地模型评估", isOn: $model.useLocalLLM)
+            Toggle("使用手动配置模型评估", isOn: $model.useLocalLLM)
             Text(model.localLLMStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -240,8 +319,7 @@ private struct TaskSetupView: View {
                 Button("开始专注") { model.startSession() }
                     .disabled(model.taskText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
-                Button("模型页面") { model.openModelDownloadPage() }
-                Button("重试下载") { model.startModelDownloadIfNeeded() }
+                Button("模型页面") { model.screen = .modelSetup }
                 Spacer()
             }
             Spacer()

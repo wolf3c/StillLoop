@@ -6,6 +6,7 @@ struct ModelDownloadManager {
         case ready
         case checking
         case downloading(String)
+        case paused
         case failed
     }
 
@@ -43,9 +44,14 @@ struct ModelDownloadManager {
             for file in manifest.siblings.map(\.rfilename) where shouldDownload(file) {
                 await progress(.downloading(file))
                 try await downloadFile(named: file)
+                try Task.checkCancellation()
             }
 
             await progress(.ready)
+        } catch is CancellationError {
+            await progress(.paused)
+        } catch let error as URLError where error.code == .cancelled {
+            await progress(.paused)
         } catch {
             await progress(.failed)
         }
@@ -66,6 +72,7 @@ struct ModelDownloadManager {
         let destination = localDirectory.appendingPathComponent(filename)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let (temporaryURL, _) = try await URLSession.shared.download(from: url)
+        try Task.checkCancellation()
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }

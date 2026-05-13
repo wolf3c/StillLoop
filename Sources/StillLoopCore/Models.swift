@@ -1,5 +1,25 @@
 import Foundation
 
+public struct ModelSetupSelection: Equatable {
+    public enum Source: String, CaseIterable, Equatable {
+        case bundled
+        case manual
+    }
+
+    public enum ManualService: String, CaseIterable, Equatable {
+        case localHTTP
+        case online
+    }
+
+    public var source: Source
+    public var manualService: ManualService
+
+    public init(source: Source = .bundled, manualService: ManualService = .localHTTP) {
+        self.source = source
+        self.manualService = manualService
+    }
+}
+
 public enum FocusState: String, Codable, CaseIterable, Equatable {
     case focused
     case uncertain

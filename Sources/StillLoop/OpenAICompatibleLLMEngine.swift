@@ -87,11 +87,13 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
 
     private let baseURL: URL
     private let model: String
+    private let apiKey: String?
     private let session: URLSession
 
-    init(baseURL: URL, model: String, session: URLSession = .shared) {
+    init(baseURL: URL, model: String, apiKey: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.model = model
+        self.apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.session = session
     }
 
@@ -122,6 +124,7 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
         request.timeoutInterval = 6
+        applyAuthentication(to: &request)
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
@@ -146,6 +149,7 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         request.httpMethod = "POST"
         request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuthentication(to: &request)
         request.httpBody = try JSONEncoder().encode(
             RequestBody(
                 model: model,
@@ -174,5 +178,16 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
             return .text(text)
         }
         return .parts(parts)
+    }
+
+    private func applyAuthentication(to request: inout URLRequest) {
+        guard let apiKey else { return }
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

@@ -40,15 +40,17 @@ final class AppModel: ObservableObject {
         case ready
         case checking
         case downloading(String)
+        case paused
         case failed
 
         var title: String {
             switch self {
-            case .skipped: return "本地模型：本次开发运行已跳过下载"
-            case .ready: return "本地模型：已准备好"
-            case .checking: return "本地模型：正在检查"
-            case .downloading: return "本地模型：正在准备"
-            case .failed: return "本地模型：下载失败"
+            case .skipped: return "应用自带模型：本次开发运行已跳过下载"
+            case .ready: return "应用自带模型：已准备好"
+            case .checking: return "应用自带模型：尚未下载"
+            case .downloading: return "应用自带模型：正在下载"
+            case .paused: return "应用自带模型：下载已暂停"
+            case .failed: return "应用自带模型：下载失败"
             }
         }
 
@@ -59,9 +61,11 @@ final class AppModel: ObservableObject {
             case .ready:
                 return "模型文件已保存在本机，后续可接入本地推理。"
             case .checking:
-                return "正在检查本机是否已有模型文件。"
+                return "可以先下载，也可以手动配置本地或在线模型服务。"
             case .downloading(let file):
                 return "正在下载 \(file)，你可以继续填写当前任务。"
+            case .paused:
+                return "下载已停止；需要时可以重新开始下载。"
             case .failed:
                 return "请确认网络可访问 Hugging Face 后重试。"
             }
@@ -70,14 +74,24 @@ final class AppModel: ObservableObject {
         var progress: Double? {
             switch self {
             case .ready: return 1
-            case .skipped, .failed: return nil
+            case .skipped, .paused, .failed: return nil
             case .checking: return 0.08
             case .downloading: return nil
             }
         }
 
         var shouldShowInTaskSetup: Bool {
-            self != .ready
+            switch self {
+            case .downloading, .paused, .failed, .skipped:
+                return true
+            case .ready, .checking:
+                return false
+            }
+        }
+
+        var isDownloading: Bool {
+            if case .downloading = self { return true }
+            return false
         }
     }
 
@@ -90,8 +104,9 @@ final class AppModel: ObservableObject {
     @Published var elapsed: TimeInterval = 0
     @Published var latestContext: ContextSnapshot?
     @Published var summaries: [SessionSummary] = []
-    @Published var modelStatus = "本地模型：未检查"
+    @Published var modelStatus = "应用自带模型：未检查"
     @Published var modelReadiness: ModelReadiness = .checking
+    @Published var modelSetupSelection = ModelSetupSelection()
     @Published var screenCapturePermission = "未检查"
     @Published var cameraPermission = "未检查"
     @Published var notificationPermission = "未检查"
@@ -99,6 +114,7 @@ final class AppModel: ObservableObject {
     @Published var localLLMStatus = "模型评估：基础规则"
     @Published var llmBaseURLText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"] ?? UserDefaults.standard.string(forKey: "llmBaseURL") ?? "http://127.0.0.1:8080/v1"
     @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? "qwen3.5-0.8b"
+    @Published var onlineAPIKeyText = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
     @Published var isModelConnectionUsable = false
@@ -123,6 +139,7 @@ final class AppModel: ObservableObject {
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
+    private var modelDownloadTask: Task<Void, Never>?
     private var nudgePanels: [NSPanel] = []
 
     init() {
@@ -138,7 +155,6 @@ final class AppModel: ObservableObject {
         summaries = (try? store.loadSummaries()) ?? []
         refreshPermissionStatuses()
         refreshModelStatus()
-        startModelDownloadIfNeeded()
     }
 
     func requestNotificationPermission() {
@@ -319,7 +335,9 @@ final class AppModel: ObservableObject {
     }
 
     func startModelDownloadIfNeeded() {
-        Task {
+        guard modelDownloadTask == nil else { return }
+        modelDownloadTask = Task {
+            defer { self.modelDownloadTask = nil }
             await modelDownloader.download { update in
                 switch update {
                 case .skipped:
@@ -330,6 +348,8 @@ final class AppModel: ObservableObject {
                     self.modelReadiness = .checking
                 case .downloading(let filename):
                     self.modelReadiness = .downloading(filename)
+                case .paused:
+                    self.modelReadiness = .paused
                 case .failed:
                     self.modelReadiness = .failed
                 }
@@ -338,15 +358,44 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func pauseModelDownload() {
+        modelDownloadTask?.cancel()
+        modelDownloadTask = nil
+        if modelReadiness.isDownloading {
+            modelReadiness = .paused
+            modelStatus = modelReadiness.title
+        }
+    }
+
+    func cancelModelDownload() {
+        pauseModelDownload()
+    }
+
+    func downloadBundledModelAndContinue() {
+        modelSetupSelection.source = .bundled
+        useLocalLLM = false
+        startModelDownloadIfNeeded()
+        screen = .taskSetup
+    }
+
+    func selectManualModelService(_ service: ModelSetupSelection.ManualService) {
+        modelSetupSelection.source = .manual
+        modelSetupSelection.manualService = service
+        if service == .online, llmBaseURLText == "http://127.0.0.1:8080/v1" {
+            llmBaseURLText = "https://api.openai.com/v1"
+            modelConfigurationChanged()
+        }
+    }
+
     func configureLocalLLM() {
         guard let baseURL = URL(string: llmBaseURLText) else {
-            localLLMStatus = "本地推理：端点无效"
+            localLLMStatus = "模型服务：端点无效"
             isModelConnectionUsable = false
             llmEvaluator = nil
             return
         }
         llmEvaluator = LLMFocusEvaluator(
-            engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText)
+            engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText, apiKey: onlineAPIKeyText)
         )
         localLLMStatus = useLocalLLM ? "模型评估：\(llmBaseURLText)" : "模型评估：已关闭，使用基础规则"
         UserDefaults.standard.set(llmBaseURLText, forKey: "llmBaseURL")
@@ -397,7 +446,7 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText)
+            let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText, apiKey: onlineAPIKeyText)
             let result = try await engine.checkModelReadiness()
             isModelConnectionUsable = result.modelFound && result.chatCompletionWorks
             useLocalLLM = true
