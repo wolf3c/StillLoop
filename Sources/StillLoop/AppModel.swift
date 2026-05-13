@@ -113,7 +113,7 @@ final class AppModel: ObservableObject {
     @Published var useLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
     @Published var localLLMStatus = "模型评估：基础规则"
     @Published var llmBaseURLText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"] ?? UserDefaults.standard.string(forKey: "llmBaseURL") ?? "http://127.0.0.1:8080/v1"
-    @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? "qwen3.5-0.8b"
+    @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? ModelDownloadSpec.builtIn.localServerModelID
     @Published var onlineAPIKeyText = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
@@ -149,7 +149,8 @@ final class AppModel: ObservableObject {
         let supportDirectory = support ?? URL(fileURLWithPath: NSTemporaryDirectory())
         store = FileSessionStore(appSupportDirectory: supportDirectory)
         modelDownloader = ModelDownloadManager(
-            localDirectory: supportDirectory.appendingPathComponent("Models/Qwen3.5-0.8B-OptiQ-4bit", isDirectory: true)
+            spec: .builtIn,
+            localDirectory: supportDirectory.appendingPathComponent("Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", isDirectory: true)
         )
         configureLocalLLM()
         summaries = (try? store.loadSummaries()) ?? []
@@ -331,7 +332,7 @@ final class AppModel: ObservableObject {
     }
 
     func openModelDownloadPage() {
-        NSWorkspace.shared.open(URL(string: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit")!)
+        NSWorkspace.shared.open(ModelDownloadSpec.builtIn.modelPageURL)
     }
 
     func startModelDownloadIfNeeded() {

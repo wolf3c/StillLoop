@@ -19,6 +19,7 @@ Avoid relying on generated files, local IDE state, or machine-specific paths as 
 
 - Work only on files required for the current task. Do not modify, revert, reformat, stage, or clean up unrelated files.
 - Before behavior changes, state the current behavior, target behavior, affected modules, risks, verification plan, and concise implementation plan.
+- Implement behavior changes with TDD: write or update a focused failing test first, confirm it fails for the expected reason, then make the smallest production change that turns it green.
 - Keep changes minimal and aligned with existing product semantics. Avoid opportunistic refactors and broad cleanup.
 - Preserve user work in a dirty tree. If existing changes affect the task, work with them instead of reverting them.
 - After finishing implementation work, suggest one or more accurate git commit messages.
@@ -56,6 +57,11 @@ Match the existing project style. For Swift code, prefer clear names, small sing
 ## Testing Guidelines
 
 Add focused tests for behavior changes. Place tests in the target that owns the behavior, and prefer behavior-oriented names. For UI-sensitive changes, verify the rendered state or interaction path when the project has UI test support.
+
+Every completed requirement implementation must be verified in two ways before reporting it done:
+
+- Run the relevant automated tests, and broaden to `swift test` when the behavior is shared or cross-target.
+- Use the Computer tool to exercise the app behavior through the macOS UI and confirm the implemented path works. If Computer verification cannot run in the current environment, report the exact blocker and what remains unverified.
 
 ## Git Guidelines
 

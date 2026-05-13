@@ -86,11 +86,11 @@ The task setup screen includes a `使用模拟上下文` toggle. Keep it enabled
 
 ## Local Model And Inference
 
-The planned llama.cpp model is:
+The built-in llama.cpp model is:
 
-https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF
+https://huggingface.co/mradermacher/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF
 
-Use the `Q4_0` GGUF file for the first local model runtime.
+Use the `Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf` file for the local model runtime.
 
 StillLoop stores built-in downloaded models under:
 
@@ -98,10 +98,10 @@ StillLoop stores built-in downloaded models under:
 ~/Library/Application Support/StillLoop/Models/
 ```
 
-The first llama.cpp target path is:
+The llama.cpp target path is:
 
 ```sh
-~/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_0.gguf
+~/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf
 ```
 
 Current MVP behavior:
@@ -130,7 +130,7 @@ After installing or building llama.cpp, run:
 
 ```sh
 llama-server \
-  -m "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_0.gguf" \
+  -m "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf" \
   --host 127.0.0.1 \
   --port 8080 \
   -ngl 99
@@ -142,7 +142,7 @@ Then launch StillLoop:
 STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
-STILLLOOP_LLM_MODEL=qwen3.5-0.8b-q4_0 \
+STILLLOOP_LLM_MODEL=qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl \
 scripts/run-app.sh
 ```
 
