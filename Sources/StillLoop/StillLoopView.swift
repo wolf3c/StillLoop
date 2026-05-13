@@ -321,18 +321,10 @@ private struct TaskSetupView: View {
                     ModelReadinessCard()
                 }
             }
-            Toggle("使用手动配置模型评估", isOn: $model.useLocalLLM)
-            Text(model.localLLMStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("采集每 \(Int(model.captureCadenceSeconds)) 秒一次；分析目标每 \(Int(model.targetEvaluationCadenceSeconds)) 秒一轮；若本轮超过 \(Int(model.slowEvaluationThresholdSeconds)) 秒，完成后 \(Int(model.slowEvaluationRetryDelaySeconds)) 秒再分析。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             HStack {
                 Button("开始专注") { model.startSession() }
                     .disabled(model.taskText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
-                Button("模型页面") { model.screen = .modelSetup }
                 Spacer()
             }
             Spacer()

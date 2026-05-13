@@ -7,7 +7,7 @@ import UserNotifications
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum Screen {
+    enum Screen: Equatable {
         case welcome
         case permissions
         case modelSetup
@@ -448,11 +448,15 @@ final class AppModel: ObservableObject {
         Task {
             let canUseModel = await checkModelConnectionNow()
             guard canUseModel else {
-                screen = .modelSetup
+                routeToModelSetupForModelIssue()
                 return
             }
             beginSession(task: task)
         }
+    }
+
+    func routeToModelSetupForModelIssue() {
+        screen = .modelSetup
     }
 
     private func beginSession(task: String) {
@@ -827,6 +831,7 @@ final class AppModel: ObservableObject {
                 return result
             } catch {
                 localLLMStatus = "模型评估：连接失败，已使用基础规则"
+                routeToModelSetupForModelIssue()
             }
         }
 
