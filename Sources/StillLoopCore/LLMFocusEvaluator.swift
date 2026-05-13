@@ -119,18 +119,25 @@ public struct LLMFocusEvaluator {
             .sorted { $0.timestamp < $1.timestamp }
             .enumerated()
             .map { index, snapshot in
+                var captureLines = [
+                    "capture[\(index + 1)]",
+                    "time: \(dateFormatter.string(from: snapshot.timestamp))",
+                    "app: \(snapshot.activeAppName)",
+                    "window: \(snapshot.windowTitle)"
+                ]
+                if let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !browserTitle.isEmpty {
+                    captureLines.append("browserTitle: \(browserTitle)")
+                }
+                if let browserURL = snapshot.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines), !browserURL.isEmpty {
+                    captureLines.append("browserURL: \(browserURL)")
+                }
+                captureLines.append(contentsOf: [
+                    "visualOrder: screenshot image first, then camera image for this same capture timestamp",
+                    "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))",
+                    "camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))"
+                ])
                 var content: [LLMMessage.Content] = [
-                    .text("""
-                    capture[\(index + 1)]
-                    time: \(dateFormatter.string(from: snapshot.timestamp))
-                    app: \(snapshot.activeAppName)
-                    window: \(snapshot.windowTitle)
-                    browserTitle: \(snapshot.browserTitle ?? "none")
-                    browserURL: \(snapshot.browserURL ?? "none")
-                    visualOrder: screenshot image first, then camera image for this same capture timestamp
-                    screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))
-                    camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))
-                    """)
+                    .text(captureLines.joined(separator: "\n"))
                 ]
                 if let mimeType = snapshot.screenshotMimeType, let data = snapshot.screenshotData {
                     content.append(.image(mimeType: mimeType, data: data))
