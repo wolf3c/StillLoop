@@ -51,7 +51,7 @@ private struct HeaderView: View {
             Spacer()
             Button("设置") { model.screen = .settings }
             Button("隐私") { model.screen = .privacy }
-            Button("新专注") { model.screen = .modelSetup }
+            Button("新任务") { model.screen = .modelSetup }
         }
         .padding(20)
     }
