@@ -2,6 +2,10 @@ import XCTest
 @testable import StillLoopCore
 
 final class EvaluatorTests: XCTestCase {
+    func testStuckStateUsesProgressStalledDisplayName() {
+        XCTAssertEqual(FocusState.stuck.displayName, "进展停滞")
+    }
+
     func testEvaluateMarksFocusedWhenContextMatchesTask() {
         let evaluator = FocusEvaluator()
         let context = ContextSnapshot(

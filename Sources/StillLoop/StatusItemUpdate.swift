@@ -17,7 +17,7 @@ enum StatusItemMode: String {
         case .focused: return " 专注中"
         case .uncertain: return " 轻微跑偏"
         case .distracted: return " 跑偏"
-        case .stuck: return " 卡住"
+        case .stuck: return " 停滞"
         case .resting: return " 休息中"
         case .away: return " 已离开"
         case .paused: return " 已暂停"

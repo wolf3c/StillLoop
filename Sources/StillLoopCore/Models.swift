@@ -33,7 +33,7 @@ public enum FocusState: String, Codable, CaseIterable, Equatable {
         case .focused: return "专注中"
         case .uncertain: return "轻微跑偏"
         case .distracted: return "明显偏离"
-        case .stuck: return "可能卡住"
+        case .stuck: return "进展停滞"
         case .resting: return "休息中"
         case .away: return "人已离开"
         }
