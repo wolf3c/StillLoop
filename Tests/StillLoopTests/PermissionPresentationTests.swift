@@ -4,6 +4,31 @@ import XCTest
 @testable import StillLoop
 
 final class PermissionPresentationTests: XCTestCase {
+    func testUnavailableScreenCapturePermissionOpensSystemSettingsWithRestartGuidance() {
+        let presentation = AppModel.screenCapturePermissionPresentation(
+            isAllowedForCurrentProcess: false,
+            isRunningAsAppBundle: true
+        )
+
+        XCTAssertEqual(presentation.detail, "未生效")
+        XCTAssertEqual(presentation.actionTitle, "打开系统设置")
+        XCTAssertEqual(presentation.action, .openSettings)
+        XCTAssertTrue(presentation.guidance.contains("系统设置"))
+        XCTAssertTrue(presentation.guidance.contains("重启 StillLoop"))
+        XCTAssertFalse(presentation.isAllowed)
+    }
+
+    func testAllowedScreenCapturePermissionIsReady() {
+        let presentation = AppModel.screenCapturePermissionPresentation(
+            isAllowedForCurrentProcess: true,
+            isRunningAsAppBundle: true
+        )
+
+        XCTAssertEqual(presentation.detail, "已允许")
+        XCTAssertEqual(presentation.action, .none)
+        XCTAssertTrue(presentation.isAllowed)
+    }
+
     func testDeniedCameraPermissionOpensSystemSettingsWithGuidance() {
         let presentation = AppModel.cameraPermissionPresentation(for: .denied)
 
@@ -36,6 +61,13 @@ final class PermissionPresentationTests: XCTestCase {
         XCTAssertEqual(
             AppModel.cameraSettingsURLStrings.first,
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        )
+    }
+
+    func testScreenCaptureSettingsTargetsScreenRecordingPrivacyPaneFirst() {
+        XCTAssertEqual(
+            AppModel.screenCaptureSettingsURLStrings.first,
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
         )
     }
 

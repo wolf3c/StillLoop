@@ -133,6 +133,7 @@ final class AppModel: ObservableObject {
         useLocalLLM: ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
     )
     @Published var screenCapturePermission = "未检查"
+    @Published var screenCapturePermissionGuidance = ""
     @Published var cameraPermission = "未检查"
     @Published var cameraPermissionGuidance = ""
     @Published var notificationPermission = "未检查"
@@ -174,6 +175,11 @@ final class AppModel: ObservableObject {
     private var modelDownloadTask: Task<Void, Never>?
     private var nudgePanels: [NSPanel] = []
 
+    nonisolated static let screenCaptureSettingsURLStrings = [
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        "x-apple.systempreferences:com.apple.preference.security"
+    ]
+
     nonisolated static let cameraSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
         "x-apple.systempreferences:com.apple.preference.security"
@@ -196,6 +202,33 @@ final class AppModel: ObservableObject {
             .workspaceURL(urlString),
             .systemOpen(urlString)
         ]
+    }
+
+    nonisolated static func screenCapturePermissionPresentation(
+        isAllowedForCurrentProcess: Bool,
+        isRunningAsAppBundle: Bool
+    ) -> PermissionPresentation {
+        if isAllowedForCurrentProcess {
+            return PermissionPresentation(detail: "已允许", guidance: "", actionTitle: "", action: .none, isAllowed: true)
+        }
+
+        guard isRunningAsAppBundle else {
+            return PermissionPresentation(
+                detail: "开发运行模式无法注册到系统权限列表",
+                guidance: "请用 scripts/run-app.sh 启动应用包后再检查权限。",
+                actionTitle: "",
+                action: .none,
+                isAllowed: false
+            )
+        }
+
+        return PermissionPresentation(
+            detail: "未生效",
+            guidance: "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经打开，请重启 StillLoop 后再继续。",
+            actionTitle: "打开系统设置",
+            action: .openSettings,
+            isAllowed: false
+        )
     }
 
     nonisolated static func cameraPermissionPresentation(for status: AVAuthorizationStatus) -> PermissionPresentation {
@@ -405,11 +438,27 @@ final class AppModel: ObservableObject {
     }
 
     func requestScreenCapturePermission() {
-        guard isRunningAsAppBundle else {
-            screenCapturePermission = "开发运行模式无法注册到系统权限列表，请用 scripts/run-app.sh 启动"
+        let presentation = AppModel.screenCapturePermissionPresentation(
+            isAllowedForCurrentProcess: CGPreflightScreenCaptureAccess(),
+            isRunningAsAppBundle: isRunningAsAppBundle
+        )
+        guard presentation.action == .openSettings else {
+            applyScreenCapturePermissionPresentation(presentation)
             return
         }
-        screenCapturePermission = CGRequestScreenCaptureAccess() ? "已允许" : "已请求，请在系统设置中允许"
+
+        if CGRequestScreenCaptureAccess() {
+            applyScreenCapturePermissionPresentation(
+                AppModel.screenCapturePermissionPresentation(
+                    isAllowedForCurrentProcess: true,
+                    isRunningAsAppBundle: isRunningAsAppBundle
+                )
+            )
+            return
+        }
+
+        applyScreenCapturePermissionPresentation(presentation)
+        openScreenCaptureSettings()
     }
 
     func requestCameraPermission() {
@@ -432,9 +481,12 @@ final class AppModel: ObservableObject {
     }
 
     func refreshPermissionStatuses() {
-        screenCapturePermission = CGPreflightScreenCaptureAccess()
-            ? "已允许"
-            : (isRunningAsAppBundle ? "未允许" : "开发运行模式无法注册到系统权限列表")
+        applyScreenCapturePermissionPresentation(
+            AppModel.screenCapturePermissionPresentation(
+                isAllowedForCurrentProcess: CGPreflightScreenCaptureAccess(),
+                isRunningAsAppBundle: isRunningAsAppBundle
+            )
+        )
 
         applyCameraPermissionPresentation(for: AVCaptureDevice.authorizationStatus(for: .video))
 
@@ -461,6 +513,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func applyScreenCapturePermissionPresentation(_ presentation: PermissionPresentation) {
+        screenCapturePermission = presentation.detail
+        screenCapturePermissionGuidance = presentation.guidance
+    }
+
     private func applyCameraPermissionPresentation(for status: AVAuthorizationStatus) {
         let presentation = AppModel.cameraPermissionPresentation(for: status)
         cameraPermission = presentation.detail
@@ -475,6 +532,10 @@ final class AppModel: ObservableObject {
 
     private func openCameraPrivacySettings() {
         openSystemSettings(AppModel.cameraSettingsURLStrings)
+    }
+
+    private func openScreenCaptureSettings() {
+        openSystemSettings(AppModel.screenCaptureSettingsURLStrings)
     }
 
     private func openNotificationSettings() {

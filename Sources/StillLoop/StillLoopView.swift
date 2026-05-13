@@ -182,7 +182,8 @@ private struct PermissionsView: View {
             PermissionRow(
                 title: "屏幕录制",
                 detail: model.screenCapturePermission,
-                actionTitle: "请求权限",
+                guidance: model.screenCapturePermissionGuidance,
+                actionTitle: "打开系统设置",
                 isAllowed: model.screenCapturePermission == "已允许",
                 action: model.requestScreenCapturePermission
             )
