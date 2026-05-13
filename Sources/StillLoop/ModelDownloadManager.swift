@@ -1,4 +1,5 @@
 import Foundation
+import StillLoopCore
 
 struct ModelDownloadManager {
     enum DownloadUpdate {
@@ -9,19 +10,11 @@ struct ModelDownloadManager {
         case failed
     }
 
-    struct Manifest: Decodable {
-        struct Sibling: Decodable {
-            var rfilename: String
-        }
-
-        var siblings: [Sibling]
-    }
-
-    let repoID = "mlx-community/Qwen3.5-0.8B-OptiQ-4bit"
+    let spec: ModelDownloadSpec
     let localDirectory: URL
 
     func isDownloaded() -> Bool {
-        FileManager.default.fileExists(atPath: localDirectory.appendingPathComponent("config.json").path)
+        FileManager.default.fileExists(atPath: localDirectory.appendingPathComponent(spec.filename).path)
     }
 
     func download(progress: @escaping @MainActor (DownloadUpdate) -> Void) async {
@@ -38,12 +31,8 @@ struct ModelDownloadManager {
         do {
             try FileManager.default.createDirectory(at: localDirectory, withIntermediateDirectories: true)
             await progress(.checking)
-            let manifest = try await fetchManifest()
-
-            for file in manifest.siblings.map(\.rfilename) where shouldDownload(file) {
-                await progress(.downloading(file))
-                try await downloadFile(named: file)
-            }
+            await progress(.downloading(spec.filename))
+            try await downloadFile()
 
             await progress(.ready)
         } catch {
@@ -51,28 +40,13 @@ struct ModelDownloadManager {
         }
     }
 
-    private func fetchManifest() async throws -> Manifest {
-        let url = URL(string: "https://huggingface.co/api/models/\(repoID)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return try JSONDecoder().decode(Manifest.self, from: data)
-    }
-
-    private func downloadFile(named filename: String) async throws {
-        let encoded = filename
-            .split(separator: "/")
-            .map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
-            .joined(separator: "/")
-        let url = URL(string: "https://huggingface.co/\(repoID)/resolve/main/\(encoded)")!
-        let destination = localDirectory.appendingPathComponent(filename)
+    private func downloadFile() async throws {
+        let destination = localDirectory.appendingPathComponent(spec.filename)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let (temporaryURL, _) = try await URLSession.shared.download(from: url)
+        let (temporaryURL, _) = try await URLSession.shared.download(from: spec.downloadURL)
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
-    }
-
-    private func shouldDownload(_ filename: String) -> Bool {
-        !filename.hasPrefix(".") && !filename.lowercased().hasSuffix(".md")
     }
 }
