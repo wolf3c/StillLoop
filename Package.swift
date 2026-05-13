@@ -20,6 +20,10 @@ let package = Package(
         .testTarget(
             name: "StillLoopCoreTests",
             dependencies: ["StillLoopCore"]
+        ),
+        .testTarget(
+            name: "StillLoopTests",
+            dependencies: ["StillLoop"]
         )
     ]
 )

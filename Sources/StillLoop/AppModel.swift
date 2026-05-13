@@ -112,7 +112,10 @@ final class AppModel: ObservableObject {
     @Published var notificationPermission = "未检查"
     @Published var useLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
     @Published var localLLMStatus = "模型评估：基础规则"
-    @Published var llmBaseURLText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"] ?? UserDefaults.standard.string(forKey: "llmBaseURL") ?? "http://127.0.0.1:8080/v1"
+    @Published var llmBaseURLText = AppModel.resolvedLLMBaseURLText(
+        environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
+        storedValue: UserDefaults.standard.string(forKey: "llmBaseURL")
+    )
     @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? ModelDownloadSpec.builtIn.localServerModelID
     @Published var onlineAPIKeyText = ""
     @Published var modelConnectionStatus = "尚未检查"
@@ -141,6 +144,16 @@ final class AppModel: ObservableObject {
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
     private var nudgePanels: [NSPanel] = []
+
+    nonisolated static func resolvedLLMBaseURLText(environmentValue: String?, storedValue: String?) -> String {
+        if let environmentValue {
+            return environmentValue
+        }
+        if let storedValue, storedValue != "http://127.0.0.1:8080/v1" {
+            return storedValue
+        }
+        return ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString
+    }
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -440,7 +453,7 @@ final class AppModel: ObservableObject {
 
         guard let baseURL = URL(string: llmBaseURLText) else {
             modelConnectionStatus = "端点无效"
-            modelConnectionDetail = "请输入完整地址，例如 http://127.0.0.1:8080/v1。"
+            modelConnectionDetail = "请输入完整地址，例如 http://127.0.0.1:17631/v1。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
@@ -543,12 +556,16 @@ final class AppModel: ObservableObject {
             evaluationLoopDescription = "等待采集样本"
             return false
         }
-        let snapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let pendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let pendingCount = pendingSnapshots.count
+        let snapshots = SnapshotSampler.select(pendingSnapshots)
         analysisPhase = .contextReady
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
-        evaluationLoopDescription = "正在分析 \(snapshots.count) 条未分析采集"
+        evaluationLoopDescription = snapshots.count == pendingCount
+            ? "正在分析 \(snapshots.count) 条未分析采集"
+            : "正在抽样分析 \(snapshots.count)/\(pendingCount) 条未分析采集"
         let result = await evaluateFocus(task: session.task, snapshots: snapshots, previousEvents: session.events)
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
@@ -572,7 +589,7 @@ final class AppModel: ObservableObject {
             at: 0
         )
         currentSession = latestSession
-        removeAnalyzedSnapshots(snapshots)
+        removeAnalyzedSnapshots(pendingSnapshots)
         analysisPhase = .committed
         try? await Task.sleep(for: .milliseconds(350))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }

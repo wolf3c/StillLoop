@@ -60,6 +60,9 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         var model: String
         var messages: [Message]
         var temperature: Double
+        var top_p: Double
+        var top_k: Int
+        var presence_penalty: Double
         var max_tokens: Int
         var stream: Bool
     }
@@ -156,8 +159,11 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
                 messages: messages.map { message in
                     .init(role: message.role.rawValue, content: content(for: message.content))
                 },
-                temperature: 0.1,
-                max_tokens: 220,
+                temperature: 0.7,
+                top_p: 0.8,
+                top_k: 20,
+                presence_penalty: 1.5,
+                max_tokens: 500,
                 stream: false
             )
         )
