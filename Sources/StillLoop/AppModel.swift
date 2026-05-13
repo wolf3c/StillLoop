@@ -280,6 +280,23 @@ final class AppModel: ObservableObject {
         refreshModelStatus()
     }
 
+    func openHome() {
+        switch status {
+        case .running, .paused:
+            screen = currentSession == nil ? .taskSetup : .focus
+        case .ended:
+            screen = currentSession == nil ? .taskSetup : .review
+        case .idle:
+            screen = shouldShowPermissionOnboarding ? .permissions : .taskSetup
+        }
+    }
+
+    private var shouldShowPermissionOnboarding: Bool {
+        screenCapturePermission == "未检查"
+            && cameraPermission == "未检查"
+            && notificationPermission == "未检查"
+    }
+
     func requestNotificationPermission() {
         guard isRunningAsAppBundle else {
             notificationPermission = "开发运行模式使用非阻塞弹窗提醒"
