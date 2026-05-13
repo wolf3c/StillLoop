@@ -22,22 +22,20 @@ swift package resolve
 For permission testing, run the development app bundle:
 
 ```sh
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 scripts/run-app.sh
+scripts/run-app.sh
 ```
 
 The script wraps the SwiftPM executable as `.build/StillLoop.app`, which allows macOS privacy permissions to appear under StillLoop in System Settings.
-Remove `STILLLOOP_SKIP_MODEL_DOWNLOAD=1` when you want to exercise the automatic Hugging Face model download.
 
 For quick compiler-only launch without permission testing:
 
 ```sh
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 swift run StillLoop
+swift run StillLoop
 ```
 
-To test local model inference without using StillLoop's built-in model downloader, point StillLoop at an OpenAI-compatible local server:
+To test local model inference, point StillLoop at an OpenAI-compatible local server:
 
 ```sh
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 STILLLOOP_LLM_MODEL=local-model \
@@ -115,7 +113,6 @@ Current MVP behavior:
 In LM Studio, start the local server with OpenAI-compatible API enabled, then launch StillLoop with:
 
 ```sh
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:17631/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b \
@@ -143,7 +140,6 @@ llama-server \
 Then launch StillLoop:
 
 ```sh
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:17631/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl \

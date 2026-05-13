@@ -75,6 +75,17 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
 
         XCTAssertEqual(baseURL, "http://127.0.0.1:7777/v1")
     }
+
+    func testLocalLLMEnvironmentSelectsManualLocalModelSetup() {
+        XCTAssertEqual(
+            AppModel.resolvedModelSetupSelection(useLocalLLM: true),
+            ModelSetupSelection(source: .manual, manualService: .localHTTP)
+        )
+        XCTAssertEqual(
+            AppModel.resolvedModelSetupSelection(useLocalLLM: false),
+            ModelSetupSelection(source: .bundled, manualService: .localHTTP)
+        )
+    }
 }
 
 private final class URLProtocolStub: URLProtocol {

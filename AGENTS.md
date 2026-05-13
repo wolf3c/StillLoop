@@ -31,6 +31,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 
 - `YYYY-MM-DD`: What went wrong. Root cause. Future rule to prevent recurrence.
 - `2026-05-13`: Added only a prose testing constraint without a runnable command. Root cause: documented intent but not the exact agent action. Future rule: when test configuration is requested, include the concrete command or environment variables agents should run.
+- `2026-05-13`: Verified model setup with `STILLLOOP_SKIP_MODEL_DOWNLOAD=1`. Root cause: used the development skip path instead of the intended local HTTP model path. Future rule: model-backed UI verification should prefill `STILLLOOP_USE_LOCAL_LLM`, `STILLLOOP_LLM_BASE_URL`, and `STILLLOOP_LLM_MODEL` without setting `STILLLOOP_SKIP_MODEL_DOWNLOAD`.
 
 ## Design And Behavior Changes
 
@@ -69,11 +70,10 @@ If the app is already running, stop the old process before launching a fresh bui
 killall StillLoop
 ```
 
-Launch the app with the local HTTP model and skip built-in model downloads:
+Launch the app with the local HTTP model prefilled:
 
 ```sh
 cd /Users/wolf3c/Project/StillLoop
-STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b \

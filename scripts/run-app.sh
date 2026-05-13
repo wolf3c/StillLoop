@@ -46,7 +46,6 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-export STILLLOOP_SKIP_MODEL_DOWNLOAD="${STILLLOOP_SKIP_MODEL_DOWNLOAD:-1}"
 if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
   exit 0
 fi

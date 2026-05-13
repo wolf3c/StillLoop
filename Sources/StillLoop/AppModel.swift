@@ -106,7 +106,9 @@ final class AppModel: ObservableObject {
     @Published var summaries: [SessionSummary] = []
     @Published var modelStatus = "应用自带模型：未检查"
     @Published var modelReadiness: ModelReadiness = .checking
-    @Published var modelSetupSelection = ModelSetupSelection()
+    @Published var modelSetupSelection = AppModel.resolvedModelSetupSelection(
+        useLocalLLM: ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
+    )
     @Published var screenCapturePermission = "未检查"
     @Published var cameraPermission = "未检查"
     @Published var notificationPermission = "未检查"
@@ -153,6 +155,10 @@ final class AppModel: ObservableObject {
             return storedValue
         }
         return ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString
+    }
+
+    nonisolated static func resolvedModelSetupSelection(useLocalLLM: Bool) -> ModelSetupSelection {
+        useLocalLLM ? ModelSetupSelection(source: .manual, manualService: .localHTTP) : ModelSetupSelection()
     }
 
     init() {
