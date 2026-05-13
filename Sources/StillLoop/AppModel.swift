@@ -97,7 +97,10 @@ final class AppModel: ObservableObject {
     @Published var notificationPermission = "未检查"
     @Published var useLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
     @Published var localLLMStatus = "模型评估：基础规则"
-    @Published var llmBaseURLText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"] ?? UserDefaults.standard.string(forKey: "llmBaseURL") ?? "http://127.0.0.1:8080/v1"
+    @Published var llmBaseURLText = AppModel.resolvedLLMBaseURLText(
+        environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
+        storedValue: UserDefaults.standard.string(forKey: "llmBaseURL")
+    )
     @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? ModelDownloadSpec.builtIn.localServerModelID
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
@@ -124,6 +127,16 @@ final class AppModel: ObservableObject {
     private var evaluationTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var nudgePanels: [NSPanel] = []
+
+    nonisolated static func resolvedLLMBaseURLText(environmentValue: String?, storedValue: String?) -> String {
+        if let environmentValue {
+            return environmentValue
+        }
+        if let storedValue, storedValue != "http://127.0.0.1:8080/v1" {
+            return storedValue
+        }
+        return ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString
+    }
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -391,7 +404,7 @@ final class AppModel: ObservableObject {
 
         guard let baseURL = URL(string: llmBaseURLText) else {
             modelConnectionStatus = "端点无效"
-            modelConnectionDetail = "请输入完整地址，例如 http://127.0.0.1:8080/v1。"
+            modelConnectionDetail = "请输入完整地址，例如 http://127.0.0.1:17631/v1。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false

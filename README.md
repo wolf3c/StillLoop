@@ -117,7 +117,7 @@ In LM Studio, start the local server with OpenAI-compatible API enabled, then la
 ```sh
 STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
-STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
+STILLLOOP_LLM_BASE_URL=http://127.0.0.1:17631/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b \
 scripts/run-app.sh
 ```
@@ -132,8 +132,12 @@ After installing or building llama.cpp, run:
 llama-server \
   -m "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf" \
   --host 127.0.0.1 \
-  --port 8080 \
-  -ngl 99
+  --port 17631 \
+  --ctx-size 32768 \
+  --parallel 1 \
+  --n-gpu-layers 99 \
+  --cache-type-k f16 \
+  --cache-type-v f16
 ```
 
 Then launch StillLoop:
@@ -141,7 +145,7 @@ Then launch StillLoop:
 ```sh
 STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
-STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
+STILLLOOP_LLM_BASE_URL=http://127.0.0.1:17631/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl \
 scripts/run-app.sh
 ```

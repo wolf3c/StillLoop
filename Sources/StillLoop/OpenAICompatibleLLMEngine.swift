@@ -153,7 +153,7 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
                     .init(role: message.role.rawValue, content: content(for: message.content))
                 },
                 temperature: 0.1,
-                max_tokens: 220,
+                max_tokens: 500,
                 stream: false
             )
         )
