@@ -12,6 +12,7 @@ final class HomeNavigationTests: XCTestCase {
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
         model.notificationPermission = "已允许"
+        model.modelReadiness = .ready
 
         model.openHome()
 
@@ -81,5 +82,32 @@ final class HomeNavigationTests: XCTestCase {
         model.openHome()
 
         XCTAssertEqual(model.screen, .permissions)
+    }
+
+    func testHomeButtonIsHiddenBeforeInitialSetupIsBypassed() {
+        let model = AppModel()
+        model.status = .idle
+        model.currentSession = nil
+        model.screenCapturePermission = "未检查"
+        model.cameraPermission = "未检查"
+        model.notificationPermission = "未检查"
+        model.modelReadiness = .checking
+
+        XCTAssertFalse(model.shouldShowHomeNavigation)
+    }
+
+    func testHomeButtonShowsSetupIssuesAfterInitialSetupIsBypassed() {
+        let model = AppModel()
+        model.status = .idle
+        model.currentSession = nil
+        model.screenCapturePermission = "未检查"
+        model.cameraPermission = "已允许"
+        model.notificationPermission = "未检查"
+        model.modelReadiness = .checking
+
+        model.bypassInitialSetup()
+
+        XCTAssertTrue(model.shouldShowHomeNavigation)
+        XCTAssertEqual(model.setupIssueIndicators, [.permissions, .model])
     }
 }

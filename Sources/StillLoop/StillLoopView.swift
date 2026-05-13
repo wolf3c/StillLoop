@@ -49,32 +49,77 @@ private struct HeaderView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button {
-                model.openHome()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "house")
-                        .font(.system(size: 22, weight: .semibold))
-                    Text("主页")
-                        .font(.system(size: 20, weight: .semibold))
+            if model.shouldShowHomeNavigation {
+                Button {
+                    model.openHome()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "house")
+                            .font(.system(size: 22, weight: .semibold))
+                        Text("主页")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 22)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                    )
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 22)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-                )
+                .buttonStyle(.plain)
+                .help("返回主页")
+                .accessibilityLabel("返回主页")
+
+                SetupIssueButtons()
             }
-            .buttonStyle(.plain)
-            .help("返回主页")
-            .accessibilityLabel("返回主页")
 
             Spacer()
             Button("设置") { model.screen = .settings }
         }
         .padding(20)
+    }
+}
+
+private struct SetupIssueButtons: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        ForEach(model.setupIssueIndicators, id: \.self) { issue in
+            Button {
+                switch issue {
+                case .permissions:
+                    model.screen = .permissions
+                case .model:
+                    model.screen = .modelSetup
+                }
+            } label: {
+                Label(title(for: issue), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(help(for: issue))
+        }
+    }
+
+    private func title(for issue: AppModel.SetupIssueIndicator) -> String {
+        switch issue {
+        case .permissions:
+            return "缺少权限"
+        case .model:
+            return "缺少模型设置"
+        }
+    }
+
+    private func help(for issue: AppModel.SetupIssueIndicator) -> String {
+        switch issue {
+        case .permissions:
+            return "返回权限获取引导"
+        case .model:
+            return "返回模型准备"
+        }
     }
 }
 
@@ -138,7 +183,10 @@ private struct PermissionsView: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button("继续") { model.screen = .modelSetup }
+                Button("继续") {
+                    model.bypassInitialSetup()
+                    model.screen = .modelSetup
+                }
                     .keyboardShortcut(.defaultAction)
                 Button("隐私设置") { model.screen = .privacy }
             }
@@ -190,8 +238,10 @@ private struct ModelSetupView: View {
                 Text("模型准备")
                     .font(.largeTitle.weight(.semibold))
                 Spacer()
-                Button("返回主页") {
-                    model.openHome()
+                if model.shouldShowHomeNavigation {
+                    Button("返回主页") {
+                        model.openHome()
+                    }
                 }
             }
             Text("StillLoop 默认使用应用自带模型评估专注状态。你也可以手动连接本地或线上 OpenAI-compatible HTTP 模型服务。")
@@ -882,9 +932,11 @@ private struct PrivacySettingsView: View {
             Label("专注摘要保存在本机 Application Support/StillLoop。", systemImage: "internaldrive")
             Label(model.modelReadiness.title, systemImage: "cpu")
             Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
-            Button("返回主页") { model.openHome() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            if model.shouldShowHomeNavigation {
+                Button("返回主页") { model.openHome() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+            }
             Spacer()
         }
         .padding(40)

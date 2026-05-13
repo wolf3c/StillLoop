@@ -101,6 +101,11 @@ final class AppModel: ObservableObject {
         case openSettings
     }
 
+    enum SetupIssueIndicator: Equatable {
+        case permissions
+        case model
+    }
+
     struct PermissionPresentation: Equatable {
         var detail: String
         var guidance: String
@@ -146,6 +151,7 @@ final class AppModel: ObservableObject {
     @Published var evaluationLoopDescription = "每轮完成后按耗时安排下一次采集"
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
+    @Published private(set) var hasBypassedInitialSetup = false
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 30
     let slowEvaluationThresholdSeconds: TimeInterval = 25
@@ -310,14 +316,50 @@ final class AppModel: ObservableObject {
         case .ended:
             screen = currentSession == nil ? .taskSetup : .review
         case .idle:
-            screen = shouldShowPermissionOnboarding ? .permissions : .taskSetup
+            if !hasBypassedInitialSetup, let firstIssue = setupIssueIndicators.first {
+                screen = firstIssue == .permissions ? .permissions : .modelSetup
+            } else {
+                screen = .taskSetup
+            }
         }
     }
 
-    private var shouldShowPermissionOnboarding: Bool {
-        screenCapturePermission == "未检查"
-            && cameraPermission == "未检查"
-            && notificationPermission == "未检查"
+    var shouldShowHomeNavigation: Bool {
+        status != .idle || setupIssueIndicators.isEmpty || hasBypassedInitialSetup
+    }
+
+    var setupIssueIndicators: [SetupIssueIndicator] {
+        var indicators: [SetupIssueIndicator] = []
+        if hasMissingPermissions {
+            indicators.append(.permissions)
+        }
+        if hasMissingModelSetup {
+            indicators.append(.model)
+        }
+        return indicators
+    }
+
+    func bypassInitialSetup() {
+        hasBypassedInitialSetup = true
+    }
+
+    private var hasMissingPermissions: Bool {
+        screenCapturePermission != "已允许"
+            || cameraPermission != "已允许"
+            || !(notificationPermission == "已允许" || notificationPermission.contains("弹窗"))
+    }
+
+    private var hasMissingModelSetup: Bool {
+        if useLocalLLM {
+            return !isModelConnectionUsable
+        }
+
+        switch modelReadiness {
+        case .ready:
+            return false
+        case .skipped, .checking, .downloading, .paused, .failed:
+            return true
+        }
     }
 
     func requestNotificationPermission() {
@@ -638,6 +680,7 @@ final class AppModel: ObservableObject {
     func downloadBundledModelAndContinue() {
         modelSetupSelection.source = .bundled
         useLocalLLM = false
+        bypassInitialSetup()
         startModelDownloadIfNeeded()
         screen = .taskSetup
     }
@@ -678,6 +721,7 @@ final class AppModel: ObservableObject {
         Task {
             let canContinue = isModelConnectionUsable ? true : await checkModelConnectionNow()
             if canContinue {
+                bypassInitialSetup()
                 screen = .taskSetup
             }
         }
