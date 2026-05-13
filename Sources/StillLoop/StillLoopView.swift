@@ -78,7 +78,9 @@ private struct HeaderView: View {
             Spacer()
             Button("设置") { model.screen = .settings }
         }
-        .padding(20)
+        .padding(.top, 36)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
     }
 }
 

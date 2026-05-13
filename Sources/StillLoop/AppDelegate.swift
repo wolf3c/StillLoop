@@ -75,12 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             defer: false
         )
         window.title = "StillLoop"
-        window.titlebarAppearsTransparent = true
+        Self.configureMainWindow(window)
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
         window.contentView = NSHostingView(rootView: contentView)
         return window
+    }
+
+    static func configureMainWindow(_ window: NSWindow) {
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
     }
 
     @objc private func statusItemModeDidChange(_ notification: Notification) {
