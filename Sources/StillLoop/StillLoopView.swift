@@ -98,17 +98,24 @@ private struct PermissionsView: View {
             PermissionRow(
                 title: "摄像头",
                 detail: model.cameraPermission,
-                actionTitle: "请求权限",
+                guidance: model.cameraPermissionGuidance,
+                actionTitle: model.cameraPermission == "未请求" ? "请求权限" : "打开系统设置",
                 isAllowed: model.cameraPermission == "已允许",
                 action: model.requestCameraPermission
             )
             PermissionRow(
                 title: "系统通知",
                 detail: model.notificationPermission,
-                actionTitle: "请求权限",
+                guidance: model.notificationPermissionGuidance,
+                actionTitle: model.notificationPermission == "未请求" ? "请求权限" : "打开系统设置",
                 isAllowed: model.notificationPermission == "已允许" || model.notificationPermission.contains("弹窗"),
                 action: model.requestNotificationPermission
             )
+            if !model.permissionOpenStatus.isEmpty {
+                Text(model.permissionOpenStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Button("继续") { model.screen = .modelSetup }
                     .keyboardShortcut(.defaultAction)
@@ -123,15 +130,21 @@ private struct PermissionsView: View {
 private struct PermissionRow: View {
     var title: String
     var detail: String
+    var guidance: String = ""
     var actionTitle: String
     var isAllowed: Bool
     var action: () -> Void
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
                 Text(detail).foregroundStyle(.secondary)
+                if !guidance.isEmpty {
+                    Text(guidance)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if isAllowed {
