@@ -14,7 +14,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCompletionRequestAllowsFiveHundredOutputTokens() async throws {
+    func testCompletionRequestUsesRecommendedQwenSamplingSettings() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
         let session = URLSession(configuration: configuration)
@@ -41,7 +41,12 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
             LLMMessage(role: .user, content: [.text("status")])
         ])
 
+        XCTAssertEqual(requestBody?["temperature"] as? Double, 0.7)
+        XCTAssertEqual(requestBody?["top_p"] as? Double, 0.8)
+        XCTAssertEqual(requestBody?["top_k"] as? Int, 20)
+        XCTAssertEqual(requestBody?["presence_penalty"] as? Double, 1.5)
         XCTAssertEqual(requestBody?["max_tokens"] as? Int, 500)
+        XCTAssertEqual(requestBody?["stream"] as? Bool, false)
     }
 
     func testLegacyDefaultPortMigratesToDedicatedStillLoopPort() {
