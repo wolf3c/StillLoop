@@ -67,6 +67,35 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(baseURL, "http://127.0.0.1:1234/v1")
     }
 
+    func testBareLocalHTTPBaseURLUsesOpenAICompatibleV1Path() {
+        XCTAssertEqual(
+            AppModel.effectiveLLMBaseURLText("http://127.0.0.1:8080"),
+            "http://127.0.0.1:8080/v1"
+        )
+    }
+
+    func testExistingBaseURLPathIsPreserved() {
+        XCTAssertEqual(
+            AppModel.effectiveLLMBaseURLText("http://127.0.0.1:8080/v1"),
+            "http://127.0.0.1:8080/v1"
+        )
+        XCTAssertEqual(
+            AppModel.effectiveLLMBaseURLText("http://127.0.0.1:8080/custom"),
+            "http://127.0.0.1:8080/custom"
+        )
+    }
+
+    func testLocalHTTPBaseURLRootTextHidesV1Path() {
+        XCTAssertEqual(
+            AppModel.localHTTPBaseURLRootText("http://127.0.0.1:8080/v1"),
+            "http://127.0.0.1:8080"
+        )
+        XCTAssertEqual(
+            AppModel.localHTTPBaseURLRootText("http://127.0.0.1:8080/custom"),
+            "http://127.0.0.1:8080/custom"
+        )
+    }
+
     func testEnvironmentBaseURLOverridesStoredValue() {
         let baseURL = AppModel.resolvedLLMBaseURLText(
             environmentValue: "http://127.0.0.1:7777/v1",

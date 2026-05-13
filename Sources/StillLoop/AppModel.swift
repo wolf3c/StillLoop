@@ -260,6 +260,29 @@ final class AppModel: ObservableObject {
         return ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString
     }
 
+    nonisolated static func effectiveLLMBaseURLText(_ rawValue: String) -> String {
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmedValue), components.scheme != nil, components.host != nil else {
+            return trimmedValue
+        }
+
+        if components.path.isEmpty || components.path == "/" {
+            components.path = "/v1"
+        }
+
+        return components.url?.absoluteString ?? trimmedValue
+    }
+
+    nonisolated static func localHTTPBaseURLRootText(_ rawValue: String) -> String {
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmedValue), components.path == "/v1" else {
+            return trimmedValue
+        }
+
+        components.path = ""
+        return components.url?.absoluteString ?? trimmedValue
+    }
+
     nonisolated static func resolvedModelSetupSelection(useLocalLLM: Bool) -> ModelSetupSelection {
         useLocalLLM ? ModelSetupSelection(source: .manual, manualService: .localHTTP) : ModelSetupSelection()
     }
@@ -629,7 +652,8 @@ final class AppModel: ObservableObject {
     }
 
     func configureLocalLLM() {
-        guard let baseURL = URL(string: llmBaseURLText) else {
+        let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
+        guard let baseURL = URL(string: effectiveBaseURLText) else {
             localLLMStatus = "模型服务：端点无效"
             isModelConnectionUsable = false
             llmEvaluator = nil
@@ -638,7 +662,7 @@ final class AppModel: ObservableObject {
         llmEvaluator = LLMFocusEvaluator(
             engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText, apiKey: onlineAPIKeyText)
         )
-        localLLMStatus = useLocalLLM ? "模型评估：\(llmBaseURLText)" : "模型评估：已关闭，使用基础规则"
+        localLLMStatus = useLocalLLM ? "模型评估：\(effectiveBaseURLText)" : "模型评估：已关闭，使用基础规则"
         UserDefaults.standard.set(llmBaseURLText, forKey: "llmBaseURL")
         UserDefaults.standard.set(llmModelText, forKey: "llmModel")
     }
@@ -678,9 +702,10 @@ final class AppModel: ObservableObject {
         modelConnectionStatus = "正在检查连接"
         configureLocalLLM()
 
-        guard let baseURL = URL(string: llmBaseURLText) else {
+        let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
+        guard let baseURL = URL(string: effectiveBaseURLText) else {
             modelConnectionStatus = "端点无效"
-            modelConnectionDetail = "请输入完整地址，例如 http://127.0.0.1:17631/v1。"
+            modelConnectionDetail = "请输入服务根地址，例如 http://127.0.0.1:17631。StillLoop 会使用 /v1 端点。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false

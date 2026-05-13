@@ -263,11 +263,34 @@ private struct ModelSetupView: View {
 
     private var manualModelForm: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField(model.modelSetupSelection.manualService == .online ? "服务地址，例如 https://api.openai.com/v1" : "服务地址，例如 http://127.0.0.1:8080/v1", text: $model.llmBaseURLText)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: model.llmBaseURLText) { _ in
-                    model.modelConfigurationChanged()
+            VStack(alignment: .leading, spacing: 6) {
+                if model.modelSetupSelection.manualService == .localHTTP {
+                    HStack(spacing: 8) {
+                        TextField("服务根地址，例如 http://127.0.0.1:8080", text: localHTTPBaseURLRootText)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: model.llmBaseURLText) { _ in
+                                model.modelConfigurationChanged()
+                            }
+                        Text("/v1")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.regularMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                } else {
+                    TextField("服务地址，例如 https://api.openai.com/v1", text: $model.llmBaseURLText)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: model.llmBaseURLText) { _ in
+                            model.modelConfigurationChanged()
+                        }
                 }
+                Text("Supported endpoints: OpenAI-compatible /v1/models and /v1/chat/completions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             TextField("模型名称", text: $model.llmModelText)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: model.llmModelText) { _ in
@@ -315,6 +338,17 @@ private struct ModelSetupView: View {
                 }
             }
         }
+    }
+
+    private var localHTTPBaseURLRootText: Binding<String> {
+        Binding(
+            get: {
+                AppModel.localHTTPBaseURLRootText(model.llmBaseURLText)
+            },
+            set: { value in
+                model.llmBaseURLText = value
+            }
+        )
     }
 }
 
