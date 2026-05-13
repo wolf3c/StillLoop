@@ -196,7 +196,7 @@ private struct PermissionsView: View {
                 action: model.requestCameraPermission
             )
             PermissionRow(
-                title: "系统通知",
+                title: "系统通知（备用）",
                 detail: model.notificationPermission,
                 guidance: model.notificationPermissionGuidance,
                 actionTitle: model.notificationPermission == "未请求" ? "请求权限" : "打开系统设置",

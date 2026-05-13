@@ -1,0 +1,23 @@
+import XCTest
+@testable import StillLoop
+import StillLoopCore
+
+final class NudgeOverlayPresenterTests: XCTestCase {
+    func testDistractedStateUsesNoticeableOverlay() {
+        XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .distracted), .noticeable)
+    }
+
+    func testStalledProgressUsesStrongOverlay() {
+        XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .stuck), .strong)
+    }
+
+    func testAwayAndRestingStatesUseGentleOverlay() {
+        XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .away), .gentle)
+        XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .resting), .gentle)
+    }
+
+    func testOverlayDurationsIncreaseWithIntensity() {
+        XCTAssertLessThan(NudgeIntensity.gentle.displayDuration, NudgeIntensity.noticeable.displayDuration)
+        XCTAssertLessThan(NudgeIntensity.noticeable.displayDuration, NudgeIntensity.strong.displayDuration)
+    }
+}

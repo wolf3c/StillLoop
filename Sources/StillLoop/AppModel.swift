@@ -167,13 +167,13 @@ final class AppModel: ObservableObject {
     private let nudges = NudgeGenerator()
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
+    private let nudgeOverlayPresenter = NudgeOverlayPresenter()
     private var provider: ContextProvider?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
-    private var nudgePanels: [NSPanel] = []
 
     nonisolated static let screenCaptureSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
@@ -400,7 +400,6 @@ final class AppModel: ObservableObject {
     private var hasMissingPermissions: Bool {
         screenCapturePermission != "已允许"
             || cameraPermission != "已允许"
-            || !(notificationPermission == "已允许" || notificationPermission.contains("弹窗"))
     }
 
     private var hasMissingModelSetup: Bool {
@@ -970,7 +969,7 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, var latestSession = currentSession else { return false }
         if let nudge {
             lastNudge = nudge
-            sendNudge(nudge)
+            sendNudge(nudge, state: result.state)
         }
         let context = snapshots.map(\.appWindowDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
@@ -1029,74 +1028,8 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func sendNudge(_ message: String) {
-        guard isRunningAsAppBundle else {
-            showFloatingNudge(message)
-            return
-        }
-
-        let content = UNMutableNotificationContent()
-        content.title = "StillLoop"
-        content.body = message
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    private func showFloatingNudge(_ message: String) {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 116),
-            styleMask: [.titled, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "StillLoop"
-        panel.level = .floating
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-
-        let title = NSTextField(labelWithString: "StillLoop")
-        title.font = .boldSystemFont(ofSize: 16)
-        title.translatesAutoresizingMaskIntoConstraints = false
-
-        let body = NSTextField(wrappingLabelWithString: message)
-        body.font = .systemFont(ofSize: 14)
-        body.translatesAutoresizingMaskIntoConstraints = false
-
-        let button = NSButton(title: "知道了", target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .rounded
-        button.target = panel
-        button.action = #selector(NSWindow.close)
-
-        let contentView = NSView()
-        contentView.addSubview(title)
-        contentView.addSubview(body)
-        contentView.addSubview(button)
-        panel.contentView = contentView
-
-        NSLayoutConstraint.activate([
-            title.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
-            title.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
-            title.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
-            body.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            body.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            button.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            button.topAnchor.constraint(equalTo: body.bottomAnchor, constant: 12)
-        ])
-
-        if let window = NSApp.windows.first {
-            let frame = window.frame
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - 360, y: frame.maxY - 160))
-        }
-        nudgePanels.append(panel)
-        panel.makeKeyAndOrderFront(nil)
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(6))
-            panel.close()
-            nudgePanels.removeAll { $0 === panel }
-        }
+    private func sendNudge(_ message: String, state: FocusState) {
+        nudgeOverlayPresenter.show(message: message, state: state)
     }
 
     private var isRunningAsAppBundle: Bool {

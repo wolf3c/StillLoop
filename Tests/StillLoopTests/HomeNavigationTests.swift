@@ -54,6 +54,21 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.screen, .taskSetup)
     }
 
+    func testNotificationPermissionDoesNotBlockTaskSetup() {
+        let model = AppModel()
+        model.screen = .settings
+        model.status = .idle
+        model.currentSession = nil
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.notificationPermission = "未请求"
+        model.modelReadiness = .ready
+
+        model.openHome()
+
+        XCTAssertEqual(model.screen, .taskSetup)
+    }
+
     func testOpenHomeRoutesRunningSessionToFocusScreen() {
         let model = AppModel()
         model.screen = .settings
