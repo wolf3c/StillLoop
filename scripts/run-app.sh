@@ -5,13 +5,15 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/.build/StillLoop.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
 cd "$ROOT_DIR"
 swift build
 
 rm -rf "$APP_DIR"
-mkdir -p "$MACOS_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/arm64-apple-macosx/debug/StillLoop" "$MACOS_DIR/StillLoop"
+cp "$ROOT_DIR/Sources/StillLoop/Resources/StillLoop.icns" "$RESOURCES_DIR/StillLoop.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +27,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleName</key>
   <string>StillLoop</string>
   <key>CFBundleDisplayName</key>
+  <string>StillLoop</string>
+  <key>CFBundleIconFile</key>
   <string>StillLoop</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
@@ -43,4 +47,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 PLIST
 
 export STILLLOOP_SKIP_MODEL_DOWNLOAD="${STILLLOOP_SKIP_MODEL_DOWNLOAD:-1}"
+if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
+  exit 0
+fi
+
 "$MACOS_DIR/StillLoop"

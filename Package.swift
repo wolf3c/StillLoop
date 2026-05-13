@@ -14,7 +14,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "StillLoop",
-            dependencies: ["StillLoopCore"]
+            dependencies: ["StillLoopCore"],
+            resources: [
+                .process("Resources")
+            ]
         ),
         .target(name: "StillLoopCore"),
         .testTarget(
