@@ -32,7 +32,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 
 - `YYYY-MM-DD`: What went wrong. Root cause. Future rule to prevent recurrence.
 - `2026-05-13`: Added only a prose testing constraint without a runnable command. Root cause: documented intent but not the exact agent action. Future rule: when test configuration is requested, include the concrete command or environment variables agents should run.
-- `2026-05-13`: Verified model setup with `STILLLOOP_SKIP_MODEL_DOWNLOAD=1`. Root cause: used the development skip path instead of the intended local HTTP model path. Future rule: model-backed UI verification should prefill `STILLLOOP_USE_LOCAL_LLM`, `STILLLOOP_LLM_BASE_URL`, and `STILLLOOP_LLM_MODEL` without setting `STILLLOOP_SKIP_MODEL_DOWNLOAD`.
+- `2026-05-13`: Left the new skip-download launch setting out of this guide. Root cause: updated the script and test but not the reusable agent instructions. Future rule: when changing development or testing commands, update `AGENTS.md` in the same task.
 
 ## Design And Behavior Changes
 
@@ -75,6 +75,7 @@ Launch the app with the local HTTP model prefilled:
 
 ```sh
 cd /Users/wolf3c/Project/StillLoop
+STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
 STILLLOOP_LLM_MODEL=qwen3.5-0.8b \
@@ -93,7 +94,7 @@ Match the existing project style. For Swift code, prefer clear names, small sing
 
 Add focused tests for behavior changes. Place tests in the target that owns the behavior, and prefer behavior-oriented names. For UI-sensitive changes, verify the rendered state or interaction path when the project has UI test support.
 
-When testing model-backed behavior locally, use the local HTTP model endpoint `http://127.0.0.1:8080/v1` with model `qwen3.5-0.8b`. Configure local app runs to use this local HTTP model instead of downloading or relying on the built-in model.
+When testing model-backed behavior locally, use the local HTTP model endpoint `http://127.0.0.1:8080/v1` with model `qwen3.5-0.8b`. Configure local app runs with `STILLLOOP_SKIP_MODEL_DOWNLOAD=1` so tests use the local HTTP model instead of downloading or relying on the built-in model.
 
 Every completed requirement implementation must be verified in two ways before reporting it done:
 
