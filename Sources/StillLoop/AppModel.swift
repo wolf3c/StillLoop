@@ -557,18 +557,20 @@ final class AppModel: ObservableObject {
         let task = taskText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { return }
 
+        beginSession(task: task)
+
         guard useLocalLLM else {
-            beginSession(task: task)
             return
         }
 
+        let sessionID = currentSession?.id
         Task {
             let canUseModel = await checkModelConnectionNow()
+            guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return }
             guard canUseModel else {
                 routeToModelSetupForModelIssue()
                 return
             }
-            beginSession(task: task)
         }
     }
 
