@@ -5,6 +5,27 @@ import AppKit
 
 @MainActor
 final class HomeNavigationTests: XCTestCase {
+    func testWelcomeCopyLeadsWithUserValue() {
+        XCTAssertEqual(StillLoopWelcomeCopy.title, "分心时，我会轻轻把你带回当前任务")
+        XCTAssertEqual(
+            StillLoopWelcomeCopy.subtitle,
+            "先写下这段时间最想完成的一件事。之后我只在你偏离时轻轻提醒，所有判断都在本机完成。"
+        )
+        XCTAssertEqual(StillLoopWelcomeCopy.primaryActionTitle, "开始设置")
+        XCTAssertEqual(
+            StillLoopWelcomeCopy.privacyPrinciples,
+            [
+                "默认在本机处理，不上传你的屏幕、摄像头或任务内容。",
+                "只在判断需要时提醒，不持续打扰。",
+                "专注摘要保存在本机，你可以随时停止使用。"
+            ]
+        )
+    }
+
+    func testPermissionsFooterOnlyOffersContinue() {
+        XCTAssertEqual(StillLoopPermissionsCopy.footerActionTitles, ["继续"])
+    }
+
     func testMainWindowHidesNativeTitleForCustomHeader() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 590),
@@ -123,5 +144,23 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(model.shouldShowHomeNavigation)
         XCTAssertEqual(model.setupIssueIndicators, [.permissions, .model])
+    }
+
+    func testSettingsButtonIsHiddenDuringSetupFlow() {
+        let model = AppModel()
+
+        for screen in [AppModel.Screen.welcome, .permissions, .modelSetup, .settings, .privacy] {
+            model.screen = screen
+            XCTAssertFalse(model.shouldShowSettingsNavigation, "Expected settings navigation hidden on \(screen)")
+        }
+    }
+
+    func testSettingsButtonShowsAfterSetupFlow() {
+        let model = AppModel()
+
+        for screen in [AppModel.Screen.taskSetup, .focus, .review] {
+            model.screen = screen
+            XCTAssertTrue(model.shouldShowSettingsNavigation, "Expected settings navigation visible on \(screen)")
+        }
     }
 }

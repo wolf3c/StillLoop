@@ -74,8 +74,7 @@ final class AppModel: ObservableObject {
         var progress: Double? {
             switch self {
             case .ready: return 1
-            case .skipped, .paused, .failed: return nil
-            case .checking: return 0.08
+            case .skipped, .checking, .paused, .failed: return nil
             case .downloading: return nil
             }
         }
@@ -326,6 +325,15 @@ final class AppModel: ObservableObject {
 
     var shouldShowHomeNavigation: Bool {
         status != .idle || setupIssueIndicators.isEmpty || hasBypassedInitialSetup
+    }
+
+    var shouldShowSettingsNavigation: Bool {
+        switch screen {
+        case .welcome, .permissions, .modelSetup, .settings, .privacy:
+            return false
+        case .taskSetup, .focus, .review:
+            return true
+        }
     }
 
     var setupIssueIndicators: [SetupIssueIndicator] {

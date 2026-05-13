@@ -1,6 +1,22 @@
 import StillLoopCore
 import SwiftUI
 
+enum StillLoopWelcomeCopy {
+    static let title = "分心时，我会轻轻把你带回当前任务"
+    static let subtitle = "先写下这段时间最想完成的一件事。之后我只在你偏离时轻轻提醒，所有判断都在本机完成。"
+    static let primaryActionTitle = "开始设置"
+    static let privacyPrinciples = [
+        "默认在本机处理，不上传你的屏幕、摄像头或任务内容。",
+        "只在判断需要时提醒，不持续打扰。",
+        "专注摘要保存在本机，你可以随时停止使用。"
+    ]
+}
+
+enum StillLoopPermissionsCopy {
+    static let primaryActionTitle = "继续"
+    static let footerActionTitles = [primaryActionTitle]
+}
+
 struct StillLoopView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -76,7 +92,9 @@ private struct HeaderView: View {
             }
 
             Spacer()
-            Button("设置") { model.screen = .settings }
+            if model.shouldShowSettingsNavigation {
+                Button("设置") { model.screen = .settings }
+            }
         }
         .padding(.top, 36)
         .padding(.horizontal, 20)
@@ -130,17 +148,22 @@ private struct WelcomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Mac 上的本地隐私 AI 专注陪练")
+            Text(StillLoopWelcomeCopy.title)
                 .font(.system(size: 32, weight: .semibold))
-            Text("开始前写下这段时间要完成的事。StillLoop 会用轻量本地上下文判断你是否还在任务上，只在需要时温和提醒。")
+            Text(StillLoopWelcomeCopy.subtitle)
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
-                Button("开始设置") { model.screen = .permissions }
-                    .keyboardShortcut(.defaultAction)
-                Button("查看隐私原则") { model.screen = .settings }
+            Button(StillLoopWelcomeCopy.primaryActionTitle) { model.screen = .permissions }
+                .keyboardShortcut(.defaultAction)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(StillLoopWelcomeCopy.privacyPrinciples, id: \.self) { principle in
+                    Label(principle, systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(.top, 4)
             Spacer()
         }
         .padding(40)
@@ -185,12 +208,11 @@ private struct PermissionsView: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button("继续") {
+                Button(StillLoopPermissionsCopy.primaryActionTitle) {
                     model.bypassInitialSetup()
                     model.screen = .modelSetup
                 }
                     .keyboardShortcut(.defaultAction)
-                Button("隐私设置") { model.screen = .privacy }
             }
             Spacer()
         }
