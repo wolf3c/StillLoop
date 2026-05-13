@@ -507,12 +507,16 @@ final class AppModel: ObservableObject {
             evaluationLoopDescription = "等待采集样本"
             return false
         }
-        let snapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let pendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let pendingCount = pendingSnapshots.count
+        let snapshots = SnapshotSampler.select(pendingSnapshots)
         analysisPhase = .contextReady
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
-        evaluationLoopDescription = "正在分析 \(snapshots.count) 条未分析采集"
+        evaluationLoopDescription = snapshots.count == pendingCount
+            ? "正在分析 \(snapshots.count) 条未分析采集"
+            : "正在抽样分析 \(snapshots.count)/\(pendingCount) 条未分析采集"
         let result = await evaluateFocus(task: session.task, snapshots: snapshots, previousEvents: session.events)
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
@@ -536,7 +540,7 @@ final class AppModel: ObservableObject {
             at: 0
         )
         currentSession = latestSession
-        removeAnalyzedSnapshots(snapshots)
+        removeAnalyzedSnapshots(pendingSnapshots)
         analysisPhase = .committed
         try? await Task.sleep(for: .milliseconds(350))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
