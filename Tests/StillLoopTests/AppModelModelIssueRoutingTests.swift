@@ -27,12 +27,33 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         XCTAssertEqual(AppModel.ModelReadiness.ready.progress, 1)
     }
 
-    func testModelIssueRoutesToModelSetup() {
+    func testModelIssueRoutesIdleUserToModelSetup() {
         let model = AppModel()
-        model.screen = .focus
+        model.status = .idle
+        model.screen = .taskSetup
 
         model.routeToModelSetupForModelIssue()
 
         XCTAssertEqual(model.screen, .modelSetup)
+    }
+
+    func testModelIssueDoesNotInterruptRunningSession() {
+        let model = AppModel()
+        model.status = .running
+        model.screen = .focus
+
+        model.routeToModelSetupForModelIssue()
+
+        XCTAssertEqual(model.screen, .focus)
+    }
+
+    func testModelIssueDoesNotInterruptReviewScreenAfterSessionEnds() {
+        let model = AppModel()
+        model.status = .ended
+        model.screen = .review
+
+        model.routeToModelSetupForModelIssue()
+
+        XCTAssertEqual(model.screen, .review)
     }
 }

@@ -635,6 +635,9 @@ final class AppModel: ObservableObject {
     }
 
     func routeToModelSetupForModelIssue() {
+        guard status == .idle else {
+            return
+        }
         screen = .modelSetup
     }
 
