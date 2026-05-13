@@ -103,12 +103,29 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
     public var combinedText: String {
         [
             activeAppName,
-            windowTitle,
+            displayWindowTitle,
             browserTitle,
             browserURL
         ]
         .compactMap { $0 }
         .joined(separator: " ")
+    }
+
+    public var displayWindowTitle: String? {
+        let appName = activeAppName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != appName else { return nil }
+        return title
+    }
+
+    public var appWindowDisplayText: String {
+        [
+            activeAppName.trimmingCharacters(in: .whitespacesAndNewlines),
+            displayWindowTitle
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
     }
 
     public var visualSummary: String {

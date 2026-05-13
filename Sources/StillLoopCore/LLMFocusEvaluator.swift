@@ -122,9 +122,11 @@ public struct LLMFocusEvaluator {
                 var captureLines = [
                     "capture[\(index + 1)]",
                     "time: \(dateFormatter.string(from: snapshot.timestamp))",
-                    "app: \(snapshot.activeAppName)",
-                    "window: \(snapshot.windowTitle)"
+                    "app: \(snapshot.activeAppName)"
                 ]
+                if let windowTitle = snapshot.displayWindowTitle {
+                    captureLines.append("window: \(windowTitle)")
+                }
                 if let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !browserTitle.isEmpty {
                     captureLines.append("browserTitle: \(browserTitle)")
                 }

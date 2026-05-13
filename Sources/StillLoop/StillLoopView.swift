@@ -570,8 +570,13 @@ private struct AnalysisContextPanel: View {
                         .font(.headline)
                     Text(snapshot?.activeAppName ?? "等待采集")
                         .font(.title3.weight(.semibold))
-                    Text(snapshot?.windowTitle ?? "开始任务后采集真实本机上下文")
-                        .foregroundStyle(.secondary)
+                    if let windowTitle = snapshot?.displayWindowTitle {
+                        Text(windowTitle)
+                            .foregroundStyle(.secondary)
+                    } else if snapshot == nil {
+                        Text("开始任务后采集真实本机上下文")
+                            .foregroundStyle(.secondary)
+                    }
                     Text(snapshot?.visualSummary ?? "等待视觉信号")
                         .font(.caption)
                         .foregroundStyle(.secondary)

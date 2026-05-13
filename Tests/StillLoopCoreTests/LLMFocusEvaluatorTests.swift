@@ -177,6 +177,32 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(engine.flattenedPrompt.contains("browserTitle:"))
         XCTAssertFalse(engine.flattenedPrompt.contains("browserURL:"))
     }
+
+    func testPromptOmitsDuplicateWindowTitle() async throws {
+        let engine = StubEngine(response: """
+        {"state":"focused","confidence":0.9,"reason":"Working","nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "测试 StillLoop",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "Codex",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertTrue(engine.flattenedPrompt.contains("app: Codex"))
+        XCTAssertFalse(engine.flattenedPrompt.contains("window: Codex"))
+    }
 }
 
 private final class StubEngine: LocalLLMEngine {

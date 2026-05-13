@@ -882,7 +882,7 @@ final class AppModel: ObservableObject {
             lastNudge = nudge
             sendNudge(nudge)
         }
-        let context = snapshots.map { "\($0.activeAppName) · \($0.windowTitle)" }.joined(separator: " -> ")
+        let context = snapshots.map(\.appWindowDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
             FocusEvent(
                 timestamp: Date(),
