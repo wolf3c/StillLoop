@@ -131,6 +131,8 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         let secondIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "capture[2]"))
         XCTAssertLessThan(firstIndex.lowerBound, secondIndex.lowerBound)
         XCTAssertTrue(engine.flattenedPrompt.contains("time: 1970-01-01T00:00:10Z"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("browserTitle: Recommended"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("browserURL: https://example.com"))
         XCTAssertTrue(engine.flattenedPrompt.contains("visualOrder: screenshot image first, then camera image for this same capture timestamp"))
         XCTAssertTrue(engine.flattenedPrompt.contains("screenshot: available 511x332 11000B"))
         XCTAssertTrue(engine.flattenedPrompt.contains("camera: unavailable"))
@@ -148,6 +150,32 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         } else {
             XCTFail("Expected text, screenshot image, camera image content order")
         }
+    }
+
+    func testPromptOmitsMissingBrowserMetadata() async throws {
+        let engine = StubEngine(response: """
+        {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "微信",
+                    windowTitle: "当前窗口",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertFalse(engine.flattenedPrompt.contains("browserTitle:"))
+        XCTAssertFalse(engine.flattenedPrompt.contains("browserURL:"))
     }
 }
 
