@@ -6,6 +6,7 @@ import StillLoopCore
 
 final class MacLocalContextProvider: ContextProvider {
     private let cameraCapture = CameraStillCapture()
+    private let visualConfiguration = VisualCaptureConfiguration.standard
 
     func capture() async -> ContextSnapshot {
         let focusedWindow = bestFocusedWindow()
@@ -63,7 +64,11 @@ final class MacLocalContextProvider: ContextProvider {
     private func captureCompressedScreenshot() -> VisualCaptureSummary? {
         let displayID = CGMainDisplayID()
         guard let image = CGDisplayCreateImage(displayID) else { return nil }
-        return compress(image: image, maxDimension: 512, quality: 0.42)
+        return compress(
+            image: image,
+            maxDimension: visualConfiguration.screenshot.maxDimension,
+            quality: visualConfiguration.screenshot.jpegQuality
+        )
     }
 }
 
@@ -75,10 +80,10 @@ private struct VisualCaptureSummary {
     var data: Data
 }
 
-private func compress(image: CGImage, maxDimension: CGFloat, quality: CGFloat) -> VisualCaptureSummary? {
+private func compress(image: CGImage, maxDimension: Double, quality: Double) -> VisualCaptureSummary? {
     let width = CGFloat(image.width)
     let height = CGFloat(image.height)
-    let scale = min(1, maxDimension / max(width, height))
+    let scale = min(1, CGFloat(maxDimension) / max(width, height))
     let targetWidth = max(1, Int(width * scale))
     let targetHeight = max(1, Int(height * scale))
 
@@ -96,11 +101,11 @@ private func compress(image: CGImage, maxDimension: CGFloat, quality: CGFloat) -
         return nil
     }
 
-    context.interpolationQuality = .low
+    context.interpolationQuality = .medium
     context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
     guard let scaled = context.makeImage() else { return nil }
     let representation = NSBitmapImageRep(cgImage: scaled)
-    guard let data = representation.representation(using: .jpeg, properties: [.compressionFactor: quality]) else {
+    guard let data = representation.representation(using: .jpeg, properties: [.compressionFactor: CGFloat(quality)]) else {
         return nil
     }
     return VisualCaptureSummary(width: targetWidth, height: targetHeight, compressedBytes: data.count, mimeType: "image/jpeg", data: data)
@@ -169,7 +174,12 @@ private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate,
             return
         }
 
-        finish(compress(image: image, maxDimension: 384, quality: 0.38))
+        let cameraConfiguration = VisualCaptureConfiguration.standard.camera
+        finish(compress(
+            image: image,
+            maxDimension: cameraConfiguration.maxDimension,
+            quality: cameraConfiguration.jpegQuality
+        ))
     }
 
     private func finish(_ summary: VisualCaptureSummary?) {
