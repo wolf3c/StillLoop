@@ -111,34 +111,16 @@ private struct SetupIssueButtons: View {
                 switch issue {
                 case .permissions:
                     model.screen = .permissions
-                case .model:
+                case .model, .modelDownloading:
                     model.screen = .modelSetup
                 }
             } label: {
-                Label(title(for: issue), systemImage: "exclamationmark.triangle.fill")
+                Label(issue.title, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.medium))
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .help(help(for: issue))
-        }
-    }
-
-    private func title(for issue: AppModel.SetupIssueIndicator) -> String {
-        switch issue {
-        case .permissions:
-            return "缺少权限"
-        case .model:
-            return "缺少模型设置"
-        }
-    }
-
-    private func help(for issue: AppModel.SetupIssueIndicator) -> String {
-        switch issue {
-        case .permissions:
-            return "返回权限获取引导"
-        case .model:
-            return "返回模型准备"
+            .help(issue.help)
         }
     }
 }
@@ -295,8 +277,13 @@ private struct ModelSetupView: View {
         VStack(alignment: .leading, spacing: 14) {
             ModelReadinessCard()
             HStack {
-                Button("下载并继续") {
-                    model.downloadBundledModelAndContinue()
+                Button(model.modelReadiness == .ready ? "继续" : "开始下载") {
+                    if model.modelReadiness == .ready {
+                        model.bypassInitialSetup()
+                        model.screen = .taskSetup
+                    } else {
+                        model.downloadBundledModel()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -307,7 +294,7 @@ private struct ModelSetupView: View {
                     Button("继续下载") { model.startModelDownloadIfNeeded() }
                 }
             }
-            Text("点击后会直接进入新建任务页面，下载在后台继续。你仍可返回本页切换到手动配置。")
+            Text("下载会留在本页显示状态；下载完成后再继续，也可以随时切换到手动配置。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -446,7 +433,7 @@ private struct TaskSetupView: View {
             if model.modelReadiness.shouldShowInTaskSetup || model.modelReadiness.isDownloading {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("应用自带模型下载进度")
+                        Text("应用自带模型下载状态")
                             .font(.headline)
                         Spacer()
                         if model.modelReadiness.isDownloading {

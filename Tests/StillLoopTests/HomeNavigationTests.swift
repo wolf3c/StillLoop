@@ -161,6 +161,22 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.setupIssueIndicators, [.permissions, .model])
     }
 
+    func testHomeButtonShowsModelDownloadProgressInsteadOfMissingModelSetup() {
+        let model = AppModel()
+        model.status = .idle
+        model.currentSession = nil
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.notificationPermission = "未检查"
+        model.useLocalLLM = false
+        model.modelReadiness = .downloading("StillLoop.gguf")
+
+        model.bypassInitialSetup()
+
+        XCTAssertEqual(model.setupIssueIndicators, [.modelDownloading])
+        XCTAssertEqual(model.setupIssueIndicators.first?.title, "模型下载中")
+    }
+
     func testSettingsButtonIsHiddenDuringSetupFlow() {
         let model = AppModel()
 

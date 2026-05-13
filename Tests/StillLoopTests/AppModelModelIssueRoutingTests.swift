@@ -27,6 +27,16 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         XCTAssertEqual(AppModel.ModelReadiness.ready.progress, 1)
     }
 
+    func testDownloadBundledModelStaysOnModelSetupScreen() {
+        let model = AppModel()
+        model.screen = .modelSetup
+
+        model.downloadBundledModel()
+
+        XCTAssertEqual(model.screen, .modelSetup)
+        model.cancelModelDownload()
+    }
+
     func testModelIssueRoutesIdleUserToModelSetup() {
         let model = AppModel()
         model.status = .idle

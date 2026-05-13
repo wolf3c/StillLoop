@@ -63,7 +63,7 @@ final class AppModel: ObservableObject {
             case .checking:
                 return "可以先下载，也可以手动配置本地或在线模型服务。"
             case .downloading(let file):
-                return "正在下载 \(file)，你可以继续填写当前任务。"
+                return "正在下载 \(file)，下载完成后即可使用应用自带模型。"
             case .paused:
                 return "下载已停止；需要时可以重新开始下载。"
             case .failed:
@@ -108,6 +108,29 @@ final class AppModel: ObservableObject {
     enum SetupIssueIndicator: Equatable {
         case permissions
         case model
+        case modelDownloading
+
+        var title: String {
+            switch self {
+            case .permissions:
+                return "缺少权限"
+            case .model:
+                return "缺少模型设置"
+            case .modelDownloading:
+                return "模型下载中"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .permissions:
+                return "返回权限获取引导"
+            case .model:
+                return "返回模型准备"
+            case .modelDownloading:
+                return "查看模型下载状态"
+            }
+        }
     }
 
     struct PermissionPresentation: Equatable {
@@ -387,8 +410,8 @@ final class AppModel: ObservableObject {
         if hasMissingPermissions {
             indicators.append(.permissions)
         }
-        if hasMissingModelSetup {
-            indicators.append(.model)
+        if let modelIssueIndicator {
+            indicators.append(modelIssueIndicator)
         }
         return indicators
     }
@@ -403,15 +426,21 @@ final class AppModel: ObservableObject {
     }
 
     private var hasMissingModelSetup: Bool {
+        modelIssueIndicator != nil
+    }
+
+    private var modelIssueIndicator: SetupIssueIndicator? {
         if useLocalLLM {
-            return !isModelConnectionUsable
+            return isModelConnectionUsable ? nil : .model
         }
 
         switch modelReadiness {
         case .ready:
-            return false
-        case .skipped, .checking, .downloading, .paused, .failed:
-            return true
+            return nil
+        case .downloading:
+            return .modelDownloading
+        case .skipped, .checking, .paused, .failed:
+            return .model
         }
     }
 
@@ -777,12 +806,10 @@ final class AppModel: ObservableObject {
         pauseModelDownload()
     }
 
-    func downloadBundledModelAndContinue() {
+    func downloadBundledModel() {
         modelSetupSelection.source = .bundled
         useLocalLLM = false
-        bypassInitialSetup()
         startModelDownloadIfNeeded()
-        screen = .taskSetup
     }
 
     func selectManualModelService(_ service: ModelSetupSelection.ManualService) {
