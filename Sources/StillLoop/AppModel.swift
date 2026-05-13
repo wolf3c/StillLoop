@@ -153,8 +153,8 @@ final class AppModel: ObservableObject {
     @Published var unanalyzedCaptureCount = 0
     @Published private(set) var hasBypassedInitialSetup = false
     let captureCadenceSeconds: TimeInterval = 5
-    let targetEvaluationCadenceSeconds: TimeInterval = 30
-    let slowEvaluationThresholdSeconds: TimeInterval = 25
+    let targetEvaluationCadenceSeconds: TimeInterval = 15
+    let slowEvaluationThresholdSeconds: TimeInterval = 10
     let slowEvaluationRetryDelaySeconds: TimeInterval = 5
 
     private let evaluator = FocusEvaluator()
