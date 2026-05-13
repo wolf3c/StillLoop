@@ -100,6 +100,11 @@ final class AppModel: ObservableObject {
         case openSettings
     }
 
+    enum SystemSettingsOpenAttempt: Equatable {
+        case workspaceURL(String)
+        case systemOpen(String)
+    }
+
     enum SetupIssueIndicator: Equatable {
         case permissions
         case model
@@ -180,9 +185,17 @@ final class AppModel: ObservableObject {
     ]
 
     nonisolated static let systemSettingsBundleIdentifier = "com.apple.systempreferences"
+    nonisolated static let systemSettingsApplicationPath = "/System/Applications/System Settings.app"
 
     nonisolated static func systemOpenArguments(for urlString: String) -> [String] {
         ["-b", systemSettingsBundleIdentifier, urlString]
+    }
+
+    nonisolated static func systemSettingsOpenAttempts(for urlString: String) -> [SystemSettingsOpenAttempt] {
+        [
+            .workspaceURL(urlString),
+            .systemOpen(urlString)
+        ]
     }
 
     nonisolated static func cameraPermissionPresentation(for status: AVAuthorizationStatus) -> PermissionPresentation {
@@ -471,19 +484,25 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func openSystemSettings(_ urls: [String]) -> Bool {
         for urlString in urls {
-            let openResult = openWithSystemOpen(urlString)
-            if openResult.succeeded {
-                permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
-                activateSystemSettingsSoon()
-                return true
+            for attempt in AppModel.systemSettingsOpenAttempts(for: urlString) {
+                switch attempt {
+                case .workspaceURL(let urlString):
+                    guard let url = URL(string: urlString) else { continue }
+                    if NSWorkspace.shared.open(url) {
+                        permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
+                        activateSystemSettingsSoon()
+                        return true
+                    }
+                case .systemOpen(let urlString):
+                    let openResult = openWithSystemOpen(urlString)
+                    if openResult.succeeded {
+                        permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
+                        activateSystemSettingsSoon()
+                        return true
+                    }
+                    permissionOpenStatus = openResult.message
+                }
             }
-            guard let url = URL(string: urlString) else { continue }
-            if NSWorkspace.shared.open(url) {
-                permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
-                activateSystemSettingsSoon()
-                return true
-            }
-            permissionOpenStatus = openResult.message
         }
         if permissionOpenStatus.isEmpty {
             permissionOpenStatus = "无法自动打开系统设置，请按上方路径手动打开。"
@@ -518,11 +537,19 @@ final class AppModel: ObservableObject {
     private func activateSystemSettingsSoon() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
-            NSRunningApplication.runningApplications(
+            if let app = NSRunningApplication.runningApplications(
                 withBundleIdentifier: AppModel.systemSettingsBundleIdentifier
+            ).first {
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                return
+            }
+
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            _ = try? await NSWorkspace.shared.openApplication(
+                at: URL(fileURLWithPath: AppModel.systemSettingsApplicationPath),
+                configuration: configuration
             )
-            .first?
-            .activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
         }
     }
 

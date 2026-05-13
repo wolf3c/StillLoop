@@ -50,6 +50,10 @@ final class PermissionPresentationTests: XCTestCase {
         XCTAssertEqual(AppModel.systemSettingsBundleIdentifier, "com.apple.systempreferences")
     }
 
+    func testSystemSettingsApplicationPathTargetsSystemSettingsApp() {
+        XCTAssertEqual(AppModel.systemSettingsApplicationPath, "/System/Applications/System Settings.app")
+    }
+
     func testSystemOpenArgumentsTargetSystemSettingsBundle() {
         XCTAssertEqual(
             AppModel.systemOpenArguments(for: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"),
@@ -57,6 +61,16 @@ final class PermissionPresentationTests: XCTestCase {
                 "-b",
                 "com.apple.systempreferences",
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+            ]
+        )
+    }
+
+    func testSystemSettingsOpenAttemptsPreferWorkspaceURLBeforeSystemOpenFallback() {
+        XCTAssertEqual(
+            AppModel.systemSettingsOpenAttempts(for: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"),
+            [
+                .workspaceURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"),
+                .systemOpen("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
             ]
         )
     }
