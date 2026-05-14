@@ -5,22 +5,34 @@ import Foundation
 import StillLoopCore
 
 final class MacLocalContextProvider: ContextProvider {
-    private let cameraCapture = CameraStillCapture()
-    private let visualConfiguration = VisualCaptureConfiguration.standard
+    private let browserMetadataReader: BrowserTabMetadataReading
+    private let focusedWindowReader: FocusedWindowReading
+    private let visualCapture: VisualCapture
+
+    init(
+        browserMetadataReader: BrowserTabMetadataReading = AppleScriptBrowserTabMetadataReader(),
+        focusedWindowReader: FocusedWindowReading = CGWindowFocusedWindowReader(),
+        visualCapture: VisualCapture = SystemVisualCapture()
+    ) {
+        self.browserMetadataReader = browserMetadataReader
+        self.focusedWindowReader = focusedWindowReader
+        self.visualCapture = visualCapture
+    }
 
     func capture() async -> ContextSnapshot {
-        let focusedWindow = bestFocusedWindow()
+        let focusedWindow = focusedWindowReader.bestFocusedWindow()
         let appName = focusedWindow.appName
         let windowTitle = focusedWindow.title
-        let screenshot = captureCompressedScreenshot()
-        let camera = await cameraCapture.capture()
+        let browserMetadata = browserMetadataReader.currentTabMetadata(for: appName)
+        let screenshot = visualCapture.captureCompressedScreenshot()
+        let camera = await visualCapture.captureCameraStill()
 
         return ContextSnapshot(
             timestamp: Date(),
             activeAppName: appName,
             windowTitle: windowTitle,
-            browserTitle: nil,
-            browserURL: nil,
+            browserTitle: browserMetadata?.title,
+            browserURL: browserMetadata?.url,
             screenshotAvailable: screenshot != nil,
             cameraFrameAvailable: camera != nil,
             screenshotPixelWidth: screenshot?.width,
@@ -35,14 +47,25 @@ final class MacLocalContextProvider: ContextProvider {
             cameraData: camera?.data
         )
     }
+}
 
-    private func bestFocusedWindow() -> (appName: String, title: String) {
+struct FocusedWindow: Equatable {
+    var appName: String
+    var title: String
+}
+
+protocol FocusedWindowReading {
+    func bestFocusedWindow() -> FocusedWindow
+}
+
+struct CGWindowFocusedWindowReader: FocusedWindowReading {
+    func bestFocusedWindow() -> FocusedWindow {
         let frontmostApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
-            return (frontmostApp, "当前窗口")
+            return FocusedWindow(appName: frontmostApp, title: "当前窗口")
         }
 
-        let visibleWindows = windows.compactMap { window -> (appName: String, title: String)? in
+        let visibleWindows = windows.compactMap { window -> FocusedWindow? in
             guard
                 let ownerName = window[kCGWindowOwnerName as String] as? String,
                 let layer = window[kCGWindowLayer as String] as? Int,
@@ -51,17 +74,115 @@ final class MacLocalContextProvider: ContextProvider {
                 return nil
             }
             let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (ownerName, title?.isEmpty == false ? title! : "当前窗口")
+            return FocusedWindow(appName: ownerName, title: title?.isEmpty == false ? title! : "当前窗口")
         }
 
         if frontmostApp != "StillLoop" {
-            return visibleWindows.first { $0.appName == frontmostApp } ?? (frontmostApp, "当前窗口")
+            return visibleWindows.first { $0.appName == frontmostApp } ?? FocusedWindow(appName: frontmostApp, title: "当前窗口")
         }
 
-        return visibleWindows.first { $0.appName != "StillLoop" } ?? (frontmostApp, "StillLoop")
+        return visibleWindows.first { $0.appName != "StillLoop" } ?? FocusedWindow(appName: frontmostApp, title: "StillLoop")
+    }
+}
+
+struct BrowserTabMetadata: Equatable {
+    var title: String
+    var url: String
+}
+
+protocol BrowserTabMetadataReading {
+    func currentTabMetadata(for appName: String) -> BrowserTabMetadata?
+}
+
+struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
+    func currentTabMetadata(for appName: String) -> BrowserTabMetadata? {
+        guard let script = script(for: appName) else { return nil }
+        var error: NSDictionary?
+        let output = NSAppleScript(source: script)?.executeAndReturnError(&error).stringValue
+        guard error == nil else { return nil }
+        return metadata(from: output)
     }
 
-    private func captureCompressedScreenshot() -> VisualCaptureSummary? {
+    private func script(for appName: String) -> String? {
+        let quotedAppName = appleScriptStringLiteral(appName)
+        if Self.chromiumBrowserNames.contains(appName) {
+            return """
+            tell application \(quotedAppName)
+                if (count of windows) is 0 then return ""
+                set pageTitle to ""
+                set pageURL to ""
+                try
+                    set pageTitle to title of active tab of front window
+                end try
+                try
+                    set pageURL to URL of active tab of front window
+                end try
+                return pageTitle & linefeed & pageURL
+            end tell
+            """
+        }
+
+        if Self.safariBrowserNames.contains(appName) {
+            return """
+            tell application \(quotedAppName)
+                if (count of documents) is 0 then return ""
+                set pageTitle to ""
+                set pageURL to ""
+                try
+                    set pageTitle to name of front document
+                end try
+                try
+                    set pageURL to URL of front document
+                end try
+                return pageTitle & linefeed & pageURL
+            end tell
+            """
+        }
+
+        return nil
+    }
+
+    private func metadata(from output: String?) -> BrowserTabMetadata? {
+        guard let output else { return nil }
+        let lines = output
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard lines.count >= 2 else { return nil }
+        let title = lines[0]
+        let url = lines[1]
+        guard !title.isEmpty || !url.isEmpty else { return nil }
+        return BrowserTabMetadata(title: title, url: url)
+    }
+
+    private func appleScriptStringLiteral(_ value: String) -> String {
+        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
+    }
+
+    private static let chromiumBrowserNames: Set<String> = [
+        "Google Chrome",
+        "Google Chrome Canary",
+        "Chromium",
+        "Microsoft Edge",
+        "Brave Browser",
+        "Arc"
+    ]
+
+    private static let safariBrowserNames: Set<String> = [
+        "Safari",
+        "Safari Technology Preview"
+    ]
+}
+
+protocol VisualCapture {
+    func captureCompressedScreenshot() -> VisualCaptureSummary?
+    func captureCameraStill() async -> VisualCaptureSummary?
+}
+
+struct SystemVisualCapture: VisualCapture {
+    private let cameraCapture = CameraStillCapture()
+    private let visualConfiguration = VisualCaptureConfiguration.standard
+
+    func captureCompressedScreenshot() -> VisualCaptureSummary? {
         let displayID = CGMainDisplayID()
         guard let image = CGDisplayCreateImage(displayID) else { return nil }
         return compress(
@@ -70,9 +191,13 @@ final class MacLocalContextProvider: ContextProvider {
             quality: visualConfiguration.screenshot.jpegQuality
         )
     }
+
+    func captureCameraStill() async -> VisualCaptureSummary? {
+        await cameraCapture.capture()
+    }
 }
 
-private struct VisualCaptureSummary {
+struct VisualCaptureSummary {
     var width: Int
     var height: Int
     var compressedBytes: Int

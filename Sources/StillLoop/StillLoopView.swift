@@ -565,6 +565,21 @@ private struct AnalysisContextPanel: View {
                         Text("开始任务后采集真实本机上下文")
                             .foregroundStyle(.secondary)
                     }
+                    if let browserTitle = snapshot?.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !browserTitle.isEmpty {
+                        Text(browserTitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if let browserURL = snapshot?.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !browserURL.isEmpty {
+                        Text(browserURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     Text(snapshot?.visualSummary ?? "等待视觉信号")
                         .font(.caption)
                         .foregroundStyle(.secondary)

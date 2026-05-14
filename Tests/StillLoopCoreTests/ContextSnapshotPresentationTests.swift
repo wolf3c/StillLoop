@@ -33,4 +33,25 @@ final class ContextSnapshotPresentationTests: XCTestCase {
         XCTAssertEqual(snapshot.displayWindowTitle, "StillLoop onboarding review")
         XCTAssertEqual(snapshot.combinedText, "Codex StillLoop onboarding review")
     }
+
+    func testAppWindowDisplayTextIncludesBrowserTitleAndURL() {
+        let snapshot = ContextSnapshot(
+            timestamp: Date(),
+            activeAppName: "Google Chrome",
+            windowTitle: "当前窗口",
+            browserTitle: "OpenAI Platform",
+            browserURL: "https://platform.openai.com/docs",
+            screenshotAvailable: false,
+            cameraFrameAvailable: false
+        )
+
+        XCTAssertEqual(
+            snapshot.appWindowDisplayText,
+            "Google Chrome · 当前窗口 · OpenAI Platform · https://platform.openai.com/docs"
+        )
+        XCTAssertEqual(
+            snapshot.combinedText,
+            "Google Chrome 当前窗口 OpenAI Platform https://platform.openai.com/docs"
+        )
+    }
 }

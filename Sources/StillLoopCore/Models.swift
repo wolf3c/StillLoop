@@ -121,10 +121,17 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
     public var appWindowDisplayText: String {
         [
             activeAppName.trimmingCharacters(in: .whitespacesAndNewlines),
-            displayWindowTitle
+            displayWindowTitle,
+            browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+            browserURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
+        .reduce(into: [String]()) { parts, part in
+            if !parts.contains(part) {
+                parts.append(part)
+            }
+        }
         .joined(separator: " · ")
     }
 
