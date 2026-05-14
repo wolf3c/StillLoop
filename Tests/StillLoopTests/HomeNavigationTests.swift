@@ -5,6 +5,17 @@ import AppKit
 
 @MainActor
 final class HomeNavigationTests: XCTestCase {
+    private var isolatedDefaults: UserDefaults {
+        let suiteName = "StillLoopTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private func makeModel() -> AppModel {
+        AppModel(userDefaults: isolatedDefaults)
+    }
+
     func testWelcomeCopyLeadsWithUserValue() {
         XCTAssertEqual(StillLoopWelcomeCopy.title, "分心时，我会轻轻把你带回当前任务")
         XCTAssertEqual(
@@ -49,7 +60,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeRoutesIdleUserToTaskSetup() {
-        let model = AppModel()
+        let model = makeModel()
         model.screen = .settings
         model.status = .idle
         model.currentSession = nil
@@ -63,7 +74,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeRoutesRunningSessionToFocusScreen() {
-        let model = AppModel()
+        let model = makeModel()
         model.screen = .settings
         model.status = .running
         model.currentSession = FocusSession(
@@ -80,7 +91,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeRoutesPausedSessionToFocusScreen() {
-        let model = AppModel()
+        let model = makeModel()
         model.screen = .settings
         model.status = .paused
         model.currentSession = FocusSession(
@@ -97,7 +108,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeRoutesEndedSessionToReviewScreen() {
-        let model = AppModel()
+        let model = makeModel()
         model.screen = .modelSetup
         model.status = .ended
         model.currentSession = FocusSession(
@@ -114,7 +125,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeKeepsFirstRunPermissionGuideBeforeTaskSetup() {
-        let model = AppModel()
+        let model = makeModel()
         model.screen = .settings
         model.status = .idle
         model.currentSession = nil
@@ -126,8 +137,59 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.screen, .permissions)
     }
 
+    func testInitialLaunchShowsWelcomeOnlyBeforeSetupHasBeenCompleted() {
+        XCTAssertEqual(
+            AppModel.initialLaunchScreen(
+                hasCompletedInitialSetup: false,
+                setupIssueIndicators: []
+            ),
+            .welcome
+        )
+        XCTAssertEqual(
+            AppModel.initialLaunchScreen(
+                hasCompletedInitialSetup: true,
+                setupIssueIndicators: []
+            ),
+            .taskSetup
+        )
+    }
+
+    func testInitialLaunchRoutesCompletedSetupToMissingConfigurationOnlyWhenNeeded() {
+        XCTAssertEqual(
+            AppModel.initialLaunchScreen(
+                hasCompletedInitialSetup: true,
+                setupIssueIndicators: [.permissions]
+            ),
+            .permissions
+        )
+        XCTAssertEqual(
+            AppModel.initialLaunchScreen(
+                hasCompletedInitialSetup: true,
+                setupIssueIndicators: [.model]
+            ),
+            .modelSetup
+        )
+        XCTAssertEqual(
+            AppModel.initialLaunchScreen(
+                hasCompletedInitialSetup: true,
+                setupIssueIndicators: [.modelDownloading]
+            ),
+            .modelSetup
+        )
+    }
+
+    func testCompletingInitialSetupPersistsAcrossLaunches() {
+        let defaults = isolatedDefaults
+        let model = AppModel(userDefaults: defaults)
+
+        model.bypassInitialSetup()
+        let relaunched = AppModel(userDefaults: defaults)
+
+        XCTAssertTrue(relaunched.hasBypassedInitialSetup)
+    }
+
     func testHomeButtonIsHiddenBeforeInitialSetupIsBypassed() {
-        let model = AppModel()
+        let model = makeModel()
         model.status = .idle
         model.currentSession = nil
         model.screenCapturePermission = "未检查"
@@ -138,7 +200,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testHomeButtonShowsSetupIssuesAfterInitialSetupIsBypassed() {
-        let model = AppModel()
+        let model = makeModel()
         model.status = .idle
         model.currentSession = nil
         model.screenCapturePermission = "未检查"
@@ -152,7 +214,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testHomeButtonShowsModelDownloadProgressInsteadOfMissingModelSetup() {
-        let model = AppModel()
+        let model = makeModel()
         model.status = .idle
         model.currentSession = nil
         model.screenCapturePermission = "已允许"
@@ -166,8 +228,18 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.setupIssueIndicators.first?.title, "模型下载中")
     }
 
+    func testManualModelConfigurationDoesNotBlockLaunchBeforeConnectionCheck() {
+        let model = AppModel(userDefaults: isolatedDefaults)
+        model.useLocalLLM = true
+        model.llmBaseURLText = "http://127.0.0.1:17631"
+        model.llmModelText = "qwen-local"
+        model.isModelConnectionUsable = false
+
+        XCTAssertFalse(model.setupIssueIndicators.contains(.model))
+    }
+
     func testSettingsButtonIsHiddenDuringSetupFlow() {
-        let model = AppModel()
+        let model = makeModel()
 
         for screen in [AppModel.Screen.welcome, .permissions, .modelSetup, .settings, .privacy] {
             model.screen = screen
@@ -176,7 +248,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testSettingsButtonShowsAfterSetupFlow() {
-        let model = AppModel()
+        let model = makeModel()
 
         for screen in [AppModel.Screen.taskSetup, .focus, .review] {
             model.screen = screen

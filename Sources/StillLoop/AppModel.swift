@@ -158,24 +158,16 @@ final class AppModel: ObservableObject {
     @Published var summaries: [SessionSummary] = []
     @Published var modelStatus = "应用自带模型：未检查"
     @Published var modelReadiness: ModelReadiness = .checking
-    @Published var modelSetupSelection = AppModel.resolvedModelSetupSelection(
-        useLocalLLM: ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
-    )
+    @Published var modelSetupSelection = ModelSetupSelection()
     @Published var screenCapturePermission = "未检查"
     @Published var screenCapturePermissionGuidance = ""
     @Published var cameraPermission = "未检查"
     @Published var cameraPermissionGuidance = ""
     @Published var permissionOpenStatus = ""
-    @Published var useLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
+    @Published var useLocalLLM = false
     @Published var localLLMStatus = "模型评估：基础规则"
-    @Published var llmBaseURLText = AppModel.resolvedLLMBaseURLText(
-        environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
-        storedValue: UserDefaults.standard.string(forKey: "llmBaseURL")
-    )
-    @Published var llmModelText = AppModel.resolvedLLMModelText(
-        environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
-        storedValue: UserDefaults.standard.string(forKey: "llmModel")
-    )
+    @Published var llmBaseURLText = ""
+    @Published var llmModelText = ""
     @Published var onlineAPIKeyText = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
@@ -196,6 +188,7 @@ final class AppModel: ObservableObject {
     private let evaluator = FocusEvaluator()
     private var llmEvaluator: LLMFocusEvaluator?
     private let nudges = NudgeGenerator()
+    private let userDefaults: UserDefaults
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
     private let nudgeOverlayPresenter = NudgeOverlayPresenter()
@@ -208,6 +201,13 @@ final class AppModel: ObservableObject {
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
     var startPermissionDecisionOverride: StartPermissionDecision?
+
+    private enum DefaultsKey {
+        static let hasCompletedInitialSetup = "hasCompletedInitialSetup"
+        static let useLocalLLM = "useLocalLLM"
+        static let llmBaseURL = "llmBaseURL"
+        static let llmModel = "llmModel"
+    }
 
     nonisolated static let screenCaptureSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
@@ -375,7 +375,30 @@ final class AppModel: ObservableObject {
         useLocalLLM ? ModelSetupSelection(source: .manual, manualService: .localHTTP) : ModelSetupSelection()
     }
 
-    init() {
+    nonisolated static func initialLaunchScreen(
+        hasCompletedInitialSetup: Bool,
+        setupIssueIndicators: [SetupIssueIndicator]
+    ) -> Screen {
+        guard hasCompletedInitialSetup else { return .welcome }
+        guard let firstIssue = setupIssueIndicators.first else { return .taskSetup }
+        return firstIssue == .permissions ? .permissions : .modelSetup
+    }
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        let localLLMEnabled = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
+            || (userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true)
+        useLocalLLM = localLLMEnabled
+        modelSetupSelection = AppModel.resolvedModelSetupSelection(useLocalLLM: localLLMEnabled)
+        llmBaseURLText = AppModel.resolvedLLMBaseURLText(
+            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
+            storedValue: userDefaults.string(forKey: DefaultsKey.llmBaseURL)
+        )
+        llmModelText = AppModel.resolvedLLMModelText(
+            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
+            storedValue: userDefaults.string(forKey: DefaultsKey.llmModel)
+        )
+        hasBypassedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("StillLoop", isDirectory: true)
@@ -389,6 +412,7 @@ final class AppModel: ObservableObject {
         summaries = (try? store.loadSummaries()) ?? []
         refreshPermissionStatuses()
         refreshModelStatus()
+        routeInitialLaunch()
     }
 
     func openHome() {
@@ -432,6 +456,7 @@ final class AppModel: ObservableObject {
 
     func bypassInitialSetup() {
         hasBypassedInitialSetup = true
+        userDefaults.set(true, forKey: DefaultsKey.hasCompletedInitialSetup)
     }
 
     private var hasMissingPermissions: Bool {
@@ -445,7 +470,7 @@ final class AppModel: ObservableObject {
 
     private var modelIssueIndicator: SetupIssueIndicator? {
         if useLocalLLM {
-            return isModelConnectionUsable ? nil : .model
+            return hasManualModelConfiguration ? nil : .model
         }
 
         switch modelReadiness {
@@ -456,6 +481,18 @@ final class AppModel: ObservableObject {
         case .skipped, .checking, .paused, .failed:
             return .model
         }
+    }
+
+    private var hasManualModelConfiguration: Bool {
+        !llmBaseURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !llmModelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func routeInitialLaunch() {
+        screen = AppModel.initialLaunchScreen(
+            hasCompletedInitialSetup: hasBypassedInitialSetup,
+            setupIssueIndicators: setupIssueIndicators
+        )
     }
 
     func requestScreenCapturePermission() {
@@ -813,6 +850,7 @@ final class AppModel: ObservableObject {
     func downloadBundledModel() {
         modelSetupSelection.source = .bundled
         useLocalLLM = false
+        userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
         startModelDownloadIfNeeded()
     }
 
@@ -849,8 +887,8 @@ final class AppModel: ObservableObject {
 
     private func persistManualModelConfiguration() {
         guard useLocalLLM || modelSetupSelection.source == .manual else { return }
-        UserDefaults.standard.set(llmBaseURLText, forKey: "llmBaseURL")
-        UserDefaults.standard.set(llmModelText, forKey: "llmModel")
+        userDefaults.set(llmBaseURLText, forKey: DefaultsKey.llmBaseURL)
+        userDefaults.set(llmModelText, forKey: DefaultsKey.llmModel)
     }
 
     func checkModelConnection() {
@@ -955,6 +993,7 @@ final class AppModel: ObservableObject {
             let result = try await engine.checkModelReadiness()
             isModelConnectionUsable = result.modelFound && result.chatCompletionWorks
             useLocalLLM = true
+            userDefaults.set(true, forKey: DefaultsKey.useLocalLLM)
             configureLocalLLM()
             modelConnectionStatus = "模型可用"
             modelConnectionDetail = modelConnectionDetail(for: result)
