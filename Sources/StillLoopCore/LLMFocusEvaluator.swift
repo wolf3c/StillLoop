@@ -111,7 +111,7 @@ public struct LLMFocusEvaluator {
 
         State definitions (choose exactly one):
         - focused: camera and context are both consistent with attention to the current task.
-        - uncertain: mild drift (engagement and task-match weakened but not clearly off-task).
+        - uncertain: temporary, recoverable attention drift; engagement or task-match is weaker, but signals are not clearly off-task and task intent still appears plausible.
         - distracted: one of:
           a) engagement is present but content is clearly unrelated to the task;
           b) engagement is clearly lost while content shows unrelated task-unrelated activity;
