@@ -26,7 +26,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.confidence, 0.91)
         XCTAssertEqual(result.reason, "Video site is unrelated")
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "先回到写方案。")
+        XCTAssertEqual(result.nudge, "回到：写产品方案")
     }
 
     func testBuildsPromptWithRecentHistory() async throws {
@@ -114,7 +114,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .away)
-        XCTAssertEqual(result.nudge, "回来后继续。")
+        XCTAssertEqual(result.nudge, "回来继续：优化 stillloop")
     }
 
     func testFocusedModelJudgementSuppressesNudge() async throws {
@@ -133,6 +133,21 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertNil(result.nudge)
     }
 
+    func testModelNudgeIsReducedToTaskReturnCue() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"uncertain","confidence":0.48,"reason":"Still related but drifting","nudge":"您正在与任务保持联系，但需要更专注地查看文档。"}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记和今日计划",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "回到：写日记和今日计划")
+    }
+
     func testUncertainModelJudgementUsesDefaultGentleNudgeWhenMissing() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"uncertain","confidence":0.48,"reason":"Activity is ambiguous","nudge":null}
@@ -146,7 +161,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(result.state, .uncertain)
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "轻轻拉回：写日记并规划事务。")
+        XCTAssertEqual(result.nudge, "回到：写日记并规划事务")
     }
 
     func testPromptIncludesChronologicalCaptureTimeline() async throws {

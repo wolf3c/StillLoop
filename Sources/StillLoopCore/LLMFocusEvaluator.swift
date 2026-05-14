@@ -86,16 +86,15 @@ public struct LLMFocusEvaluator {
     }
 
     private func normalizedNudge(from response: ModelResponse, task: String) -> String? {
-        let nudge = response.nudge?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let usableNudge = nudge?.isEmpty == false ? nudge : nil
+        let nudgeGenerator = NudgeGenerator()
 
         switch response.state {
         case .focused:
             return nil
         case .uncertain:
-            return usableNudge ?? NudgeGenerator().message(for: .uncertain, task: task)
+            return nudgeGenerator.message(for: .uncertain, task: task)
         case .distracted, .stuck, .resting, .away:
-            return usableNudge
+            return response.nudge == nil ? nil : nudgeGenerator.message(for: response.state, task: task)
         }
     }
 

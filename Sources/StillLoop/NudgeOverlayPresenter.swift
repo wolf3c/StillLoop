@@ -16,17 +16,17 @@ enum NudgeIntensity: Equatable {
 
     var width: CGFloat {
         switch self {
-        case .gentle: return 340
-        case .noticeable: return 420
-        case .strong: return 500
+        case .gentle: return 320
+        case .noticeable: return 360
+        case .strong: return 390
         }
     }
 
     var height: CGFloat {
         switch self {
-        case .gentle: return 58
-        case .noticeable: return 74
-        case .strong: return 92
+        case .gentle: return 52
+        case .noticeable: return 58
+        case .strong: return 64
         }
     }
 
@@ -111,19 +111,14 @@ final class NudgeOverlayPresenter {
         accent.layer?.backgroundColor = intensity.accentColor.cgColor
         accent.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: intensity.title)
-        title.font = .systemFont(ofSize: 12, weight: .semibold)
-        title.textColor = .secondaryLabelColor
-        title.translatesAutoresizingMaskIntoConstraints = false
-
         let body = NSTextField(wrappingLabelWithString: message)
-        body.font = .systemFont(ofSize: intensity == .gentle ? 15 : 17, weight: .semibold)
+        body.font = .systemFont(ofSize: intensity == .gentle ? 17 : 19, weight: .semibold)
         body.textColor = .labelColor
-        body.maximumNumberOfLines = intensity == .strong ? 2 : 1
+        body.maximumNumberOfLines = 1
+        body.lineBreakMode = .byTruncatingTail
         body.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(accent)
-        container.addSubview(title)
         container.addSubview(body)
 
         NSLayoutConstraint.activate([
@@ -132,13 +127,9 @@ final class NudgeOverlayPresenter {
             accent.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             accent.widthAnchor.constraint(equalToConstant: intensity == .gentle ? 4 : 6),
 
-            title.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 16),
-            title.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
-            title.topAnchor.constraint(equalTo: container.topAnchor, constant: intensity == .gentle ? 9 : 12),
-
-            body.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            body.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3)
+            body.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 16),
+            body.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+            body.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
         return container
