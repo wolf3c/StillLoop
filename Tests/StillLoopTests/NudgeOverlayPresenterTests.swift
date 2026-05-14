@@ -20,4 +20,14 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertLessThan(NudgeIntensity.gentle.displayDuration, NudgeIntensity.noticeable.displayDuration)
         XCTAssertLessThan(NudgeIntensity.noticeable.displayDuration, NudgeIntensity.strong.displayDuration)
     }
+
+    func testDistractedAndStuckOverlaysStayVisibleLongEnoughToNotice() {
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.noticeable.displayDuration, 8)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.strong.displayDuration, 12)
+    }
+
+    func testDistractedAndStuckOverlaysUseHighVisibilityWindowLevel() {
+        XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .statusBar)
+        XCTAssertEqual(NudgeIntensity.strong.windowLevel, .statusBar)
+    }
 }

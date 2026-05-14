@@ -91,9 +91,9 @@ public struct LLMFocusEvaluator {
         switch response.state {
         case .focused:
             return nil
-        case .uncertain:
-            return nudgeGenerator.message(for: .uncertain, task: task)
-        case .distracted, .stuck, .resting, .away:
+        case .uncertain, .distracted, .stuck:
+            return nudgeGenerator.message(for: response.state, task: task)
+        case .resting, .away:
             return response.nudge == nil ? nil : nudgeGenerator.message(for: response.state, task: task)
         }
     }

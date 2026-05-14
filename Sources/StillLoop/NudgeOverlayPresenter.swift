@@ -9,8 +9,17 @@ enum NudgeIntensity: Equatable {
     var displayDuration: TimeInterval {
         switch self {
         case .gentle: return 2.4
-        case .noticeable: return 3.8
-        case .strong: return 6.0
+        case .noticeable: return 8.0
+        case .strong: return 12.0
+        }
+    }
+
+    var windowLevel: NSWindow.Level {
+        switch self {
+        case .gentle:
+            return .floating
+        case .noticeable, .strong:
+            return .statusBar
         }
     }
 
@@ -80,10 +89,10 @@ final class NudgeOverlayPresenter {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
+        panel.level = intensity.windowLevel
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true

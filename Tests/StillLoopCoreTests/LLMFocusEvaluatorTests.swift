@@ -164,6 +164,38 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.nudge, "回到：写日记并规划事务")
     }
 
+    func testDistractedModelJudgementUsesDefaultNudgeWhenMissing() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"distracted","confidence":0.88,"reason":"Current app is unrelated","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "优化 stillloop",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "回到：优化 stillloop")
+    }
+
+    func testStuckModelJudgementUsesDefaultNudgeWhenMissing() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"stuck","confidence":0.73,"reason":"No visible progress","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "优化 stillloop",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .stuck)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "回到：优化 stillloop")
+    }
+
     func testPromptIncludesChronologicalCaptureTimeline() async throws {
         let engine = StubEngine(response: """
         {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
