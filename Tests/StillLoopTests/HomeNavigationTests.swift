@@ -46,22 +46,6 @@ final class HomeNavigationTests: XCTestCase {
         model.currentSession = nil
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
-        model.notificationPermission = "已允许"
-        model.modelReadiness = .ready
-
-        model.openHome()
-
-        XCTAssertEqual(model.screen, .taskSetup)
-    }
-
-    func testNotificationPermissionDoesNotBlockTaskSetup() {
-        let model = AppModel()
-        model.screen = .settings
-        model.status = .idle
-        model.currentSession = nil
-        model.screenCapturePermission = "已允许"
-        model.cameraPermission = "已允许"
-        model.notificationPermission = "未请求"
         model.modelReadiness = .ready
 
         model.openHome()
@@ -127,7 +111,6 @@ final class HomeNavigationTests: XCTestCase {
         model.currentSession = nil
         model.screenCapturePermission = "未检查"
         model.cameraPermission = "未检查"
-        model.notificationPermission = "未检查"
 
         model.openHome()
 
@@ -140,7 +123,6 @@ final class HomeNavigationTests: XCTestCase {
         model.currentSession = nil
         model.screenCapturePermission = "未检查"
         model.cameraPermission = "未检查"
-        model.notificationPermission = "未检查"
         model.modelReadiness = .checking
 
         XCTAssertFalse(model.shouldShowHomeNavigation)
@@ -152,7 +134,6 @@ final class HomeNavigationTests: XCTestCase {
         model.currentSession = nil
         model.screenCapturePermission = "未检查"
         model.cameraPermission = "已允许"
-        model.notificationPermission = "未检查"
         model.modelReadiness = .checking
 
         model.bypassInitialSetup()
@@ -167,7 +148,6 @@ final class HomeNavigationTests: XCTestCase {
         model.currentSession = nil
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
-        model.notificationPermission = "未检查"
         model.useLocalLLM = false
         model.modelReadiness = .downloading("StillLoop.gguf")
 

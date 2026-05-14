@@ -177,14 +177,6 @@ private struct PermissionsView: View {
                 isAllowed: model.cameraPermission == "已允许",
                 action: model.requestCameraPermission
             )
-            PermissionRow(
-                title: "系统通知（备用）",
-                detail: model.notificationPermission,
-                guidance: model.notificationPermissionGuidance,
-                actionTitle: model.notificationPermission == "未请求" ? "请求权限" : "打开系统设置",
-                isAllowed: model.notificationPermission == "已允许" || model.notificationPermission.contains("弹窗"),
-                action: model.requestNotificationPermission
-            )
             if !model.permissionOpenStatus.isEmpty {
                 Text(model.permissionOpenStatus)
                     .font(.caption)

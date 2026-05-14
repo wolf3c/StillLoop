@@ -1,9 +1,20 @@
 import AVFoundation
-import UserNotifications
 import XCTest
 @testable import StillLoop
 
 final class PermissionPresentationTests: XCTestCase {
+    func testNotificationPermissionIsNotRequestedBySetupFlow() throws {
+        let viewSource = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let appModelSource = try String(contentsOfFile: "Sources/StillLoop/AppModel.swift", encoding: .utf8)
+
+        XCTAssertFalse(viewSource.contains("系统通知"))
+        XCTAssertFalse(viewSource.contains("requestNotificationPermission"))
+        XCTAssertFalse(appModelSource.contains("UNUserNotificationCenter"))
+        XCTAssertFalse(appModelSource.contains("notificationPermission"))
+        XCTAssertFalse(appModelSource.contains("notificationSettingsURLStrings"))
+        XCTAssertFalse(appModelSource.contains("requestNotificationPermission"))
+    }
+
     func testUnavailableScreenCapturePermissionOpensSystemSettingsWithRestartGuidance() {
         let presentation = AppModel.screenCapturePermissionPresentation(
             isAllowedForCurrentProcess: false,
@@ -47,16 +58,6 @@ final class PermissionPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.action, .request)
     }
 
-    func testDeniedNotificationPermissionOpensSystemSettingsWithGuidance() {
-        let presentation = AppModel.notificationPermissionPresentation(for: .denied)
-
-        XCTAssertEqual(presentation.detail, "已拒绝")
-        XCTAssertEqual(presentation.actionTitle, "打开系统设置")
-        XCTAssertEqual(presentation.action, .openSettings)
-        XCTAssertTrue(presentation.guidance.contains("系统设置"))
-        XCTAssertTrue(presentation.guidance.contains("通知"))
-    }
-
     func testCameraSettingsTargetsCameraPrivacyPaneFirst() {
         XCTAssertEqual(
             AppModel.cameraSettingsURLStrings.first,
@@ -68,13 +69,6 @@ final class PermissionPresentationTests: XCTestCase {
         XCTAssertEqual(
             AppModel.screenCaptureSettingsURLStrings.first,
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        )
-    }
-
-    func testNotificationSettingsTargetsNotificationPaneFirst() {
-        XCTAssertEqual(
-            AppModel.notificationSettingsURLStrings.first,
-            "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
         )
     }
 

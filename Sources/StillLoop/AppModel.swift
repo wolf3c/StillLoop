@@ -3,7 +3,6 @@ import AVFoundation
 import Combine
 import Foundation
 import StillLoopCore
-import UserNotifications
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -159,8 +158,6 @@ final class AppModel: ObservableObject {
     @Published var screenCapturePermissionGuidance = ""
     @Published var cameraPermission = "未检查"
     @Published var cameraPermissionGuidance = ""
-    @Published var notificationPermission = "未检查"
-    @Published var notificationPermissionGuidance = ""
     @Published var permissionOpenStatus = ""
     @Published var useLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
     @Published var localLLMStatus = "模型评估：基础规则"
@@ -209,11 +206,6 @@ final class AppModel: ObservableObject {
     nonisolated static let cameraSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
         "x-apple.systempreferences:com.apple.preference.security"
-    ]
-
-    nonisolated static let notificationSettingsURLStrings = [
-        "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
-        "x-apple.systempreferences:com.apple.preference.notifications"
     ]
 
     nonisolated static let systemSettingsBundleIdentifier = "com.apple.systempreferences"
@@ -289,37 +281,6 @@ final class AppModel: ObservableObject {
             return PermissionPresentation(
                 detail: "未知",
                 guidance: "无法确认摄像头授权状态，请在系统设置中检查 StillLoop 的摄像头权限。",
-                actionTitle: "打开系统设置",
-                action: .openSettings,
-                isAllowed: false
-            )
-        }
-    }
-
-    nonisolated static func notificationPermissionPresentation(for status: UNAuthorizationStatus) -> PermissionPresentation {
-        switch status {
-        case .authorized, .provisional, .ephemeral:
-            return PermissionPresentation(detail: "已允许", guidance: "", actionTitle: "", action: .none, isAllowed: true)
-        case .notDetermined:
-            return PermissionPresentation(
-                detail: "未请求",
-                guidance: "点击请求权限后，macOS 会弹出通知授权窗口。",
-                actionTitle: "请求权限",
-                action: .request,
-                isAllowed: false
-            )
-        case .denied:
-            return PermissionPresentation(
-                detail: "已拒绝",
-                guidance: "请在系统设置 > 通知 > StillLoop 中允许通知。",
-                actionTitle: "打开系统设置",
-                action: .openSettings,
-                isAllowed: false
-            )
-        @unknown default:
-            return PermissionPresentation(
-                detail: "未知",
-                guidance: "无法确认通知授权状态，请在系统设置 > 通知 中检查 StillLoop。",
                 actionTitle: "打开系统设置",
                 action: .openSettings,
                 isAllowed: false
@@ -447,27 +408,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func requestNotificationPermission() {
-        guard isRunningAsAppBundle else {
-            notificationPermission = "开发运行模式使用非阻塞弹窗提醒"
-            notificationPermissionGuidance = "权限测试请用 scripts/run-app.sh 启动应用包。"
-            return
-        }
-
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            Task { @MainActor in
-                switch AppModel.notificationPermissionPresentation(for: settings.authorizationStatus).action {
-                case .none:
-                    self?.applyNotificationPermissionPresentation(for: settings.authorizationStatus)
-                case .request:
-                    self?.requestSystemNotificationPermission()
-                case .openSettings:
-                    self?.openNotificationSettings()
-                }
-            }
-        }
-    }
-
     func requestScreenCapturePermission() {
         let presentation = AppModel.screenCapturePermissionPresentation(
             isAllowedForCurrentProcess: CGPreflightScreenCaptureAccess(),
@@ -520,28 +460,6 @@ final class AppModel: ObservableObject {
         )
 
         applyCameraPermissionPresentation(for: AVCaptureDevice.authorizationStatus(for: .video))
-
-        guard isRunningAsAppBundle else {
-            notificationPermission = "开发运行模式使用非阻塞弹窗提醒"
-            notificationPermissionGuidance = "权限测试请用 scripts/run-app.sh 启动应用包。"
-            return
-        }
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            Task { @MainActor in
-                self?.applyNotificationPermissionPresentation(for: settings.authorizationStatus)
-            }
-        }
-    }
-
-    private func requestSystemNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
-            Task { @MainActor in
-                self?.notificationPermission = granted ? "已允许" : "已拒绝"
-                self?.notificationPermissionGuidance = granted
-                    ? ""
-                    : "请在系统设置 > 通知 > StillLoop 中允许通知。"
-            }
-        }
     }
 
     private func applyScreenCapturePermissionPresentation(_ presentation: PermissionPresentation) {
@@ -555,22 +473,12 @@ final class AppModel: ObservableObject {
         cameraPermissionGuidance = presentation.guidance
     }
 
-    private func applyNotificationPermissionPresentation(for status: UNAuthorizationStatus) {
-        let presentation = AppModel.notificationPermissionPresentation(for: status)
-        notificationPermission = presentation.detail
-        notificationPermissionGuidance = presentation.guidance
-    }
-
     private func openCameraPrivacySettings() {
         openSystemSettings(AppModel.cameraSettingsURLStrings)
     }
 
     private func openScreenCaptureSettings() {
         openSystemSettings(AppModel.screenCaptureSettingsURLStrings)
-    }
-
-    private func openNotificationSettings() {
-        openSystemSettings(AppModel.notificationSettingsURLStrings)
     }
 
     @discardableResult
