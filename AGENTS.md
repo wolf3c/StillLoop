@@ -68,19 +68,59 @@ Run automated tests:
 swift test
 ```
 
-Build a signed Mac App Store package only after the Apple Developer agreement is accepted, the App Store bundle ID exists, and local Mac App Store signing identities are installed:
+Build a signed Mac App Store package only after the Apple Developer agreement is accepted, the App Store bundle ID exists, and local Mac App Store signing identities are installed. Keep the Mac App Store provisioning profile outside the repository; the preferred local path is `$HOME/AppleStore/Signing/StillLoop/StillLoop_Mac_App_Store.provisionprofile`.
 
 ```sh
 STILLLOOP_BUNDLE_IDENTIFIER=com.super-tree.stillloop \
-STILLLOOP_APP_SIGN_IDENTITY="Apple Distribution: Example Team (TEAMID)" \
-STILLLOOP_INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Example Team (TEAMID)" \
-STILLLOOP_PROVISIONING_PROFILE="$HOME/Downloads/StillLoop_App_Store.provisionprofile" \
+STILLLOOP_APP_SIGN_IDENTITY="Apple Distribution: Jinchun Chen (FUNQ8PQ8CX)" \
+STILLLOOP_INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Jinchun Chen (FUNQ8PQ8CX)" \
+STILLLOOP_PROVISIONING_PROFILE="$HOME/AppleStore/Signing/StillLoop/StillLoop_Mac_App_Store.provisionprofile" \
 STILLLOOP_MARKETING_VERSION=1.0 \
 STILLLOOP_BUNDLE_VERSION=1 \
 scripts/build-app-store-package.sh
 ```
 
 Increment `STILLLOOP_BUNDLE_VERSION` for every App Store Connect upload, including retries after a failed processed build.
+
+To avoid repeat App Store packaging failures, use this order:
+
+1. From a normal local Terminal, confirm the app signing identity is visible before packaging:
+
+```sh
+security find-identity -v -p codesigning
+```
+
+The expected app identity is `Apple Distribution: Jinchun Chen (FUNQ8PQ8CX)`. If Codex reports `0 valid identities found` but Terminal shows this identity, treat it as Codex shell sandbox or Keychain visibility, not a missing certificate. Request an approved unsandboxed Codex command for the package build instead of reinstalling certificates.
+
+2. If needed, inspect an existing package to recover the installer identity:
+
+```sh
+pkgutil --check-signature .build/app-store/StillLoop-1.0.pkg
+```
+
+The expected installer identity is `3rd Party Mac Developer Installer: Jinchun Chen (FUNQ8PQ8CX)`.
+
+3. Run the package script as an approved unsandboxed command when the Codex shell hits SwiftPM cache, clang module cache, `sandbox-exec: sandbox_apply`, readonly `.build/build.db`, or Keychain identity visibility errors. These are environment permission blockers; do not diagnose app code from them.
+
+4. After packaging, verify the actual artifact, not just command success:
+
+```sh
+codesign --verify --deep --strict --verbose=2 .build/app-store/StillLoop.app
+plutil -p .build/app-store/StillLoop.app/Contents/Info.plist
+pkgutil --check-signature .build/app-store/StillLoop-1.0.pkg
+shasum -a 256 .build/app-store/StillLoop-1.0.pkg
+```
+
+Confirm `CFBundleIdentifier` is `com.super-tree.stillloop`, `CFBundleShortVersionString` matches `STILLLOOP_MARKETING_VERSION`, and `CFBundleVersion` matches the incremented `STILLLOOP_BUNDLE_VERSION`. The script writes `.build/app-store/StillLoop-$STILLLOOP_MARKETING_VERSION.pkg`; `STILLLOOP_BUNDLE_VERSION` changes the upload build number, not the package filename.
+
+If the provisioning profile was newly downloaded, move it into the preferred local signing directory before packaging and keep that directory out of git:
+
+```sh
+mkdir -p "$HOME/AppleStore/Signing/StillLoop"
+mv "$HOME/Downloads/StillLoop_Mac_App_Store.provisionprofile" "$HOME/AppleStore/Signing/StillLoop/"
+chmod 700 "$HOME/AppleStore/Signing/StillLoop"
+chmod 600 "$HOME/AppleStore/Signing/StillLoop/StillLoop_Mac_App_Store.provisionprofile"
+```
 
 If the app is already running, stop the old process before launching a fresh build:
 
