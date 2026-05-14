@@ -75,14 +75,28 @@ public struct LLMFocusEvaluator {
         let response = try await engine.complete(messages: messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents))
         let json = extractJSONObject(from: response)
         let modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
-        let nudge = modelResponse.nudge?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
             state: modelResponse.state,
             confidence: modelResponse.confidence,
             reason: modelResponse.reason,
-            shouldNudge: nudge?.isEmpty == false,
-            nudge: nudge?.isEmpty == false ? nudge : nil
+            shouldNudge: nudge != nil,
+            nudge: nudge
         )
+    }
+
+    private func normalizedNudge(from response: ModelResponse, task: String) -> String? {
+        let nudge = response.nudge?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usableNudge = nudge?.isEmpty == false ? nudge : nil
+
+        switch response.state {
+        case .focused:
+            return nil
+        case .uncertain:
+            return usableNudge ?? NudgeGenerator().message(for: .uncertain, task: task)
+        case .distracted, .stuck, .resting, .away:
+            return usableNudge
+        }
     }
 
     private var systemPrompt: String {

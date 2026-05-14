@@ -83,6 +83,38 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.nudge, "回来后继续。")
     }
 
+    func testFocusedModelJudgementSuppressesNudge() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"focused","confidence":0.9,"reason":"Working","nudge":"继续保持记录进度。"}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记并规划事务",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+    }
+
+    func testUncertainModelJudgementUsesDefaultGentleNudgeWhenMissing() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"uncertain","confidence":0.48,"reason":"Activity is ambiguous","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记并规划事务",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "轻轻拉回：写日记并规划事务。")
+    }
+
     func testPromptIncludesChronologicalCaptureTimeline() async throws {
         let engine = StubEngine(response: """
         {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
