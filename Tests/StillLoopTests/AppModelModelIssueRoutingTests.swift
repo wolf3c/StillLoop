@@ -9,6 +9,7 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         model.useLocalLLM = true
         model.isModelConnectionUsable = false
         model.screen = .taskSetup
+        model.startPermissionDecisionOverride = .proceed
 
         model.startSession()
 

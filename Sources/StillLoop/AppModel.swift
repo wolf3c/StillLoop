@@ -99,6 +99,13 @@ final class AppModel: ObservableObject {
         case openSettings
     }
 
+    enum StartPermissionDecision: Equatable {
+        case proceed
+        case requestCameraAuthorization
+        case openScreenCaptureSettings
+        case openCameraSettings
+    }
+
     enum SystemSettingsOpenAttempt: Equatable {
         case workspaceURL(String)
         case systemOpen(String)
@@ -197,6 +204,7 @@ final class AppModel: ObservableObject {
     private var modelDownloadTask: Task<Void, Never>?
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
+    var startPermissionDecisionOverride: StartPermissionDecision?
 
     nonisolated static let screenCaptureSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
@@ -285,6 +293,30 @@ final class AppModel: ObservableObject {
                 action: .openSettings,
                 isAllowed: false
             )
+        }
+    }
+
+    nonisolated static func startPermissionDecision(
+        screenCaptureAllowed: Bool,
+        cameraStatus: AVAuthorizationStatus
+    ) -> StartPermissionDecision {
+        if cameraStatus == .notDetermined {
+            return .requestCameraAuthorization
+        }
+
+        guard screenCaptureAllowed else {
+            return .openScreenCaptureSettings
+        }
+
+        switch cameraStatus {
+        case .authorized:
+            return .proceed
+        case .denied, .restricted:
+            return .openCameraSettings
+        case .notDetermined:
+            return .requestCameraAuthorization
+        @unknown default:
+            return .openCameraSettings
         }
     }
 
@@ -557,6 +589,32 @@ final class AppModel: ObservableObject {
         let task = taskText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { return }
 
+        startSessionAfterPermissionCheck(task: task)
+    }
+
+    private func startSessionAfterPermissionCheck(task: String) {
+        guard status == .idle else { return }
+
+        let decision = startPermissionDecisionOverride ?? AppModel.startPermissionDecision(
+            screenCaptureAllowed: CGPreflightScreenCaptureAccess(),
+            cameraStatus: AVCaptureDevice.authorizationStatus(for: .video)
+        )
+
+        switch decision {
+        case .proceed:
+            beginSessionWithModelCheck(task: task)
+        case .requestCameraAuthorization:
+            requestCameraAuthorizationBeforeStarting(task: task)
+        case .openScreenCaptureSettings:
+            screen = .permissions
+            requestScreenCapturePermission()
+        case .openCameraSettings:
+            screen = .permissions
+            requestCameraPermission()
+        }
+    }
+
+    private func beginSessionWithModelCheck(task: String) {
         beginSession(task: task)
 
         guard useLocalLLM else {
@@ -570,6 +628,22 @@ final class AppModel: ObservableObject {
             guard canUseModel else {
                 routeToModelSetupForModelIssue()
                 return
+            }
+        }
+    }
+
+    private func requestCameraAuthorizationBeforeStarting(task: String) {
+        cameraPermission = "请求中"
+        cameraPermissionGuidance = "请在系统授权窗口中允许 StillLoop 使用摄像头。"
+        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyCameraPermissionPresentation(for: AVCaptureDevice.authorizationStatus(for: .video))
+                if granted {
+                    self.startSessionAfterPermissionCheck(task: task)
+                } else {
+                    self.screen = .permissions
+                }
             }
         }
     }
