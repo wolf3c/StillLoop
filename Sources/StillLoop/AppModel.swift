@@ -93,6 +93,41 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum BundledModelAction: Hashable {
+        case continueSetup
+        case startDownload
+        case pauseDownload
+        case cancelDownload
+        case resumeDownload
+        case retryDownload
+
+        var title: String {
+            switch self {
+            case .continueSetup:
+                return "继续"
+            case .startDownload:
+                return "开始下载"
+            case .pauseDownload:
+                return "暂停下载"
+            case .cancelDownload:
+                return "取消下载"
+            case .resumeDownload:
+                return "继续下载"
+            case .retryDownload:
+                return "重新下载"
+            }
+        }
+
+        var isPrimary: Bool {
+            switch self {
+            case .continueSetup, .startDownload, .resumeDownload, .retryDownload:
+                return true
+            case .pauseDownload, .cancelDownload:
+                return false
+            }
+        }
+    }
+
     enum PermissionAction: Equatable {
         case none
         case request
@@ -399,6 +434,21 @@ final class AppModel: ObservableObject {
 
     nonisolated static func resolvedModelSetupSelection(useLocalLLM: Bool) -> ModelSetupSelection {
         useLocalLLM ? ModelSetupSelection(source: .manual, manualService: .localHTTP) : ModelSetupSelection()
+    }
+
+    nonisolated static func bundledModelActions(for readiness: ModelReadiness) -> [BundledModelAction] {
+        switch readiness {
+        case .ready:
+            return [.continueSetup]
+        case .downloading:
+            return [.pauseDownload, .cancelDownload]
+        case .paused:
+            return [.resumeDownload, .cancelDownload]
+        case .failed:
+            return [.retryDownload]
+        case .skipped, .checking:
+            return [.startDownload]
+        }
     }
 
     nonisolated static func hasManualModelConfiguration(baseURLText: String, modelText: String) -> Bool {
@@ -904,6 +954,22 @@ final class AppModel: ObservableObject {
 
     func cancelModelDownload() {
         pauseModelDownload()
+    }
+
+    func performBundledModelAction(_ action: BundledModelAction) {
+        switch action {
+        case .continueSetup:
+            bypassInitialSetup()
+            screen = .taskSetup
+        case .startDownload, .retryDownload:
+            downloadBundledModel()
+        case .resumeDownload:
+            startModelDownloadIfNeeded()
+        case .pauseDownload:
+            pauseModelDownload()
+        case .cancelDownload:
+            cancelModelDownload()
+        }
     }
 
     func downloadBundledModel() {

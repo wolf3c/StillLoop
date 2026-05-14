@@ -267,21 +267,8 @@ private struct ModelSetupView: View {
         VStack(alignment: .leading, spacing: 14) {
             ModelReadinessCard()
             HStack {
-                Button(model.modelReadiness == .ready ? "继续" : "开始下载") {
-                    if model.modelReadiness == .ready {
-                        model.bypassInitialSetup()
-                        model.screen = .taskSetup
-                    } else {
-                        model.downloadBundledModel()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-
-                if model.modelReadiness.isDownloading {
-                    Button("暂停下载") { model.pauseModelDownload() }
-                    Button("取消下载") { model.cancelModelDownload() }
-                } else if model.modelReadiness == .paused || model.modelReadiness == .failed {
-                    Button("继续下载") { model.startModelDownloadIfNeeded() }
+                ForEach(AppModel.bundledModelActions(for: model.modelReadiness), id: \.self) { action in
+                    bundledModelActionButton(action)
                 }
             }
             Text("下载会留在本页显示状态；下载完成后再继续，也可以随时切换到手动配置。")
@@ -292,6 +279,16 @@ private struct ModelSetupView: View {
         .frame(maxWidth: 620, alignment: .leading)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func bundledModelActionButton(_ action: AppModel.BundledModelAction) -> some View {
+        if action.isPrimary {
+            Button(action.title) { model.performBundledModelAction(action) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(action.title) { model.performBundledModelAction(action) }
+        }
     }
 
     private var manualModelSection: some View {

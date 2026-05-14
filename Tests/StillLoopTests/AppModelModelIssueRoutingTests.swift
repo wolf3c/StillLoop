@@ -28,6 +28,33 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         XCTAssertEqual(AppModel.ModelReadiness.ready.progress, 1)
     }
 
+    func testBundledModelActionsMatchDownloadState() {
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .checking).map(\.title),
+            ["开始下载"]
+        )
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .skipped).map(\.title),
+            ["开始下载"]
+        )
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .downloading("StillLoop.gguf")).map(\.title),
+            ["暂停下载", "取消下载"]
+        )
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .paused).map(\.title),
+            ["继续下载", "取消下载"]
+        )
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .failed).map(\.title),
+            ["重新下载"]
+        )
+        XCTAssertEqual(
+            AppModel.bundledModelActions(for: .ready).map(\.title),
+            ["继续"]
+        )
+    }
+
     func testDownloadBundledModelStaysOnModelSetupScreen() {
         let model = AppModel()
         model.screen = .modelSetup
