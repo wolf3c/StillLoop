@@ -7,6 +7,7 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 BUNDLE_IDENTIFIER="local.StillLoop.dev"
+CODESIGN_IDENTITY="${STILLLOOP_CODESIGN_IDENTITY:--}"
 DESIGNATED_REQUIREMENT="=designated => identifier \"$BUNDLE_IDENTIFIER\""
 
 export STILLLOOP_SKIP_MODEL_DOWNLOAD=1
@@ -46,11 +47,17 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <string>StillLoop uses camera availability as a local focus context signal and does not save frames.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>StillLoop uses screen availability as a local focus context signal and does not save screenshots.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>StillLoop reads the active browser tab title and URL as local focus context when available.</string>
 </dict>
 </plist>
 PLIST
 
-/usr/bin/codesign --force --deep --sign - --identifier "$BUNDLE_IDENTIFIER" --requirements "$DESIGNATED_REQUIREMENT" "$APP_DIR"
+CODESIGN_ARGS=(--force --deep --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_IDENTIFIER")
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+  CODESIGN_ARGS+=(--requirements "$DESIGNATED_REQUIREMENT")
+fi
+/usr/bin/codesign "${CODESIGN_ARGS[@]}" "$APP_DIR"
 
 if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
   exit 0

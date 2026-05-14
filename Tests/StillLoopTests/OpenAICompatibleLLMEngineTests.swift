@@ -49,13 +49,43 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
     }
 
-    func testLegacyDefaultPortMigratesToDedicatedStillLoopPort() {
+    func testManualModelBaseURLStartsEmptyWithoutExplicitConfiguration() {
+        let baseURL = AppModel.resolvedLLMBaseURLText(
+            environmentValue: nil,
+            storedValue: nil
+        )
+
+        XCTAssertEqual(baseURL, "")
+    }
+
+    func testLegacyDevelopmentBaseURLDefaultsAreNotShownAsUserConfiguration() {
         let baseURL = AppModel.resolvedLLMBaseURLText(
             environmentValue: nil,
             storedValue: "http://127.0.0.1:8080/v1"
         )
 
-        XCTAssertEqual(baseURL, "http://127.0.0.1:17631/v1")
+        XCTAssertEqual(baseURL, "")
+        XCTAssertEqual(
+            AppModel.resolvedLLMBaseURLText(
+                environmentValue: nil,
+                storedValue: "http://127.0.0.1:17631/v1"
+            ),
+            ""
+        )
+    }
+
+    func testManualModelNameStartsEmptyWithoutExplicitConfiguration() {
+        XCTAssertEqual(
+            AppModel.resolvedLLMModelText(environmentValue: nil, storedValue: nil),
+            ""
+        )
+        XCTAssertEqual(
+            AppModel.resolvedLLMModelText(
+                environmentValue: nil,
+                storedValue: "qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl"
+            ),
+            ""
+        )
     }
 
     func testCustomStoredBaseURLIsPreserved() {
@@ -103,6 +133,23 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(baseURL, "http://127.0.0.1:7777/v1")
+    }
+
+    func testEnvironmentModelNameOverridesStoredValue() {
+        XCTAssertEqual(
+            AppModel.resolvedLLMModelText(environmentValue: "qwen-dev", storedValue: "custom-model"),
+            "qwen-dev"
+        )
+    }
+
+    @MainActor
+    func testSelectingOnlineModelServiceDoesNotAutoFillProviderURL() {
+        let model = AppModel()
+        model.llmBaseURLText = ""
+
+        model.selectManualModelService(.online)
+
+        XCTAssertEqual(model.llmBaseURLText, "")
     }
 
     func testLocalLLMEnvironmentSelectsManualLocalModelSetup() {

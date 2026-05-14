@@ -172,7 +172,10 @@ final class AppModel: ObservableObject {
         environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
         storedValue: UserDefaults.standard.string(forKey: "llmBaseURL")
     )
-    @Published var llmModelText = ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"] ?? UserDefaults.standard.string(forKey: "llmModel") ?? ModelDownloadSpec.builtIn.localServerModelID
+    @Published var llmModelText = AppModel.resolvedLLMModelText(
+        environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
+        storedValue: UserDefaults.standard.string(forKey: "llmModel")
+    )
     @Published var onlineAPIKeyText = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
@@ -321,13 +324,28 @@ final class AppModel: ObservableObject {
     }
 
     nonisolated static func resolvedLLMBaseURLText(environmentValue: String?, storedValue: String?) -> String {
-        if let environmentValue {
+        if let environmentValue, !environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return environmentValue
         }
-        if let storedValue, storedValue != "http://127.0.0.1:8080/v1" {
+        if let storedValue,
+           !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           storedValue != "http://127.0.0.1:8080/v1",
+           storedValue != ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString {
             return storedValue
         }
-        return ModelDownloadSpec.builtIn.localServerBaseURL.absoluteString
+        return ""
+    }
+
+    nonisolated static func resolvedLLMModelText(environmentValue: String?, storedValue: String?) -> String {
+        if let environmentValue, !environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return environmentValue
+        }
+        if let storedValue,
+           !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           storedValue != ModelDownloadSpec.builtIn.localServerModelID {
+            return storedValue
+        }
+        return ""
     }
 
     nonisolated static func effectiveLLMBaseURLText(_ rawValue: String) -> String {
@@ -801,24 +819,36 @@ final class AppModel: ObservableObject {
     func selectManualModelService(_ service: ModelSetupSelection.ManualService) {
         modelSetupSelection.source = .manual
         modelSetupSelection.manualService = service
-        if service == .online, llmBaseURLText == "http://127.0.0.1:8080/v1" {
-            llmBaseURLText = "https://api.openai.com/v1"
-            modelConfigurationChanged()
-        }
+        modelConfigurationChanged()
     }
 
     func configureLocalLLM() {
+        let trimmedBaseURLText = llmBaseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModelText = llmModelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBaseURLText.isEmpty, !trimmedModelText.isEmpty else {
+            localLLMStatus = useLocalLLM ? "模型服务：待配置" : "模型评估：已关闭，使用基础规则"
+            isModelConnectionUsable = false
+            llmEvaluator = nil
+            persistManualModelConfiguration()
+            return
+        }
         let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
         guard let baseURL = URL(string: effectiveBaseURLText) else {
             localLLMStatus = "模型服务：端点无效"
             isModelConnectionUsable = false
             llmEvaluator = nil
+            persistManualModelConfiguration()
             return
         }
         llmEvaluator = LLMFocusEvaluator(
-            engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText, apiKey: onlineAPIKeyText)
+            engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
         )
         localLLMStatus = useLocalLLM ? "模型评估：\(effectiveBaseURLText)" : "模型评估：已关闭，使用基础规则"
+        persistManualModelConfiguration()
+    }
+
+    private func persistManualModelConfiguration() {
+        guard useLocalLLM || modelSetupSelection.source == .manual else { return }
         UserDefaults.standard.set(llmBaseURLText, forKey: "llmBaseURL")
         UserDefaults.standard.set(llmModelText, forKey: "llmModel")
     }
@@ -906,14 +936,22 @@ final class AppModel: ObservableObject {
         let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
         guard let baseURL = URL(string: effectiveBaseURLText) else {
             modelConnectionStatus = "端点无效"
-            modelConnectionDetail = "请输入服务根地址，例如 http://127.0.0.1:17631。StillLoop 会使用 /v1 端点。"
+            modelConnectionDetail = "请输入服务根地址。StillLoop 会使用 OpenAI-compatible /v1 端点。"
+            isModelConnectionUsable = false
+            isCheckingModelConnection = false
+            return false
+        }
+        let trimmedModelText = llmModelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModelText.isEmpty else {
+            modelConnectionStatus = "模型名称为空"
+            modelConnectionDetail = "请输入模型名称。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
         }
 
         do {
-            let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: llmModelText, apiKey: onlineAPIKeyText)
+            let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
             let result = try await engine.checkModelReadiness()
             isModelConnectionUsable = result.modelFound && result.chatCompletionWorks
             useLocalLLM = true

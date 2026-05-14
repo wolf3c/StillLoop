@@ -49,6 +49,26 @@ swift build
 swift test
 ```
 
+## Mac App Store Packaging
+
+StillLoop is currently a SwiftPM macOS app. App Store Connect submission needs an App Store app record, an accepted Apple Developer Program agreement, a registered bundle ID, and Mac App Store signing identities installed in the local keychain.
+
+Build a signed App Store `.pkg` after those prerequisites are ready:
+
+```sh
+STILLLOOP_BUNDLE_IDENTIFIER=com.super-tree.stillloop \
+STILLLOOP_APP_SIGN_IDENTITY="Apple Distribution: Example Team (TEAMID)" \
+STILLLOOP_INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Example Team (TEAMID)" \
+STILLLOOP_PROVISIONING_PROFILE="$HOME/Downloads/StillLoop_App_Store.provisionprofile" \
+STILLLOOP_MARKETING_VERSION=1.0 \
+STILLLOOP_BUNDLE_VERSION=1 \
+scripts/build-app-store-package.sh
+```
+
+Increment `STILLLOOP_BUNDLE_VERSION` for each App Store Connect upload, including replacements after a failed processing attempt.
+
+The package script embeds the Mac App Store provisioning profile, signs the application identifier entitlement, clears downloaded-file quarantine attributes from the app bundle, and applies the sandbox capabilities from `Config/StillLoop-AppStore.entitlements`. Screen recording still uses the system Screen Recording permission prompt and requires clear user consent in the app and App Review notes.
+
 ## MVP Flow
 
 1. Open StillLoop.

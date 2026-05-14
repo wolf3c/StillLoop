@@ -68,6 +68,20 @@ Run automated tests:
 swift test
 ```
 
+Build a signed Mac App Store package only after the Apple Developer agreement is accepted, the App Store bundle ID exists, and local Mac App Store signing identities are installed:
+
+```sh
+STILLLOOP_BUNDLE_IDENTIFIER=com.super-tree.stillloop \
+STILLLOOP_APP_SIGN_IDENTITY="Apple Distribution: Example Team (TEAMID)" \
+STILLLOOP_INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Example Team (TEAMID)" \
+STILLLOOP_PROVISIONING_PROFILE="$HOME/Downloads/StillLoop_App_Store.provisionprofile" \
+STILLLOOP_MARKETING_VERSION=1.0 \
+STILLLOOP_BUNDLE_VERSION=1 \
+scripts/build-app-store-package.sh
+```
+
+Increment `STILLLOOP_BUNDLE_VERSION` for every App Store Connect upload, including retries after a failed processed build.
+
 If the app is already running, stop the old process before launching a fresh build:
 
 ```sh
@@ -81,11 +95,11 @@ cd /Users/wolf3c/Project/StillLoop
 STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:8080/v1 \
-STILLLOOP_LLM_MODEL=qwen3.5-0.8b \
+STILLLOOP_LLM_MODEL=qwen3.5-0.8b-mlx \
 scripts/run-app.sh
 ```
 
-The launch script rebuilds `.build/StillLoop.app` and signs the development bundle with stable identifier `local.StillLoop.dev` plus a matching designated requirement. This keeps macOS privacy permissions tied to the development app across rebuilds. If an older build was authorized before this signing behavior existed, the first run after the change may still require turning the StillLoop screen-recording permission off and on once, then restarting StillLoop.
+The launch script rebuilds `.build/StillLoop.app` and signs the development bundle with stable identifier `local.StillLoop.dev`. By default it uses ad-hoc signing; set `STILLLOOP_CODESIGN_IDENTITY` to an installed Apple Development identity when testing macOS privacy permissions across rebuilds. If an older build was authorized before this signing behavior existed, the first run after the change may still require turning the StillLoop screen-recording permission off and on once, then restarting StillLoop.
 
 Run the app launch command from a normal local shell or an approved unsandboxed Codex command. If it fails inside the Codex shell sandbox with SwiftPM cache, clang module cache, or readonly `.build/build.db` errors, treat that as an environment permission blocker and rerun outside the sandbox before diagnosing app code.
 
