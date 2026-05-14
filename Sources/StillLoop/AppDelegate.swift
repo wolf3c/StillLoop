@@ -32,6 +32,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: .stillLoopStatusItemModeDidChange,
             object: nil
         )
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(systemDidBecomeInactive),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(systemDidBecomeActive),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(systemDidBecomeInactive),
+            name: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil
+        )
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(systemDidBecomeActive),
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil
+        )
 
         showApp()
     }
@@ -51,6 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        sharedAppModel.refreshPermissionStatuses()
+    }
+
+    @objc private func systemDidBecomeInactive() {
+        sharedAppModel.suspendForSystemInactivity()
+    }
+
+    @objc private func systemDidBecomeActive() {
+        sharedAppModel.resumeAfterSystemInactivity()
         sharedAppModel.refreshPermissionStatuses()
     }
 

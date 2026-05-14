@@ -179,6 +179,7 @@ final class AppModel: ObservableObject {
     @Published var evaluationLoopDescription = "每轮完成后按耗时安排下一次采集"
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
+    @Published private(set) var isSuspendedForSystemInactivity = false
     @Published private(set) var hasBypassedInitialSetup = false
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
@@ -197,6 +198,8 @@ final class AppModel: ObservableObject {
     private var evaluationTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
+    private var systemSuspendedAt: Date?
+    private var accumulatedSystemSuspendedDuration: TimeInterval = 0
 
     nonisolated static let screenCaptureSettingsURLStrings = [
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
@@ -678,6 +681,9 @@ final class AppModel: ObservableObject {
         currentState = .uncertain
         lastNudge = "暂无提醒"
         elapsed = 0
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
+        accumulatedSystemSuspendedDuration = 0
         analysisPhase = .idle
         screen = .focus
         postStatusItemMode(.uncertain)
@@ -689,14 +695,13 @@ final class AppModel: ObservableObject {
         guard status == .running else { return }
         status = .paused
         postStatusItemMode(.paused)
-        captureTask?.cancel()
-        captureTask = nil
-        evaluationTask?.cancel()
-        evaluationTask = nil
+        cancelSessionLoops()
     }
 
     func resumeSession() {
         guard status == .paused else { return }
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
         status = .running
         postStatusItemMode(mode(for: currentState))
         startCaptureLoop()
@@ -704,13 +709,12 @@ final class AppModel: ObservableObject {
     }
 
     func endSession(feedback: SessionFeedback? = nil) {
-        captureTask?.cancel()
-        captureTask = nil
-        evaluationTask?.cancel()
-        evaluationTask = nil
+        cancelSessionLoops()
         provider = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
         guard var session = currentSession else { return }
         session.endedAt = Date()
         session.feedback = feedback
@@ -726,10 +730,7 @@ final class AppModel: ObservableObject {
     }
 
     func prepareNewSession() {
-        captureTask?.cancel()
-        captureTask = nil
-        evaluationTask?.cancel()
-        evaluationTask = nil
+        cancelSessionLoops()
         provider = nil
         currentSession = nil
         latestContext = nil
@@ -740,6 +741,9 @@ final class AppModel: ObservableObject {
         currentState = .uncertain
         lastNudge = "暂无提醒"
         elapsed = 0
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
+        accumulatedSystemSuspendedDuration = 0
         evaluationLoopDescription = "等待开始任务"
         analysisPhase = .idle
         screen = .taskSetup
@@ -867,6 +871,50 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func suspendForSystemInactivity(now: Date = Date()) {
+        guard status == .running else { return }
+        isSuspendedForSystemInactivity = true
+        systemSuspendedAt = now
+        elapsed = activeElapsed(at: now)
+        status = .paused
+        currentState = .away
+        lastNudge = "屏幕已锁定，已暂停运行"
+        unanalyzedSnapshots.removeAll()
+        unanalyzedCaptureCount = 0
+        analysisPhase = .scheduled
+        evaluationLoopDescription = "屏幕锁定或休眠，已暂停采集和模型运算"
+        contextSourceDescription = "上下文来源：屏幕锁定或休眠期间暂停"
+        cancelSessionLoops()
+        postStatusItemMode(.paused)
+    }
+
+    func resumeAfterSystemInactivity(now: Date = Date()) {
+        guard isSuspendedForSystemInactivity, status == .paused, currentSession != nil else {
+            return
+        }
+        if let systemSuspendedAt {
+            accumulatedSystemSuspendedDuration += max(0, now.timeIntervalSince(systemSuspendedAt))
+        }
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
+        status = .running
+        currentState = .uncertain
+        lastNudge = "暂无提醒"
+        elapsed = activeElapsed(at: now)
+        analysisPhase = .idle
+        evaluationLoopDescription = "屏幕已唤醒，继续采集"
+        contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 0 条"
+        postStatusItemMode(.uncertain)
+        startCaptureLoop()
+        startEvaluationLoop()
+    }
+
+    func activeElapsed(at now: Date = Date()) -> TimeInterval {
+        guard let session = currentSession else { return 0 }
+        let currentSuspendedDuration = systemSuspendedAt.map { max(0, now.timeIntervalSince($0)) } ?? 0
+        return max(0, now.timeIntervalSince(session.startedAt) - accumulatedSystemSuspendedDuration - currentSuspendedDuration)
+    }
+
     @discardableResult
     func checkModelConnectionNow() async -> Bool {
         isCheckingModelConnection = true
@@ -935,6 +983,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func cancelSessionLoops() {
+        captureTask?.cancel()
+        captureTask = nil
+        evaluationTask?.cancel()
+        evaluationTask = nil
+    }
+
     private func startCaptureLoop() {
         captureTask?.cancel()
         captureTask = Task { [weak self] in
@@ -959,7 +1014,7 @@ final class AppModel: ObservableObject {
         let sessionID = session.id
         analysisPhase = .capturing
         evaluationLoopDescription = "正在采集本机上下文"
-        elapsed = Date().timeIntervalSince(session.startedAt)
+        elapsed = activeElapsed()
         let snapshot = await provider.capture()
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return }
         latestContext = snapshot
