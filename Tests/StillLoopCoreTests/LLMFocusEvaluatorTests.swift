@@ -58,6 +58,40 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("Notion"))
     }
 
+    func testPromptIncludesCameraPriorityAndStateDefinitions() async throws {
+        let engine = StubEngine(response: """
+        {"state":"focused","confidence":0.9,"reason":"Working","nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "写年度复盘",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Xcode",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        let prompt = engine.flattenedPrompt
+        XCTAssertTrue(prompt.contains("Priority:"))
+        XCTAssertTrue(prompt.contains("First judge by camera-based user state"))
+        XCTAssertTrue(prompt.contains("- focused: user is clearly on task"))
+        XCTAssertTrue(prompt.contains("- uncertain: mild deviation"))
+        XCTAssertTrue(prompt.contains("- distracted: user is clearly off-task"))
+        XCTAssertTrue(prompt.contains("- stuck: user stays on task context"))
+        XCTAssertTrue(prompt.contains("- resting: user is intentionally resting"))
+        XCTAssertTrue(prompt.contains("- away: user appears to have left the computer"))
+        XCTAssertTrue(prompt.contains("uncertain\" is the state that represents mild deviation"))
+    }
+
     func testParsesAwayStateForUserLeavingScene() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"away","confidence":0.88,"reason":"No person appears in recent camera frames","nudge":"回来后继续。"}
