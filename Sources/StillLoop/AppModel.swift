@@ -459,6 +459,29 @@ final class AppModel: ObservableObject {
         userDefaults.set(true, forKey: DefaultsKey.hasCompletedInitialSetup)
     }
 
+    func continueFromWelcome() {
+        guard !hasMissingPermissions else {
+            screen = .permissions
+            return
+        }
+
+        continueAfterPermissions()
+    }
+
+    func continueAfterPermissions() {
+        guard !hasMissingPermissions else {
+            screen = .permissions
+            return
+        }
+
+        bypassInitialSetup()
+        if hasMissingModelSetup {
+            screen = .modelSetup
+        } else {
+            screen = .taskSetup
+        }
+    }
+
     private var hasMissingPermissions: Bool {
         screenCapturePermission != "已允许"
             || cameraPermission != "已允许"

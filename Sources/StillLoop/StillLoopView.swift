@@ -137,7 +137,7 @@ private struct WelcomeView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(StillLoopWelcomeCopy.primaryActionTitle) { model.screen = .permissions }
+            Button(StillLoopWelcomeCopy.primaryActionTitle) { model.continueFromWelcome() }
                 .keyboardShortcut(.defaultAction)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(StillLoopWelcomeCopy.privacyPrinciples, id: \.self) { principle in
@@ -184,10 +184,7 @@ private struct PermissionsView: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button(StillLoopPermissionsCopy.primaryActionTitle) {
-                    model.bypassInitialSetup()
-                    model.screen = .modelSetup
-                }
+                Button(StillLoopPermissionsCopy.primaryActionTitle) { model.continueAfterPermissions() }
                     .keyboardShortcut(.defaultAction)
             }
             Spacer()

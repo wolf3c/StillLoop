@@ -188,6 +188,62 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(relaunched.hasBypassedInitialSetup)
     }
 
+    func testWelcomeContinueSkipsPermissionsWhenPermissionsAreReady() {
+        let model = makeModel()
+        model.screen = .welcome
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.useLocalLLM = true
+        model.llmBaseURLText = "http://127.0.0.1:17631"
+        model.llmModelText = "qwen-local"
+
+        model.continueFromWelcome()
+
+        XCTAssertEqual(model.screen, .taskSetup)
+        XCTAssertTrue(model.hasBypassedInitialSetup)
+    }
+
+    func testWelcomeContinueRoutesToModelSetupWhenPermissionsReadyButModelMissing() {
+        let model = makeModel()
+        model.screen = .welcome
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.useLocalLLM = false
+        model.modelReadiness = .checking
+
+        model.continueFromWelcome()
+
+        XCTAssertEqual(model.screen, .modelSetup)
+        XCTAssertTrue(model.hasBypassedInitialSetup)
+    }
+
+    func testPermissionsContinueSkipsPermissionsWhenSetupIsReady() {
+        let model = makeModel()
+        model.screen = .permissions
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.useLocalLLM = true
+        model.llmBaseURLText = "http://127.0.0.1:17631"
+        model.llmModelText = "qwen-local"
+
+        model.continueAfterPermissions()
+
+        XCTAssertEqual(model.screen, .taskSetup)
+        XCTAssertTrue(model.hasBypassedInitialSetup)
+    }
+
+    func testPermissionsContinueStaysOnPermissionsWhenPermissionIsMissing() {
+        let model = makeModel()
+        model.screen = .permissions
+        model.screenCapturePermission = "未生效"
+        model.cameraPermission = "已允许"
+
+        model.continueAfterPermissions()
+
+        XCTAssertEqual(model.screen, .permissions)
+        XCTAssertFalse(model.hasBypassedInitialSetup)
+    }
+
     func testHomeButtonIsHiddenBeforeInitialSetupIsBypassed() {
         let model = makeModel()
         model.status = .idle
