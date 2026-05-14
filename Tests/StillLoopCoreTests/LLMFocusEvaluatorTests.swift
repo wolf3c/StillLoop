@@ -58,7 +58,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("Notion"))
     }
 
-    func testPromptIncludesCameraPriorityAndStateDefinitions() async throws {
+    func testPromptRequiresCameraAndContextJointJudgement() async throws {
         let engine = StubEngine(response: """
         {"state":"focused","confidence":0.9,"reason":"Working","nudge":null}
         """)
@@ -81,14 +81,14 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         let prompt = engine.flattenedPrompt
-        XCTAssertTrue(prompt.contains("Priority:"))
-        XCTAssertTrue(prompt.contains("First judge by camera-based user state"))
-        XCTAssertTrue(prompt.contains("- focused: user is clearly on task"))
-        XCTAssertTrue(prompt.contains("- uncertain: mild deviation"))
-        XCTAssertTrue(prompt.contains("- distracted: user is clearly off-task"))
-        XCTAssertTrue(prompt.contains("- stuck: user stays on task context"))
-        XCTAssertTrue(prompt.contains("- resting: user is intentionally resting"))
-        XCTAssertTrue(prompt.contains("- away: user appears to have left the computer"))
+        XCTAssertTrue(prompt.contains("Decision rule:"))
+        XCTAssertTrue(prompt.contains("infer user engagement from camera snapshots"))
+        XCTAssertTrue(prompt.contains("infer task match from screenshot/app/window/browser context"))
+        XCTAssertTrue(prompt.contains("- focused: camera and context are both consistent with attention to the current task"))
+        XCTAssertTrue(prompt.contains("- uncertain: mild drift"))
+        XCTAssertTrue(prompt.contains("engagement and task-match weakened"))
+        XCTAssertTrue(prompt.contains("- distracted: one of:"))
+        XCTAssertTrue(prompt.contains("content is clearly unrelated to the task"))
         XCTAssertTrue(prompt.contains("uncertain\" is the state that represents mild deviation"))
     }
 
