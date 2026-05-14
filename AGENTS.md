@@ -18,12 +18,15 @@ Avoid relying on generated files, local IDE state, or machine-specific paths as 
 ## Agent Workflow Guardrails
 
 - Work only on files required for the current task. Do not modify, revert, reformat, stage, or clean up unrelated files.
+- The user may provide multiple requirements in one message. Unless there is an obvious dependency, decompose them and execute in parallel where safe, including using subagents for disjoint subtasks.
+- For independent subtasks, prefer dispatching them to separate subagents and merge only the results that do not overlap files or flow assumptions.
 - Before behavior changes, state the current behavior, target behavior, affected modules, risks, verification plan, and concise implementation plan.
 - Implement behavior changes with TDD: write or update a focused failing test first, confirm it fails for the expected reason, then make the smallest production change that turns it green.
 - Keep changes minimal and aligned with existing product semantics. Avoid opportunistic refactors and broad cleanup.
 - Preserve user work in a dirty tree. If existing changes affect the task, work with them instead of reverting them.
 - When testing is complete and a test app is running, do not close it immediately. Tell the user it is ready for their manual test, keep it running, and close it only after the user confirms the behavior passed.
-- After finishing implementation work, suggest one or more accurate git commit messages.
+- After finishing an implementation item (done + verified), commit directly unless the user explicitly asks to delay it.
+- If behavior changes are completed and test-verified, include one or more accurate commit-message options in the handoff.
 - If the user points out an agent mistake, add a short Error Ledger entry explaining the root cause and future rule.
 
 ## Error Ledger
