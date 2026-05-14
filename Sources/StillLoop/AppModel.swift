@@ -324,8 +324,21 @@ final class AppModel: ObservableObject {
     }
 
     nonisolated static func resolvedLLMBaseURLText(environmentValue: String?, storedValue: String?) -> String {
+        resolvedLLMBaseURLText(environmentValue: environmentValue, storedValue: storedValue, preserveStoredValue: false)
+    }
+
+    nonisolated static func resolvedLLMBaseURLText(
+        environmentValue: String?,
+        storedValue: String?,
+        preserveStoredValue: Bool
+    ) -> String {
         if let environmentValue, !environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return environmentValue
+        }
+        if preserveStoredValue,
+           let storedValue,
+           !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return storedValue
         }
         if let storedValue,
            !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -337,8 +350,21 @@ final class AppModel: ObservableObject {
     }
 
     nonisolated static func resolvedLLMModelText(environmentValue: String?, storedValue: String?) -> String {
+        resolvedLLMModelText(environmentValue: environmentValue, storedValue: storedValue, preserveStoredValue: false)
+    }
+
+    nonisolated static func resolvedLLMModelText(
+        environmentValue: String?,
+        storedValue: String?,
+        preserveStoredValue: Bool
+    ) -> String {
         if let environmentValue, !environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return environmentValue
+        }
+        if preserveStoredValue,
+           let storedValue,
+           !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return storedValue
         }
         if let storedValue,
            !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -375,6 +401,11 @@ final class AppModel: ObservableObject {
         useLocalLLM ? ModelSetupSelection(source: .manual, manualService: .localHTTP) : ModelSetupSelection()
     }
 
+    nonisolated static func hasManualModelConfiguration(baseURLText: String, modelText: String) -> Bool {
+        !baseURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !modelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     nonisolated static func initialLaunchScreen(
         hasCompletedInitialSetup: Bool,
         setupIssueIndicators: [SetupIssueIndicator]
@@ -386,18 +417,24 @@ final class AppModel: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
+        let resolvedBaseURLText = AppModel.resolvedLLMBaseURLText(
+            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
+            storedValue: userDefaults.string(forKey: DefaultsKey.llmBaseURL),
+            preserveStoredValue: storedUseLocalLLM
+        )
+        let resolvedModelText = AppModel.resolvedLLMModelText(
+            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
+            storedValue: userDefaults.string(forKey: DefaultsKey.llmModel),
+            preserveStoredValue: storedUseLocalLLM
+        )
         let localLLMEnabled = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
-            || (userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true)
+            || storedUseLocalLLM
+            || AppModel.hasManualModelConfiguration(baseURLText: resolvedBaseURLText, modelText: resolvedModelText)
         useLocalLLM = localLLMEnabled
         modelSetupSelection = AppModel.resolvedModelSetupSelection(useLocalLLM: localLLMEnabled)
-        llmBaseURLText = AppModel.resolvedLLMBaseURLText(
-            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
-            storedValue: userDefaults.string(forKey: DefaultsKey.llmBaseURL)
-        )
-        llmModelText = AppModel.resolvedLLMModelText(
-            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
-            storedValue: userDefaults.string(forKey: DefaultsKey.llmModel)
-        )
+        llmBaseURLText = resolvedBaseURLText
+        llmModelText = resolvedModelText
         hasBypassedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
@@ -507,8 +544,7 @@ final class AppModel: ObservableObject {
     }
 
     private var hasManualModelConfiguration: Bool {
-        !llmBaseURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !llmModelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        Self.hasManualModelConfiguration(baseURLText: llmBaseURLText, modelText: llmModelText)
     }
 
     private func routeInitialLaunch() {
@@ -912,6 +948,9 @@ final class AppModel: ObservableObject {
         guard useLocalLLM || modelSetupSelection.source == .manual else { return }
         userDefaults.set(llmBaseURLText, forKey: DefaultsKey.llmBaseURL)
         userDefaults.set(llmModelText, forKey: DefaultsKey.llmModel)
+        if hasManualModelConfiguration {
+            userDefaults.set(true, forKey: DefaultsKey.useLocalLLM)
+        }
     }
 
     func checkModelConnection() {
@@ -932,6 +971,9 @@ final class AppModel: ObservableObject {
     }
 
     func modelConfigurationChanged() {
+        if modelSetupSelection.source == .manual, hasManualModelConfiguration {
+            useLocalLLM = true
+        }
         configureLocalLLM()
         isModelConnectionUsable = false
         modelConnectionStatus = "配置已修改，正在检查"

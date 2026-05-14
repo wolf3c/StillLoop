@@ -294,6 +294,68 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertFalse(model.setupIssueIndicators.contains(.model))
     }
 
+    func testStoredManualModelConfigurationDoesNotRouteCompletedSetupToModelSetup() {
+        let defaults = isolatedDefaults
+        defaults.set(true, forKey: "hasCompletedInitialSetup")
+        defaults.set("http://127.0.0.1:9090/v1", forKey: "llmBaseURL")
+        defaults.set("qwen-local", forKey: "llmModel")
+        let model = AppModel(userDefaults: defaults)
+        model.status = .idle
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+
+        model.openHome()
+
+        XCTAssertTrue(model.useLocalLLM)
+        XCTAssertEqual(model.modelSetupSelection.source, .manual)
+        XCTAssertFalse(model.setupIssueIndicators.contains(.model))
+        XCTAssertEqual(model.screen, .taskSetup)
+    }
+
+    func testManualConfigurationPersistsManualModelSelectionWhenFieldsArePresent() {
+        let defaults = isolatedDefaults
+        let model = AppModel(userDefaults: defaults)
+        model.modelSetupSelection.source = .manual
+        model.llmBaseURLText = "http://127.0.0.1:8080/v1"
+        model.llmModelText = "qwen-local"
+
+        model.modelConfigurationChanged()
+
+        XCTAssertTrue(defaults.bool(forKey: "useLocalLLM"))
+    }
+
+    func testManualConfigurationImmediatelySatisfiesModelSetupWhenFieldsArePresent() {
+        let model = AppModel(userDefaults: isolatedDefaults)
+        model.modelSetupSelection.source = .manual
+        model.llmBaseURLText = "http://127.0.0.1:8080/v1"
+        model.llmModelText = "qwen-local"
+
+        model.modelConfigurationChanged()
+
+        XCTAssertTrue(model.useLocalLLM)
+        XCTAssertFalse(model.setupIssueIndicators.contains(.model))
+    }
+
+    func testExplicitStoredManualConfigurationPreservesLocalEndpointOnLaunch() {
+        let defaults = isolatedDefaults
+        defaults.set(true, forKey: "hasCompletedInitialSetup")
+        defaults.set(true, forKey: "useLocalLLM")
+        defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
+        defaults.set("qwen-local", forKey: "llmModel")
+        let model = AppModel(userDefaults: defaults)
+        model.status = .idle
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+
+        model.openHome()
+
+        XCTAssertTrue(model.useLocalLLM)
+        XCTAssertEqual(model.modelSetupSelection.source, .manual)
+        XCTAssertEqual(model.llmBaseURLText, "http://127.0.0.1:8080/v1")
+        XCTAssertFalse(model.setupIssueIndicators.contains(.model))
+        XCTAssertEqual(model.screen, .taskSetup)
+    }
+
     func testSettingsButtonIsHiddenDuringSetupFlow() {
         let model = makeModel()
 
