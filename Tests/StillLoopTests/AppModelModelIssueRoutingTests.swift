@@ -24,6 +24,14 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         XCTAssertNil(AppModel.ModelReadiness.checking.progress)
     }
 
+    func testDownloadingModelReadinessReportsKnownProgress() {
+        XCTAssertEqual(
+            AppModel.ModelReadiness.downloading("StillLoop.gguf", progress: 0.42).progress,
+            0.42
+        )
+        XCTAssertNil(AppModel.ModelReadiness.downloading("StillLoop.gguf", progress: nil).progress)
+    }
+
     func testReadyModelReadinessReportsCompleteProgress() {
         XCTAssertEqual(AppModel.ModelReadiness.ready.progress, 1)
     }
@@ -38,7 +46,7 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
             ["开始下载"]
         )
         XCTAssertEqual(
-            AppModel.bundledModelActions(for: .downloading("StillLoop.gguf")).map(\.title),
+            AppModel.bundledModelActions(for: .downloading("StillLoop.gguf", progress: 0.42)).map(\.title),
             ["暂停下载", "取消下载"]
         )
         XCTAssertEqual(
@@ -55,14 +63,27 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
         )
     }
 
-    func testDownloadBundledModelStaysOnModelSetupScreen() {
+    func testDownloadBundledModelReturnsHomeForBackgroundDownload() {
         let model = AppModel()
         model.screen = .modelSetup
 
         model.downloadBundledModel()
 
-        XCTAssertEqual(model.screen, .modelSetup)
+        XCTAssertEqual(model.screen, .taskSetup)
+        XCTAssertTrue(model.hasBypassedInitialSetup)
         model.cancelModelDownload()
+    }
+
+    func testDownloadProgressFractionUsesKnownByteCounts() {
+        XCTAssertEqual(
+            ModelDownloadManager.progressFraction(completedBytes: 50, expectedBytes: 100),
+            0.5
+        )
+        XCTAssertEqual(
+            ModelDownloadManager.progressFraction(completedBytes: 150, expectedBytes: 100),
+            1
+        )
+        XCTAssertNil(ModelDownloadManager.progressFraction(completedBytes: 50, expectedBytes: 0))
     }
 
     func testModelIssueRoutesIdleUserToModelSetup() {

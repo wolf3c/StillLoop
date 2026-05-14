@@ -38,7 +38,7 @@ final class AppModel: ObservableObject {
         case skipped
         case ready
         case checking
-        case downloading(String)
+        case downloading(String, progress: Double?)
         case paused
         case failed
 
@@ -47,7 +47,11 @@ final class AppModel: ObservableObject {
             case .skipped: return "应用自带模型：本次开发运行已跳过下载"
             case .ready: return "应用自带模型：已准备好"
             case .checking: return "应用自带模型：尚未下载"
-            case .downloading: return "应用自带模型：正在下载"
+            case .downloading(_, let progress):
+                if let percentageText = Self.progressPercentageText(progress) {
+                    return "应用自带模型：正在下载 \(percentageText)"
+                }
+                return "应用自带模型：正在下载"
             case .paused: return "应用自带模型：下载已暂停"
             case .failed: return "应用自带模型：下载失败"
             }
@@ -61,7 +65,10 @@ final class AppModel: ObservableObject {
                 return "模型文件已保存在本机，后续可接入本地推理。"
             case .checking:
                 return "可以先下载，也可以手动配置本地或在线模型服务。"
-            case .downloading(let file):
+            case .downloading(let file, let progress):
+                if let percentageText = Self.progressPercentageText(progress) {
+                    return "正在下载 \(file)，已完成 \(percentageText)，下载完成后即可使用应用自带模型。"
+                }
                 return "正在下载 \(file)，下载完成后即可使用应用自带模型。"
             case .paused:
                 return "下载已停止；需要时可以重新开始下载。"
@@ -74,7 +81,7 @@ final class AppModel: ObservableObject {
             switch self {
             case .ready: return 1
             case .skipped, .checking, .paused, .failed: return nil
-            case .downloading: return nil
+            case .downloading(_, let progress): return progress
             }
         }
 
@@ -90,6 +97,12 @@ final class AppModel: ObservableObject {
         var isDownloading: Bool {
             if case .downloading = self { return true }
             return false
+        }
+
+        static func progressPercentageText(_ progress: Double?) -> String? {
+            guard let progress else { return nil }
+            let clampedProgress = min(max(progress, 0), 1)
+            return "\(Int((clampedProgress * 100).rounded()))%"
         }
     }
 
@@ -146,10 +159,10 @@ final class AppModel: ObservableObject {
         case systemOpen(String)
     }
 
-    enum SetupIssueIndicator: Equatable {
+    enum SetupIssueIndicator: Hashable {
         case permissions
         case model
-        case modelDownloading
+        case modelDownloading(progress: Double?)
 
         var title: String {
             switch self {
@@ -157,7 +170,10 @@ final class AppModel: ObservableObject {
                 return "缺少权限"
             case .model:
                 return "缺少模型设置"
-            case .modelDownloading:
+            case .modelDownloading(let progress):
+                if let percentageText = ModelReadiness.progressPercentageText(progress) {
+                    return "模型下载中 \(percentageText)"
+                }
                 return "模型下载中"
             }
         }
@@ -587,7 +603,7 @@ final class AppModel: ObservableObject {
         case .ready:
             return nil
         case .downloading:
-            return .modelDownloading
+            return .modelDownloading(progress: modelReadiness.progress)
         case .skipped, .checking, .paused, .failed:
             return .model
         }
@@ -931,8 +947,8 @@ final class AppModel: ObservableObject {
                     self.modelReadiness = .ready
                 case .checking:
                     self.modelReadiness = .checking
-                case .downloading(let filename):
-                    self.modelReadiness = .downloading(filename)
+                case .downloading(let filename, let progress):
+                    self.modelReadiness = .downloading(filename, progress: progress)
                 case .paused:
                     self.modelReadiness = .paused
                 case .failed:
@@ -964,6 +980,8 @@ final class AppModel: ObservableObject {
         case .startDownload, .retryDownload:
             downloadBundledModel()
         case .resumeDownload:
+            bypassInitialSetup()
+            screen = .taskSetup
             startModelDownloadIfNeeded()
         case .pauseDownload:
             pauseModelDownload()
@@ -976,6 +994,8 @@ final class AppModel: ObservableObject {
         modelSetupSelection.source = .bundled
         useLocalLLM = false
         userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
+        bypassInitialSetup()
+        screen = .taskSetup
         startModelDownloadIfNeeded()
     }
 

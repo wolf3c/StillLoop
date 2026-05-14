@@ -172,7 +172,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(
             AppModel.initialLaunchScreen(
                 hasCompletedInitialSetup: true,
-                setupIssueIndicators: [.modelDownloading]
+                setupIssueIndicators: [.modelDownloading(progress: nil)]
             ),
             .modelSetup
         )
@@ -276,12 +276,12 @@ final class HomeNavigationTests: XCTestCase {
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
         model.useLocalLLM = false
-        model.modelReadiness = .downloading("StillLoop.gguf")
+        model.modelReadiness = .downloading("StillLoop.gguf", progress: 0.42)
 
         model.bypassInitialSetup()
 
-        XCTAssertEqual(model.setupIssueIndicators, [.modelDownloading])
-        XCTAssertEqual(model.setupIssueIndicators.first?.title, "模型下载中")
+        XCTAssertEqual(model.setupIssueIndicators, [.modelDownloading(progress: 0.42)])
+        XCTAssertEqual(model.setupIssueIndicators.first?.title, "模型下载中 42%")
     }
 
     func testManualModelConfigurationDoesNotBlockLaunchBeforeConnectionCheck() {
