@@ -36,6 +36,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `YYYY-MM-DD`: What went wrong. Root cause. Future rule to prevent recurrence.
 - `2026-05-13`: Added only a prose testing constraint without a runnable command. Root cause: documented intent but not the exact agent action. Future rule: when test configuration is requested, include the concrete command or environment variables agents should run.
 - `2026-05-13`: Left the new skip-download launch setting out of this guide. Root cause: updated the script and test but not the reusable agent instructions. Future rule: when changing development or testing commands, update `AGENTS.md` in the same task.
+- `2026-05-14`: Rebuilt an App Store package with `CFBundleVersion=2` after App Store Connect had already accepted build `2`. Root cause: treated the local package as the source of truth and did not account for server-side uploaded build numbers. Future rule: before every upload retry, set `STILLLOOP_BUNDLE_VERSION` to one greater than the highest build number already accepted by App Store Connect for that marketing version.
 
 ## Design And Behavior Changes
 
@@ -71,16 +72,18 @@ swift test
 Build a signed Mac App Store package only after the Apple Developer agreement is accepted, the App Store bundle ID exists, and local Mac App Store signing identities are installed. Keep the Mac App Store provisioning profile outside the repository; the preferred local path is `$HOME/AppleStore/Signing/StillLoop/StillLoop_Mac_App_Store.provisionprofile`.
 
 ```sh
+NEXT_BUILD_NUMBER=3
+
 STILLLOOP_BUNDLE_IDENTIFIER=com.super-tree.stillloop \
 STILLLOOP_APP_SIGN_IDENTITY="Apple Distribution: Jinchun Chen (FUNQ8PQ8CX)" \
 STILLLOOP_INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Jinchun Chen (FUNQ8PQ8CX)" \
 STILLLOOP_PROVISIONING_PROFILE="$HOME/AppleStore/Signing/StillLoop/StillLoop_Mac_App_Store.provisionprofile" \
 STILLLOOP_MARKETING_VERSION=1.0 \
-STILLLOOP_BUNDLE_VERSION=1 \
+STILLLOOP_BUNDLE_VERSION="$NEXT_BUILD_NUMBER" \
 scripts/build-app-store-package.sh
 ```
 
-Increment `STILLLOOP_BUNDLE_VERSION` for every App Store Connect upload, including retries after a failed processed build.
+Set `NEXT_BUILD_NUMBER` to one greater than the highest build number already accepted by App Store Connect for the same `STILLLOOP_MARKETING_VERSION`. Increment it for every App Store Connect upload, including retries after a failed processed build. Do not infer the next upload number from the local `.pkg` filename or the current local `.build/app-store/StillLoop.app`; the script overwrites those files and names the package by marketing version only.
 
 To avoid repeat App Store packaging failures, use this order:
 
@@ -102,7 +105,9 @@ The expected installer identity is `3rd Party Mac Developer Installer: Jinchun C
 
 3. Run the package script as an approved unsandboxed command when the Codex shell hits SwiftPM cache, clang module cache, `sandbox-exec: sandbox_apply`, readonly `.build/build.db`, or Keychain identity visibility errors. These are environment permission blockers; do not diagnose app code from them.
 
-4. After packaging, verify the actual artifact, not just command success:
+4. If Transporter reports `The provided entity includes an attribute with a value that has already been used (-19232)` or says the bundle version must be higher than a previous value, do not retry the same `.pkg`. Rebuild immediately with `STILLLOOP_BUNDLE_VERSION` set to that previous value plus one.
+
+5. After packaging, verify the actual artifact, not just command success:
 
 ```sh
 codesign --verify --deep --strict --verbose=2 .build/app-store/StillLoop.app
