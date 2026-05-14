@@ -26,6 +26,15 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(StillLoopPermissionsCopy.footerActionTitles, ["继续"])
     }
 
+    func testPermissionsCopyUsesProductLanguage() {
+        XCTAssertEqual(
+            StillLoopPermissionsCopy.subtitle,
+            "StillLoop 仅在本机读取必要的屏幕与摄像头状态，用于判断是否需要提醒；不会保存截图或摄像头画面。"
+        )
+        XCTAssertFalse(StillLoopPermissionsCopy.subtitle.contains("MVP"))
+        XCTAssertFalse(StillLoopPermissionsCopy.subtitle.contains("模拟上下文"))
+    }
+
     func testMainWindowHidesNativeTitleForCustomHeader() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 590),

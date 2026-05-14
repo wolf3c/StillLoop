@@ -13,6 +13,7 @@ enum StillLoopWelcomeCopy {
 }
 
 enum StillLoopPermissionsCopy {
+    static let subtitle = "StillLoop 仅在本机读取必要的屏幕与摄像头状态，用于判断是否需要提醒；不会保存截图或摄像头画面。"
     static let primaryActionTitle = "继续"
     static let footerActionTitles = [primaryActionTitle]
 }
@@ -159,7 +160,7 @@ private struct PermissionsView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("权限获取引导")
                 .font(.largeTitle.weight(.semibold))
-            Text("MVP 只读取本地上下文信号，不保存截图或摄像头画面。你可以先使用模拟上下文完成完整流程。")
+            Text(StillLoopPermissionsCopy.subtitle)
                 .foregroundStyle(.secondary)
             PermissionRow(
                 title: "屏幕录制",
