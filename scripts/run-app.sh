@@ -6,6 +6,8 @@ APP_DIR="$ROOT_DIR/.build/StillLoop.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+BUNDLE_IDENTIFIER="local.StillLoop.dev"
+DESIGNATED_REQUIREMENT="=designated => identifier \"$BUNDLE_IDENTIFIER\""
 
 export STILLLOOP_SKIP_MODEL_DOWNLOAD=1
 
@@ -17,7 +19,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/arm64-apple-macosx/debug/StillLoop" "$MACOS_DIR/StillLoop"
 cp "$ROOT_DIR/Sources/StillLoop/Resources/StillLoop.icns" "$RESOURCES_DIR/StillLoop.icns"
 
-cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
+cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -25,7 +27,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>StillLoop</string>
   <key>CFBundleIdentifier</key>
-  <string>local.StillLoop.dev</string>
+  <string>$BUNDLE_IDENTIFIER</string>
   <key>CFBundleName</key>
   <string>StillLoop</string>
   <key>CFBundleDisplayName</key>
@@ -47,6 +49,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+/usr/bin/codesign --force --deep --sign - --identifier "$BUNDLE_IDENTIFIER" --requirements "$DESIGNATED_REQUIREMENT" "$APP_DIR"
 
 if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
   exit 0

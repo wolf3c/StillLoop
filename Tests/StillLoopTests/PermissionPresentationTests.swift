@@ -25,6 +25,7 @@ final class PermissionPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.actionTitle, "打开系统设置")
         XCTAssertEqual(presentation.action, .openSettings)
         XCTAssertTrue(presentation.guidance.contains("系统设置"))
+        XCTAssertTrue(presentation.guidance.contains("重新开启"))
         XCTAssertTrue(presentation.guidance.contains("重启 StillLoop"))
         XCTAssertFalse(presentation.isAllowed)
     }

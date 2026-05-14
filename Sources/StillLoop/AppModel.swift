@@ -242,7 +242,7 @@ final class AppModel: ObservableObject {
 
         return PermissionPresentation(
             detail: "未生效",
-            guidance: "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经打开，请重启 StillLoop 后再继续。",
+            guidance: "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经开启但仍未生效，请关闭后重新开启一次，然后重启 StillLoop。",
             actionTitle: "打开系统设置",
             action: .openSettings,
             isAllowed: false

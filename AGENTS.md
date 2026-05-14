@@ -85,6 +85,8 @@ STILLLOOP_LLM_MODEL=qwen3.5-0.8b \
 scripts/run-app.sh
 ```
 
+The launch script rebuilds `.build/StillLoop.app` and signs the development bundle with stable identifier `local.StillLoop.dev` plus a matching designated requirement. This keeps macOS privacy permissions tied to the development app across rebuilds. If an older build was authorized before this signing behavior existed, the first run after the change may still require turning the StillLoop screen-recording permission off and on once, then restarting StillLoop.
+
 Run the app launch command from a normal local shell or an approved unsandboxed Codex command. If it fails inside the Codex shell sandbox with SwiftPM cache, clang module cache, or readonly `.build/build.db` errors, treat that as an environment permission blocker and rerun outside the sandbox before diagnosing app code.
 
 If a command cannot run in the current environment, report the exact blocker and what remains unverified.
