@@ -356,6 +356,15 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.screen, .taskSetup)
     }
 
+    func testModelSetupViewRefreshesBundledModelStatusWhenShownOrSelected() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains(".onAppear { model.refreshModelStatus() }"))
+        XCTAssertTrue(source.contains(".onChange(of: model.modelSetupSelection.source) { source in"))
+        XCTAssertTrue(source.contains("if source == .bundled {"))
+        XCTAssertTrue(source.contains("model.refreshModelStatus()"))
+    }
+
     func testSettingsButtonIsHiddenDuringSetupFlow() {
         let model = makeModel()
 

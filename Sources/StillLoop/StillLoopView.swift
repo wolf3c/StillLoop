@@ -251,6 +251,11 @@ private struct ModelSetupView: View {
                 Text("手动配置大模型").tag(ModelSetupSelection.Source.manual)
             }
             .pickerStyle(.radioGroup)
+            .onChange(of: model.modelSetupSelection.source) { source in
+                if source == .bundled {
+                    model.refreshModelStatus()
+                }
+            }
 
             switch model.modelSetupSelection.source {
             case .bundled:
@@ -262,6 +267,7 @@ private struct ModelSetupView: View {
             Spacer()
         }
         .padding(40)
+        .onAppear { model.refreshModelStatus() }
     }
 
     private var bundledModelSection: some View {
