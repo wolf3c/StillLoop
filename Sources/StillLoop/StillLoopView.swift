@@ -852,26 +852,36 @@ private struct ReviewView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("专注复盘")
                 .font(.largeTitle.weight(.semibold))
-            if let summary, let stats {
+            if let session = model.currentSession, let summary, let stats {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("本次任务")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(session.task)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: 640, alignment: .leading)
+
                 HStack(spacing: 12) {
                     Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
                     Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
                     Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
                     Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
                 }
-                Text("用户反馈")
-                    .font(.headline)
-                HStack {
-                    ForEach(SessionFeedback.allCases, id: \.self) { feedback in
-                        Button(feedback.displayName) { model.setFeedback(feedback) }
-                    }
-                }
                 ReviewAppUsageCard(topApps: summary.topApps)
             }
-            Button("开始新的专注") {
-                model.prepareNewSession()
+            HStack(spacing: 10) {
+                Button("继续这个任务") {
+                    model.continueReviewTask()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("开始新的专注") {
+                    model.prepareNewSession()
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
             .controlSize(.large)
             Spacer()
         }

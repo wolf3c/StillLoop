@@ -919,6 +919,32 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.idle)
     }
 
+    func continueReviewTask() {
+        let task = currentSession?.task.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !task.isEmpty else {
+            prepareNewSession()
+            return
+        }
+
+        cancelSessionLoops()
+        provider = nil
+        currentSession = nil
+        latestContext = nil
+        unanalyzedSnapshots.removeAll()
+        unanalyzedCaptureCount = 0
+        taskText = task
+        status = .idle
+        currentState = .uncertain
+        lastNudge = "暂无提醒"
+        elapsed = 0
+        isSuspendedForSystemInactivity = false
+        systemSuspendedAt = nil
+        accumulatedSystemSuspendedDuration = 0
+        evaluationLoopDescription = "等待开始任务"
+        analysisPhase = .idle
+        startSessionAfterPermissionCheck(task: task)
+    }
+
     func setFeedback(_ feedback: SessionFeedback) {
         guard var session = currentSession else { return }
         session.feedback = feedback
