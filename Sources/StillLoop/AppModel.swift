@@ -424,11 +424,16 @@ final class AppModel: ObservableObject {
         }
         if let storedValue,
            !storedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !Self.legacyDefaultLLMModelIDs.contains(storedValue),
            storedValue != ModelDownloadSpec.builtIn.localServerModelID {
             return storedValue
         }
         return ""
     }
+
+    private nonisolated static let legacyDefaultLLMModelIDs = Set([
+        "qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl"
+    ])
 
     nonisolated static func effectiveLLMBaseURLText(_ rawValue: String) -> String {
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -486,7 +491,11 @@ final class AppModel: ObservableObject {
         return firstIssue == .permissions ? .permissions : .modelSetup
     }
 
-    init(userDefaults: UserDefaults = .standard, bundledModelRuntime: BundledModelRuntimeManaging? = nil) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        bundledModelRuntime: BundledModelRuntimeManaging? = nil,
+        supportDirectory overrideSupportDirectory: URL? = nil
+    ) {
         self.userDefaults = userDefaults
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
@@ -525,9 +534,10 @@ final class AppModel: ObservableObject {
         llmBaseURLText = resolvedBaseURLText
         llmModelText = resolvedModelText
         hasBypassedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("StillLoop", isDirectory: true)
+        let support = overrideSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+                .first?
+                .appendingPathComponent("StillLoop", isDirectory: true)
         let supportDirectory = support ?? URL(fileURLWithPath: NSTemporaryDirectory())
         store = FileSessionStore(appSupportDirectory: supportDirectory)
         let modelDirectory = supportDirectory.appendingPathComponent("Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", isDirectory: true)
@@ -1354,6 +1364,8 @@ final class AppModel: ObservableObject {
             return "自带模型：缺少 llama-server"
         case .missingModel:
             return "自带模型：缺少模型文件"
+        case .missingProjector:
+            return "自带模型：缺少视觉投影文件"
         case .portInUse:
             return "自带模型：端口被占用"
         case .launchFailed:

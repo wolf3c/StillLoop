@@ -32,6 +32,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     enum RuntimeError: Error, Equatable {
         case missingExecutable(URL)
         case missingModel(URL)
+        case missingProjector(URL)
         case portInUse(Int)
         case launchFailed(String)
         case imageInputUnavailable
@@ -46,6 +47,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
                 return "缺少 llama-server"
             case .missingModel:
                 return "缺少模型文件"
+            case .missingProjector:
+                return "缺少视觉投影文件"
             case .portInUse:
                 return "端口被占用"
             case .launchFailed:
@@ -68,6 +71,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
 
     private let executableURL: URL
     private let modelURL: URL
+    private let mmprojURL: URL?
     private let spec: ModelDownloadSpec
     private let fileManager: FileManager
     private let processLauncher: BundledModelProcessLaunching
@@ -80,6 +84,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     init(
         executableURL: URL,
         modelURL: URL,
+        mmprojURL: URL? = nil,
         spec: ModelDownloadSpec,
         fileManager: FileManager = .default,
         processLauncher: BundledModelProcessLaunching = FoundationBundledModelProcessLauncher(),
@@ -90,6 +95,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     ) {
         self.executableURL = executableURL
         self.modelURL = modelURL
+        self.mmprojURL = mmprojURL ?? spec.mmprojFilename.map { modelURL.deletingLastPathComponent().appendingPathComponent($0) }
         self.spec = spec
         self.fileManager = fileManager
         self.processLauncher = processLauncher
@@ -108,6 +114,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         BundledModelRuntime(
             executableURL: bundledLlamaServerURL(bundle: bundle),
             modelURL: modelURL,
+            mmprojURL: ModelDownloadSpec.builtIn.mmprojFilename.map {
+                modelURL.deletingLastPathComponent().appendingPathComponent($0)
+            },
             spec: .builtIn
         )
     }
@@ -129,8 +138,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             .appendingPathComponent("llama-server")
     }
 
-    static func launchArguments(modelURL: URL, spec: ModelDownloadSpec) -> [String] {
-        [
+    static func launchArguments(modelURL: URL, mmprojURL: URL? = nil, spec: ModelDownloadSpec) -> [String] {
+        var arguments = [
             "-m", modelURL.path,
             "--host", "127.0.0.1",
             "--port", String(spec.localServerPort),
@@ -140,6 +149,10 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV
         ]
+        if let mmprojURL {
+            arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)
+        }
+        return arguments
     }
 
     func startIfNeeded() async throws {
@@ -151,6 +164,12 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         guard fileManager.fileExists(atPath: modelURL.path) else {
             state = .failed(RuntimeError.statusMessage(for: RuntimeError.missingModel(modelURL)))
             throw RuntimeError.missingModel(modelURL)
+        }
+        if let mmprojURL {
+            guard fileManager.fileExists(atPath: mmprojURL.path) else {
+                state = .failed(RuntimeError.statusMessage(for: RuntimeError.missingProjector(mmprojURL)))
+                throw RuntimeError.missingProjector(mmprojURL)
+            }
         }
         guard fileManager.fileExists(atPath: executableURL.path), fileManager.isExecutableFile(atPath: executableURL.path) else {
             state = .failed(RuntimeError.statusMessage(for: RuntimeError.missingExecutable(executableURL)))
@@ -165,7 +184,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         do {
             let launchedProcess = try processLauncher.launch(
                 executableURL: executableURL,
-                arguments: Self.launchArguments(modelURL: modelURL, spec: spec)
+                arguments: Self.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: spec)
             )
             process = launchedProcess
             _ = try await waitUntilReady()

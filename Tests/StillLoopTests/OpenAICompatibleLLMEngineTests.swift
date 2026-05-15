@@ -131,6 +131,13 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
             ),
             ""
         )
+        XCTAssertEqual(
+            AppModel.resolvedLLMModelText(
+                environmentValue: nil,
+                storedValue: ModelDownloadSpec.builtIn.localServerModelID
+            ),
+            ""
+        )
     }
 
     func testCustomStoredBaseURLIsPreserved() {

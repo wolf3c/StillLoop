@@ -106,9 +106,12 @@ The task setup screen includes a `使用模拟上下文` toggle. Keep it enabled
 
 The built-in llama.cpp model is:
 
-https://huggingface.co/mradermacher/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF
+https://huggingface.co/twinblade02/Qwen3.5VL-0.8B-ImageExplainer-GGUF
 
-Use the `Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf` file for the local model runtime.
+Use both files for the local model runtime:
+
+- `Qwen3.5-0.8B-Base.Q4_K_M.gguf`
+- `Qwen3.5-0.8B-Base.BF16-mmproj.gguf`
 
 StillLoop stores built-in downloaded models under:
 
@@ -119,7 +122,8 @@ StillLoop stores built-in downloaded models under:
 The llama.cpp target path is:
 
 ```sh
-~/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf
+~/Library/Application Support/StillLoop/Models/Qwen3.5VL-0.8B-ImageExplainer-GGUF/Qwen3.5-0.8B-Base.Q4_K_M.gguf
+~/Library/Application Support/StillLoop/Models/Qwen3.5VL-0.8B-ImageExplainer-GGUF/Qwen3.5-0.8B-Base.BF16-mmproj.gguf
 ```
 
 Current runtime behavior:
@@ -151,7 +155,8 @@ After installing or building llama.cpp, run:
 
 ```sh
 llama-server \
-  -m "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf" \
+  -m "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5VL-0.8B-ImageExplainer-GGUF/Qwen3.5-0.8B-Base.Q4_K_M.gguf" \
+  --mmproj "$HOME/Library/Application Support/StillLoop/Models/Qwen3.5VL-0.8B-ImageExplainer-GGUF/Qwen3.5-0.8B-Base.BF16-mmproj.gguf" \
   --host 127.0.0.1 \
   --port 17631 \
   --ctx-size 32768 \
@@ -166,7 +171,7 @@ Then launch StillLoop:
 ```sh
 STILLLOOP_USE_LOCAL_LLM=1 \
 STILLLOOP_LLM_BASE_URL=http://127.0.0.1:17631/v1 \
-STILLLOOP_LLM_MODEL=qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl \
+STILLLOOP_LLM_MODEL=Qwen3.5-0.8B-Base.Q4_K_M.gguf \
 scripts/run-app.sh
 ```
 
@@ -181,7 +186,7 @@ scripts/run-app.sh
 ## Next Steps
 
 - Add a signed Xcode app target and app icon.
-- Add a real model download and MLX inference pipeline behind the existing evaluator boundary.
+- Continue improving bundled model quality and local inference latency behind the existing evaluator boundary.
 - Expand `MacLocalContextProvider` with browser URL/title adapters.
 - Add screenshot and camera analysis that keeps raw images in memory only.
 - Add UI tests for the full start, nudge, end, and review flow.

@@ -5,6 +5,15 @@ import AppKit
 
 @MainActor
 final class HomeNavigationTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDownWithError() throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+    }
+
     private var isolatedDefaults: UserDefaults {
         let suiteName = "StillLoopTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -12,8 +21,32 @@ final class HomeNavigationTests: XCTestCase {
         return defaults
     }
 
-    private func makeModel() -> AppModel {
-        AppModel(userDefaults: isolatedDefaults)
+    private func makeModel(
+        userDefaults: UserDefaults? = nil,
+        bundledModelRuntime: BundledModelRuntimeManaging? = nil,
+        withBundledModelFiles: Bool = false
+    ) -> AppModel {
+        let supportDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StillLoopHomeTests-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(supportDirectory)
+        if withBundledModelFiles {
+            let modelDirectory = supportDirectory.appendingPathComponent(
+                "Models/\(ModelDownloadSpec.builtIn.localSubdirectory)",
+                isDirectory: true
+            )
+            try? FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+            for filename in ModelDownloadSpec.builtIn.requiredFilenames {
+                FileManager.default.createFile(
+                    atPath: modelDirectory.appendingPathComponent(filename).path,
+                    contents: Data("model".utf8)
+                )
+            }
+        }
+        return AppModel(
+            userDefaults: userDefaults ?? isolatedDefaults,
+            bundledModelRuntime: bundledModelRuntime,
+            supportDirectory: supportDirectory
+        )
     }
 
     func testWelcomeCopyLeadsWithUserValue() {
@@ -180,10 +213,10 @@ final class HomeNavigationTests: XCTestCase {
 
     func testCompletingInitialSetupPersistsAcrossLaunches() {
         let defaults = isolatedDefaults
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
 
         model.bypassInitialSetup()
-        let relaunched = AppModel(userDefaults: defaults)
+        let relaunched = makeModel(userDefaults: defaults)
 
         XCTAssertTrue(relaunched.hasBypassedInitialSetup)
     }
@@ -193,6 +226,7 @@ final class HomeNavigationTests: XCTestCase {
         model.screen = .welcome
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
+        model.modelSetupSelection.source = .manual
         model.useLocalLLM = true
         model.llmBaseURLText = "http://127.0.0.1:17631"
         model.llmModelText = "qwen-local"
@@ -222,6 +256,7 @@ final class HomeNavigationTests: XCTestCase {
         model.screen = .permissions
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
+        model.modelSetupSelection.source = .manual
         model.useLocalLLM = true
         model.llmBaseURLText = "http://127.0.0.1:17631"
         model.llmModelText = "qwen-local"
@@ -285,7 +320,8 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testManualModelConfigurationDoesNotBlockLaunchBeforeConnectionCheck() {
-        let model = AppModel(userDefaults: isolatedDefaults)
+        let model = makeModel()
+        model.modelSetupSelection.source = .manual
         model.useLocalLLM = true
         model.llmBaseURLText = "http://127.0.0.1:17631"
         model.llmModelText = "qwen-local"
@@ -299,7 +335,7 @@ final class HomeNavigationTests: XCTestCase {
         defaults.set(true, forKey: "hasCompletedInitialSetup")
         defaults.set("http://127.0.0.1:9090/v1", forKey: "llmBaseURL")
         defaults.set("qwen-local", forKey: "llmModel")
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
         model.status = .idle
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
@@ -314,7 +350,7 @@ final class HomeNavigationTests: XCTestCase {
 
     func testManualConfigurationPersistsManualModelSelectionWhenFieldsArePresent() {
         let defaults = isolatedDefaults
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
         model.modelSetupSelection.source = .manual
         model.llmBaseURLText = "http://127.0.0.1:8080/v1"
         model.llmModelText = "qwen-local"
@@ -325,7 +361,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testManualConfigurationImmediatelySatisfiesModelSetupWhenFieldsArePresent() {
-        let model = AppModel(userDefaults: isolatedDefaults)
+        let model = makeModel()
         model.modelSetupSelection.source = .manual
         model.llmBaseURLText = "http://127.0.0.1:8080/v1"
         model.llmModelText = "qwen-local"
@@ -342,7 +378,7 @@ final class HomeNavigationTests: XCTestCase {
         defaults.set(true, forKey: "useLocalLLM")
         defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
         defaults.set("qwen-local", forKey: "llmModel")
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
         model.status = .idle
         model.screenCapturePermission = "已允许"
         model.cameraPermission = "已允许"
@@ -364,7 +400,7 @@ final class HomeNavigationTests: XCTestCase {
         defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
         defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
 
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
 
         XCTAssertFalse(model.useLocalLLM)
         XCTAssertEqual(model.modelSetupSelection.source, .bundled)
@@ -375,7 +411,7 @@ final class HomeNavigationTests: XCTestCase {
         defaults.set(true, forKey: "useLocalLLM")
         defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
         defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
 
         model.selectModelSource(.bundled)
 
@@ -392,7 +428,7 @@ final class HomeNavigationTests: XCTestCase {
         defaults.set(true, forKey: "useLocalLLM")
         defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
         defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
-        let model = AppModel(userDefaults: defaults)
+        let model = makeModel(userDefaults: defaults)
         model.selectModelSource(.bundled)
 
         let canUseManualModel = await model.checkModelConnectionNow()
@@ -406,7 +442,7 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledModelRuntimeStartsForBundledEvaluationWithoutManualHTTP() async {
         let runtime = FakeBundledRuntime()
-        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
 
         let isPrepared = await model.prepareBundledModelForEvaluation()
@@ -421,7 +457,7 @@ final class HomeNavigationTests: XCTestCase {
     func testBundledImageReadinessFailureIsVisibleAndDoesNotEnableManualHTTP() async {
         let runtime = FakeBundledRuntime()
         runtime.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
-        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
 
         let isPrepared = await model.prepareBundledModelForEvaluation()
@@ -435,7 +471,7 @@ final class HomeNavigationTests: XCTestCase {
     func testBundledRuntimeFailureDoesNotRestartOnEveryEvaluationAttempt() async {
         let runtime = FakeBundledRuntime()
         runtime.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
-        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
 
         _ = await model.prepareBundledModelForEvaluation()
@@ -448,7 +484,7 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledRuntimeStaysWarmWhenPausingOrEndingSession() {
         let runtime = FakeBundledRuntime()
-        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
         model.status = .running
         model.currentSession = FocusSession(task: "测试自带模型", startedAt: Date(), endedAt: nil, events: [], feedback: nil)
@@ -465,7 +501,7 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledRuntimeStaysWarmWhenStartingNextTaskFromReview() {
         let runtime = FakeBundledRuntime()
-        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
         model.startPermissionDecisionOverride = .proceed
         model.status = .ended

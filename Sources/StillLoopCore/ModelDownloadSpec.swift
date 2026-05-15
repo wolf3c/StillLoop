@@ -3,6 +3,7 @@ import Foundation
 public struct ModelDownloadSpec: Equatable {
     public let repoID: String
     public let filename: String
+    public let mmprojFilename: String?
     public let localSubdirectory: String
     public let localServerModelID: String
     public let localServerPort: Int
@@ -15,6 +16,22 @@ public struct ModelDownloadSpec: Equatable {
     }
 
     public var downloadURL: URL {
+        downloadURL(for: filename)
+    }
+
+    public var mmprojDownloadURL: URL? {
+        mmprojFilename.map(downloadURL(for:))
+    }
+
+    public var requiredFilenames: [String] {
+        var filenames = [filename]
+        if let mmprojFilename {
+            filenames.append(mmprojFilename)
+        }
+        return filenames
+    }
+
+    public func downloadURL(for filename: String) -> URL {
         let encoded = filename
             .split(separator: "/")
             .map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
@@ -27,10 +44,11 @@ public struct ModelDownloadSpec: Equatable {
     }
 
     public static let builtIn = ModelDownloadSpec(
-        repoID: "mradermacher/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF",
-        filename: "Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf",
-        localSubdirectory: "Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF",
-        localServerModelID: "qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl",
+        repoID: "twinblade02/Qwen3.5VL-0.8B-ImageExplainer-GGUF",
+        filename: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+        mmprojFilename: "Qwen3.5-0.8B-Base.BF16-mmproj.gguf",
+        localSubdirectory: "Qwen3.5VL-0.8B-ImageExplainer-GGUF",
+        localServerModelID: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
         localServerPort: 17_631,
         recommendedContextSize: 32_768,
         recommendedCacheTypeK: "f16",

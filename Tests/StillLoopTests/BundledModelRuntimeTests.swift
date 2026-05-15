@@ -20,11 +20,17 @@ final class BundledModelRuntimeTests: XCTestCase {
 
     func testLaunchArgumentsUseDedicatedLlamaServerSettings() {
         let modelURL = URL(fileURLWithPath: "/tmp/StillLoop Models/model.gguf")
+        let mmprojURL = URL(fileURLWithPath: "/tmp/StillLoop Models/mmproj.gguf")
 
-        let arguments = BundledModelRuntime.launchArguments(modelURL: modelURL, spec: .builtIn)
+        let arguments = BundledModelRuntime.launchArguments(
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn
+        )
 
         XCTAssertEqual(arguments, [
             "-m", "/tmp/StillLoop Models/model.gguf",
+            "--mmproj", "/tmp/StillLoop Models/mmproj.gguf",
             "--host", "127.0.0.1",
             "--port", "17631",
             "--ctx-size", "32768",
@@ -35,6 +41,30 @@ final class BundledModelRuntimeTests: XCTestCase {
         ])
     }
 
+    func testStartFailsWhenProjectorFileIsMissingWithoutLaunchingProcess() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = temporaryDirectory.appendingPathComponent("missing-mmproj.gguf")
+        let launcher = FakeBundledModelProcessLauncher()
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { _ in false },
+            readinessProbe: { _, _ in .ready }
+        )
+
+        do {
+            try await runtime.startIfNeeded()
+            XCTFail("Expected missing projector file to prevent runtime launch")
+        } catch let error as BundledModelRuntime.RuntimeError {
+            XCTAssertEqual(error, .missingProjector(mmprojURL))
+            XCTAssertEqual(launcher.launchCount, 0)
+        }
+    }
+
     func testStartFailsWhenModelFileIsMissingWithoutLaunchingProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = temporaryDirectory.appendingPathComponent("missing.gguf")
@@ -42,6 +72,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
+            mmprojURL: nil,
             spec: .builtIn,
             processLauncher: launcher,
             isPortInUse: { _ in false },
@@ -60,10 +91,12 @@ final class BundledModelRuntimeTests: XCTestCase {
     func testStartFailsWhenPortIsAlreadyInUseWithoutLaunchingProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
         let launcher = FakeBundledModelProcessLauncher()
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
+            mmprojURL: mmprojURL,
             spec: .builtIn,
             processLauncher: launcher,
             isPortInUse: { $0 == ModelDownloadSpec.builtIn.localServerPort },
@@ -82,12 +115,14 @@ final class BundledModelRuntimeTests: XCTestCase {
     func testStartLaunchesProcessAndRequiresImageReadiness() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
         let launcher = FakeBundledModelProcessLauncher()
         var probedBaseURL: URL?
         var probedModelID: String?
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
+            mmprojURL: mmprojURL,
             spec: .builtIn,
             processLauncher: launcher,
             isPortInUse: { _ in false },
@@ -102,7 +137,10 @@ final class BundledModelRuntimeTests: XCTestCase {
 
         XCTAssertEqual(launcher.launchCount, 1)
         XCTAssertEqual(launcher.lastExecutableURL, executableURL)
-        XCTAssertEqual(launcher.lastArguments, BundledModelRuntime.launchArguments(modelURL: modelURL, spec: .builtIn))
+        XCTAssertEqual(
+            launcher.lastArguments,
+            BundledModelRuntime.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: .builtIn)
+        )
         XCTAssertEqual(probedBaseURL, ModelDownloadSpec.builtIn.localServerBaseURL)
         XCTAssertEqual(probedModelID, ModelDownloadSpec.builtIn.localServerModelID)
         XCTAssertEqual(runtime.state, .running)
@@ -111,11 +149,13 @@ final class BundledModelRuntimeTests: XCTestCase {
     func testStartPollsReadinessUntilServerAcceptsImageRequests() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
         let launcher = FakeBundledModelProcessLauncher()
         var probeCount = 0
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
+            mmprojURL: mmprojURL,
             spec: .builtIn,
             processLauncher: launcher,
             isPortInUse: { _ in false },
@@ -140,10 +180,12 @@ final class BundledModelRuntimeTests: XCTestCase {
     func testImageReadinessFailureStopsLaunchedProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
         let launcher = FakeBundledModelProcessLauncher()
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
+            mmprojURL: mmprojURL,
             spec: .builtIn,
             processLauncher: launcher,
             isPortInUse: { _ in false },
@@ -174,6 +216,12 @@ final class BundledModelRuntimeTests: XCTestCase {
     private func makeModelFile() throws -> URL {
         let url = temporaryDirectory.appendingPathComponent("model.gguf")
         FileManager.default.createFile(atPath: url.path, contents: Data("gguf".utf8))
+        return url
+    }
+
+    private func makeProjectorFile() throws -> URL {
+        let url = temporaryDirectory.appendingPathComponent("mmproj.gguf")
+        FileManager.default.createFile(atPath: url.path, contents: Data("mmproj".utf8))
         return url
     }
 }

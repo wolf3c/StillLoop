@@ -15,7 +15,9 @@ struct ModelDownloadManager {
     let localDirectory: URL
 
     func isDownloaded() -> Bool {
-        FileManager.default.fileExists(atPath: localDirectory.appendingPathComponent(spec.filename).path)
+        spec.requiredFilenames.allSatisfy { filename in
+            FileManager.default.fileExists(atPath: localDirectory.appendingPathComponent(filename).path)
+        }
     }
 
     func download(progress: @escaping @MainActor (DownloadUpdate) -> Void) async {
@@ -32,8 +34,12 @@ struct ModelDownloadManager {
         do {
             try FileManager.default.createDirectory(at: localDirectory, withIntermediateDirectories: true)
             await progress(.checking)
-            try await downloadFile { fraction in
-                await progress(.downloading(spec.filename, fraction))
+            for filename in spec.requiredFilenames {
+                let destination = localDirectory.appendingPathComponent(filename)
+                guard !FileManager.default.fileExists(atPath: destination.path) else { continue }
+                try await downloadFile(filename: filename) { fraction in
+                    await progress(.downloading(filename, fraction))
+                }
             }
             try Task.checkCancellation()
 
@@ -52,10 +58,10 @@ struct ModelDownloadManager {
         return min(max(Double(completedBytes) / Double(expectedBytes), 0), 1)
     }
 
-    private func downloadFile(progress: @escaping @MainActor (Double?) async -> Void) async throws {
-        let destination = localDirectory.appendingPathComponent(spec.filename)
+    private func downloadFile(filename: String, progress: @escaping @MainActor (Double?) async -> Void) async throws {
+        let destination = localDirectory.appendingPathComponent(filename)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let temporaryURL = destination.deletingLastPathComponent().appendingPathComponent(".\(spec.filename).download")
+        let temporaryURL = destination.deletingLastPathComponent().appendingPathComponent(".\(filename).download")
         if FileManager.default.fileExists(atPath: temporaryURL.path) {
             try FileManager.default.removeItem(at: temporaryURL)
         }
@@ -68,7 +74,7 @@ struct ModelDownloadManager {
             }
         }
 
-        let (bytes, response) = try await URLSession.shared.bytes(from: spec.downloadURL)
+        let (bytes, response) = try await URLSession.shared.bytes(from: spec.downloadURL(for: filename))
         let expectedBytes = response.expectedContentLength
         var completedBytes: Int64 = 0
         var buffer: [UInt8] = []
