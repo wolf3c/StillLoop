@@ -77,4 +77,26 @@ final class EvaluatorTests: XCTestCase {
         XCTAssertEqual(result.state, .uncertain)
         XCTAssertFalse(result.shouldNudge)
     }
+
+    func testEvaluateNudgesWhenProgressIsStalled() {
+        let evaluator = FocusEvaluator()
+        let context = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 40),
+            activeAppName: "Codex",
+            windowTitle: "Codex",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+
+        let result = evaluator.evaluate(
+            task: "使用小说编辑 AI 生成小说",
+            recentSnapshots: [context],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .stuck)
+        XCTAssertTrue(result.shouldNudge)
+    }
 }

@@ -36,7 +36,7 @@ public struct FocusEvaluator {
             return EvaluationResult(state: .uncertain, confidence: 0.45, reason: "上下文不明确，暂不打断", shouldNudge: false)
         }
 
-        return EvaluationResult(state: .stuck, confidence: 0.55, reason: "缺少明确进展信号", shouldNudge: false)
+        return EvaluationResult(state: .stuck, confidence: 0.55, reason: "缺少明确进展信号", shouldNudge: true)
     }
 
     private func terms(from text: String) -> [String] {
