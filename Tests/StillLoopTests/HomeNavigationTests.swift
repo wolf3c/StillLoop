@@ -356,13 +356,57 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.screen, .taskSetup)
     }
 
+    func testStoredBundledSelectionOverridesStaleManualHTTPConfigurationOnLaunch() {
+        let defaults = isolatedDefaults
+        defaults.set(true, forKey: "hasCompletedInitialSetup")
+        defaults.set("bundled", forKey: "modelSource")
+        defaults.set(true, forKey: "useLocalLLM")
+        defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
+        defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
+
+        let model = AppModel(userDefaults: defaults)
+
+        XCTAssertFalse(model.useLocalLLM)
+        XCTAssertEqual(model.modelSetupSelection.source, .bundled)
+    }
+
+    func testSelectingBundledModelDisablesManualHTTPEvaluationAndPersistsSelection() {
+        let defaults = isolatedDefaults
+        defaults.set(true, forKey: "useLocalLLM")
+        defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
+        defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
+        let model = AppModel(userDefaults: defaults)
+
+        model.selectModelSource(.bundled)
+
+        XCTAssertFalse(model.useLocalLLM)
+        XCTAssertEqual(model.modelSetupSelection.source, .bundled)
+        XCTAssertFalse(defaults.bool(forKey: "useLocalLLM"))
+        XCTAssertEqual(defaults.string(forKey: "modelSource"), "bundled")
+    }
+
+    func testBundledSelectionPreventsManualConnectionCheckFromReenablingHTTP() async {
+        let defaults = isolatedDefaults
+        defaults.set(true, forKey: "useLocalLLM")
+        defaults.set("http://127.0.0.1:8080/v1", forKey: "llmBaseURL")
+        defaults.set("qwen3.5-0.8b-mlx", forKey: "llmModel")
+        let model = AppModel(userDefaults: defaults)
+        model.selectModelSource(.bundled)
+
+        let canUseManualModel = await model.checkModelConnectionNow()
+
+        XCTAssertFalse(canUseManualModel)
+        XCTAssertFalse(model.useLocalLLM)
+        XCTAssertEqual(model.modelConnectionStatus, "应用自带模型已选中")
+        XCTAssertFalse(defaults.bool(forKey: "useLocalLLM"))
+    }
+
     func testModelSetupViewRefreshesBundledModelStatusWhenShownOrSelected() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
 
         XCTAssertTrue(source.contains(".onAppear { model.refreshModelStatus() }"))
         XCTAssertTrue(source.contains(".onChange(of: model.modelSetupSelection.source) { source in"))
-        XCTAssertTrue(source.contains("if source == .bundled {"))
-        XCTAssertTrue(source.contains("model.refreshModelStatus()"))
+        XCTAssertTrue(source.contains("model.selectModelSource(source)"))
     }
 
     func testSettingsButtonIsHiddenDuringSetupFlow() {

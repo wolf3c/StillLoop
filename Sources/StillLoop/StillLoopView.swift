@@ -252,9 +252,7 @@ private struct ModelSetupView: View {
             }
             .pickerStyle(.radioGroup)
             .onChange(of: model.modelSetupSelection.source) { source in
-                if source == .bundled {
-                    model.refreshModelStatus()
-                }
+                model.selectModelSource(source)
             }
 
             switch model.modelSetupSelection.source {

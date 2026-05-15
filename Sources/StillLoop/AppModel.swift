@@ -256,6 +256,7 @@ final class AppModel: ObservableObject {
 
     private enum DefaultsKey {
         static let hasCompletedInitialSetup = "hasCompletedInitialSetup"
+        static let modelSource = "modelSource"
         static let useLocalLLM = "useLocalLLM"
         static let llmBaseURL = "llmBaseURL"
         static let llmModel = "llmModel"
@@ -491,6 +492,9 @@ final class AppModel: ObservableObject {
             overlayPresenter: nudgeOverlayPresenter
         )
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
+        let storedModelSource = userDefaults.string(forKey: DefaultsKey.modelSource)
+            .flatMap(ModelSetupSelection.Source.init(rawValue:))
+        let environmentForcesLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
         let resolvedBaseURLText = AppModel.resolvedLLMBaseURLText(
             environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
             storedValue: userDefaults.string(forKey: DefaultsKey.llmBaseURL),
@@ -501,11 +505,20 @@ final class AppModel: ObservableObject {
             storedValue: userDefaults.string(forKey: DefaultsKey.llmModel),
             preserveStoredValue: storedUseLocalLLM
         )
-        let localLLMEnabled = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
-            || storedUseLocalLLM
-            || AppModel.hasManualModelConfiguration(baseURLText: resolvedBaseURLText, modelText: resolvedModelText)
+        let explicitBundledSelection = storedModelSource == .bundled && !environmentForcesLocalLLM
+        let localLLMEnabled = environmentForcesLocalLLM
+            || (!explicitBundledSelection && (
+                storedUseLocalLLM
+                    || AppModel.hasManualModelConfiguration(baseURLText: resolvedBaseURLText, modelText: resolvedModelText)
+            ))
         useLocalLLM = localLLMEnabled
-        modelSetupSelection = AppModel.resolvedModelSetupSelection(useLocalLLM: localLLMEnabled)
+        if environmentForcesLocalLLM {
+            modelSetupSelection = ModelSetupSelection(source: .manual, manualService: .localHTTP)
+        } else if let storedModelSource {
+            modelSetupSelection = ModelSetupSelection(source: storedModelSource, manualService: .localHTTP)
+        } else {
+            modelSetupSelection = AppModel.resolvedModelSetupSelection(useLocalLLM: localLLMEnabled)
+        }
         llmBaseURLText = resolvedBaseURLText
         llmModelText = resolvedModelText
         hasBypassedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
@@ -602,7 +615,7 @@ final class AppModel: ObservableObject {
     }
 
     private var modelIssueIndicator: SetupIssueIndicator? {
-        if useLocalLLM {
+        if modelSetupSelection.source == .manual {
             return hasManualModelConfiguration ? nil : .model
         }
 
@@ -1008,6 +1021,7 @@ final class AppModel: ObservableObject {
     func performBundledModelAction(_ action: BundledModelAction) {
         switch action {
         case .continueSetup:
+            selectModelSource(.bundled)
             bypassInitialSetup()
             screen = .taskSetup
         case .startDownload, .retryDownload:
@@ -1024,12 +1038,29 @@ final class AppModel: ObservableObject {
     }
 
     func downloadBundledModel() {
-        modelSetupSelection.source = .bundled
-        useLocalLLM = false
-        userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
+        selectModelSource(.bundled)
         bypassInitialSetup()
         screen = .taskSetup
         startModelDownloadIfNeeded()
+    }
+
+    func selectModelSource(_ source: ModelSetupSelection.Source) {
+        modelSetupSelection.source = source
+        userDefaults.set(source.rawValue, forKey: DefaultsKey.modelSource)
+
+        switch source {
+        case .bundled:
+            modelConnectionCheckTask?.cancel()
+            modelConnectionCheckTask = nil
+            useLocalLLM = false
+            llmEvaluator = nil
+            isModelConnectionUsable = false
+            userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
+            localLLMStatus = "模型评估：已关闭，使用基础规则"
+            refreshModelStatus()
+        case .manual:
+            modelConfigurationChanged()
+        }
     }
 
     func selectManualModelService(_ service: ModelSetupSelection.ManualService) {
@@ -1039,10 +1070,17 @@ final class AppModel: ObservableObject {
     }
 
     func configureLocalLLM() {
+        guard useLocalLLM else {
+            localLLMStatus = "模型评估：已关闭，使用基础规则"
+            isModelConnectionUsable = false
+            llmEvaluator = nil
+            persistManualModelConfiguration()
+            return
+        }
         let trimmedBaseURLText = llmBaseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModelText = llmModelText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedBaseURLText.isEmpty, !trimmedModelText.isEmpty else {
-            localLLMStatus = useLocalLLM ? "模型服务：待配置" : "模型评估：已关闭，使用基础规则"
+            localLLMStatus = "模型服务：待配置"
             isModelConnectionUsable = false
             llmEvaluator = nil
             persistManualModelConfiguration()
@@ -1059,12 +1097,13 @@ final class AppModel: ObservableObject {
         llmEvaluator = LLMFocusEvaluator(
             engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
         )
-        localLLMStatus = useLocalLLM ? "模型评估：\(effectiveBaseURLText)" : "模型评估：已关闭，使用基础规则"
+        localLLMStatus = "模型评估：\(effectiveBaseURLText)"
         persistManualModelConfiguration()
     }
 
     private func persistManualModelConfiguration() {
-        guard useLocalLLM || modelSetupSelection.source == .manual else { return }
+        guard modelSetupSelection.source == .manual else { return }
+        userDefaults.set(ModelSetupSelection.Source.manual.rawValue, forKey: DefaultsKey.modelSource)
         userDefaults.set(llmBaseURLText, forKey: DefaultsKey.llmBaseURL)
         userDefaults.set(llmModelText, forKey: DefaultsKey.llmModel)
         if hasManualModelConfiguration {
@@ -1090,6 +1129,7 @@ final class AppModel: ObservableObject {
     }
 
     func modelConfigurationChanged() {
+        userDefaults.set(modelSetupSelection.source.rawValue, forKey: DefaultsKey.modelSource)
         if modelSetupSelection.source == .manual, hasManualModelConfiguration {
             useLocalLLM = true
         }
@@ -1153,6 +1193,16 @@ final class AppModel: ObservableObject {
     func checkModelConnectionNow() async -> Bool {
         isCheckingModelConnection = true
         modelConnectionStatus = "正在检查连接"
+        guard modelSetupSelection.source == .manual else {
+            useLocalLLM = false
+            userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
+            configureLocalLLM()
+            modelConnectionStatus = "应用自带模型已选中"
+            modelConnectionDetail = "当前不使用手动 HTTP 模型服务。"
+            isModelConnectionUsable = false
+            isCheckingModelConnection = false
+            return false
+        }
         configureLocalLLM()
 
         let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
