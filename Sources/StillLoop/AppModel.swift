@@ -252,6 +252,7 @@ final class AppModel: ObservableObject {
     private var evaluationTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
+    private var bundledModelRuntimeFailureStatus: String?
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
     var startPermissionDecisionOverride: StartPermissionDecision?
@@ -884,7 +885,7 @@ final class AppModel: ObservableObject {
         status = .paused
         postStatusItemMode(.paused)
         cancelSessionLoops()
-        stopBundledModelRuntime()
+        markBundledModelRuntimeWarmIfRunning()
     }
 
     func resumeSession() {
@@ -899,7 +900,7 @@ final class AppModel: ObservableObject {
 
     func endSession(feedback: SessionFeedback? = nil) {
         cancelSessionLoops()
-        stopBundledModelRuntime()
+        markBundledModelRuntimeWarmIfRunning()
         provider = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
@@ -921,7 +922,7 @@ final class AppModel: ObservableObject {
 
     func prepareNewSession() {
         cancelSessionLoops()
-        stopBundledModelRuntime()
+        markBundledModelRuntimeWarmIfRunning()
         provider = nil
         currentSession = nil
         latestContext = nil
@@ -949,7 +950,7 @@ final class AppModel: ObservableObject {
         }
 
         cancelSessionLoops()
-        stopBundledModelRuntime()
+        markBundledModelRuntimeWarmIfRunning()
         provider = nil
         currentSession = nil
         latestContext = nil
@@ -1066,6 +1067,7 @@ final class AppModel: ObservableObject {
 
         switch source {
         case .bundled:
+            bundledModelRuntimeFailureStatus = nil
             modelConnectionCheckTask?.cancel()
             modelConnectionCheckTask = nil
             useLocalLLM = false
@@ -1075,6 +1077,7 @@ final class AppModel: ObservableObject {
             refreshModelStatus()
             configureBundledModelSelectionStatus()
         case .manual:
+            bundledModelRuntimeFailureStatus = nil
             bundledModelRuntime.stop()
             bundledModelRuntimeStatus = "自带模型：已停止"
             modelConfigurationChanged()
@@ -1099,6 +1102,10 @@ final class AppModel: ObservableObject {
     }
 
     private func configureBundledModelSelectionStatus() {
+        if let bundledModelRuntimeFailureStatus {
+            applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
+            return
+        }
         bundledModelRuntimeStatus = modelDownloader.isDownloaded()
             ? "自带模型：待专注时启动"
             : "自带模型：等待模型文件"
@@ -1299,6 +1306,11 @@ final class AppModel: ObservableObject {
         guard modelSetupSelection.source == .bundled else {
             return false
         }
+        if let bundledModelRuntimeFailureStatus {
+            applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
+            llmEvaluator = nil
+            return false
+        }
         guard modelDownloader.isDownloaded() else {
             bundledModelRuntimeStatus = "自带模型：等待模型文件"
             localLLMStatus = "当前评估：基础规则（等待自带模型文件）"
@@ -1315,14 +1327,20 @@ final class AppModel: ObservableObject {
             )
             bundledModelRuntimeStatus = "自带模型：已启动"
             localLLMStatus = "当前评估：自带模型已连接"
+            bundledModelRuntimeFailureStatus = nil
             return true
         } catch {
             let status = Self.bundledRuntimeStatusText(for: error)
-            bundledModelRuntimeStatus = status
-            localLLMStatus = "当前评估：基础规则（\(status.replacingOccurrences(of: "自带模型：", with: ""))）"
+            bundledModelRuntimeFailureStatus = status
+            applyBundledRuntimeFailureStatus(status)
             llmEvaluator = nil
             return false
         }
+    }
+
+    private func applyBundledRuntimeFailureStatus(_ status: String) {
+        bundledModelRuntimeStatus = status
+        localLLMStatus = "当前评估：基础规则（\(status.replacingOccurrences(of: "自带模型：", with: ""))）"
     }
 
     private static func bundledRuntimeStatusText(for error: Error) -> String {
@@ -1376,9 +1394,24 @@ final class AppModel: ObservableObject {
     func stopBundledModelRuntime() {
         guard modelSetupSelection.source == .bundled else { return }
         bundledModelRuntime.stop()
-        bundledModelRuntimeStatus = "自带模型：已停止"
         llmEvaluator = nil
-        localLLMStatus = "当前评估：自带模型将在专注时启动"
+        if let bundledModelRuntimeFailureStatus {
+            applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
+        } else {
+            bundledModelRuntimeStatus = "自带模型：已停止"
+            localLLMStatus = "当前评估：自带模型将在专注时启动"
+        }
+    }
+
+    private func markBundledModelRuntimeWarmIfRunning() {
+        guard modelSetupSelection.source == .bundled else { return }
+        if let bundledModelRuntimeFailureStatus {
+            applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
+            return
+        }
+        guard bundledModelRuntime.state == .running else { return }
+        bundledModelRuntimeStatus = "自带模型：已预热"
+        localLLMStatus = "当前评估：自带模型已预热"
     }
 
     private func startCaptureLoop() {

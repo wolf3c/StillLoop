@@ -432,6 +432,57 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
     }
 
+    func testBundledRuntimeFailureDoesNotRestartOnEveryEvaluationAttempt() async {
+        let runtime = FakeBundledRuntime()
+        runtime.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
+        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        model.selectModelSource(.bundled)
+
+        _ = await model.prepareBundledModelForEvaluation()
+        _ = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：不支持图片输入")
+        XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
+    }
+
+    func testBundledRuntimeStaysWarmWhenPausingOrEndingSession() {
+        let runtime = FakeBundledRuntime()
+        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        model.selectModelSource(.bundled)
+        model.status = .running
+        model.currentSession = FocusSession(task: "测试自带模型", startedAt: Date(), endedAt: nil, events: [], feedback: nil)
+
+        model.pauseSession()
+
+        XCTAssertEqual(runtime.stopCount, 0)
+
+        model.status = .running
+        model.endSession()
+
+        XCTAssertEqual(runtime.stopCount, 0)
+    }
+
+    func testBundledRuntimeStaysWarmWhenStartingNextTaskFromReview() {
+        let runtime = FakeBundledRuntime()
+        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        model.selectModelSource(.bundled)
+        model.startPermissionDecisionOverride = .proceed
+        model.status = .ended
+        model.currentSession = FocusSession(
+            task: "继续测试自带模型",
+            startedAt: Date().addingTimeInterval(-60),
+            endedAt: Date(),
+            events: [],
+            feedback: nil
+        )
+
+        model.continueReviewTask()
+
+        XCTAssertEqual(runtime.stopCount, 0)
+        XCTAssertEqual(model.status, .running)
+    }
+
     func testModelSetupViewRefreshesBundledModelStatusWhenShownOrSelected() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
 
