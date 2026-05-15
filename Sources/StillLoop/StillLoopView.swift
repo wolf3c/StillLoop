@@ -892,10 +892,9 @@ private struct ReviewAppUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("常用 App")
                     .font(.headline)
-                Spacer()
                 Text("按分析样本统计")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -906,7 +905,7 @@ private struct ReviewAppUsageCard: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if #available(macOS 14.0, *) {
-                HStack(alignment: .center, spacing: 18) {
+                HStack(alignment: .center, spacing: ReviewAppUsageLayout.chartListSpacing) {
                     ReviewAppUsageChart(items: items, totalCount: totalCount)
                     ReviewAppUsageList(items: items)
                 }
@@ -915,9 +914,32 @@ private struct ReviewAppUsageCard: View {
             }
         }
         .padding(14)
-        .frame(maxWidth: 640, alignment: .leading)
+        .frame(maxWidth: ReviewAppUsageLayout.maximumCardWidth, alignment: .leading)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+enum ReviewAppUsageLayout {
+    static let chartSize: CGFloat = 132
+    static let chartListSpacing: CGFloat = 22
+    static let dotSize: CGFloat = 8
+    static let dotToNameSpacing: CGFloat = 10
+    static let nameColumnWidth: CGFloat = 150
+    static let nameToMetricsSpacing: CGFloat = 10
+    static let percentColumnWidth: CGFloat = 42
+    static let metricSpacing: CGFloat = 8
+    static let countColumnWidth: CGFloat = 24
+    static let maximumCardWidth: CGFloat = 520
+
+    static var listWidth: CGFloat {
+        dotSize
+            + dotToNameSpacing
+            + nameColumnWidth
+            + nameToMetricsSpacing
+            + percentColumnWidth
+            + metricSpacing
+            + countColumnWidth
     }
 }
 
@@ -927,23 +949,30 @@ private struct ReviewAppUsageList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(items) { item in
-                HStack(spacing: 8) {
+                HStack(spacing: 0) {
                     Circle()
                         .fill(item.color)
-                        .frame(width: 8, height: 8)
+                        .frame(width: ReviewAppUsageLayout.dotSize, height: ReviewAppUsageLayout.dotSize)
+                        .padding(.trailing, ReviewAppUsageLayout.dotToNameSpacing)
                     Text(item.name)
+                        .frame(width: ReviewAppUsageLayout.nameColumnWidth, alignment: .leading)
                         .lineLimit(1)
-                    Spacer(minLength: 12)
+                        .padding(.trailing, ReviewAppUsageLayout.nameToMetricsSpacing)
                     Text("\(item.percent)%")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: ReviewAppUsageLayout.percentColumnWidth, alignment: .trailing)
+                        .padding(.trailing, ReviewAppUsageLayout.metricSpacing)
                     Text("\(item.count)")
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
-                        .frame(minWidth: 24, alignment: .trailing)
+                        .frame(width: ReviewAppUsageLayout.countColumnWidth, alignment: .trailing)
                 }
+                .frame(width: ReviewAppUsageLayout.listWidth, alignment: .leading)
             }
         }
+        .frame(width: ReviewAppUsageLayout.listWidth, alignment: .leading)
     }
 }
 
@@ -972,7 +1001,7 @@ private struct ReviewAppUsageChart: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 132, height: 132)
+        .frame(width: ReviewAppUsageLayout.chartSize, height: ReviewAppUsageLayout.chartSize)
         .accessibilityLabel("常用 App 占比图")
     }
 }
