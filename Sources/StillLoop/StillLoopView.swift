@@ -853,15 +853,9 @@ private struct ReviewView: View {
             Text("专注复盘")
                 .font(.largeTitle.weight(.semibold))
             if let session = model.currentSession, let summary, let stats {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("本次任务")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(session.task)
-                        .font(.title2.weight(.semibold))
-                        .lineLimit(2)
+                ReviewTaskSummary(task: session.task) {
+                    model.continueReviewTask()
                 }
-                .frame(maxWidth: 640, alignment: .leading)
 
                 HStack(spacing: 12) {
                     Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
@@ -871,21 +865,53 @@ private struct ReviewView: View {
                 }
                 ReviewAppUsageCard(topApps: summary.topApps)
             }
-            HStack(spacing: 10) {
-                Button("继续这个任务") {
-                    model.continueReviewTask()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("开始新的专注") {
-                    model.prepareNewSession()
-                }
-                .buttonStyle(.bordered)
+            Button("开始新的专注") {
+                model.prepareNewSession()
             }
+            .buttonStyle(.borderedProminent)
             .controlSize(.large)
             Spacer()
         }
         .padding(40)
+    }
+}
+
+private struct ReviewTaskSummary: View {
+    var task: String
+    var continueAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("本次任务")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    taskText
+                        .fixedSize(horizontal: true, vertical: false)
+                    continueButton
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    taskText
+                        .frame(width: 320, alignment: .leading)
+                    continueButton
+                }
+            }
+        }
+        .frame(maxWidth: 640, alignment: .leading)
+    }
+
+    private var taskText: some View {
+        Text(task)
+            .font(.body.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private var continueButton: some View {
+        Button("继续这个任务", action: continueAction)
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
     }
 }
 

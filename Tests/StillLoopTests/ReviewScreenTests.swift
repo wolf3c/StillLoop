@@ -42,4 +42,27 @@ final class ReviewScreenTests: XCTestCase {
         XCTAssertFalse(source.contains("用户反馈"))
         XCTAssertFalse(source.contains("ForEach(SessionFeedback.allCases"))
     }
+
+    func testReviewActionsUseCorrectPriorityAndPlacement() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("ReviewTaskSummary(task: session.task)"))
+        XCTAssertFalse(source.contains(".font(.title2.weight(.semibold))"))
+
+        let taskSummary = try XCTUnwrap(source.range(of: "ReviewTaskSummary(task: session.task)"))
+        let usageCard = try XCTUnwrap(source.range(of: "ReviewAppUsageCard(topApps: summary.topApps)"))
+        let newSessionButton = try XCTUnwrap(source.range(of: "Button(\"开始新的专注\""))
+        XCTAssertLessThan(taskSummary.lowerBound, usageCard.lowerBound)
+        XCTAssertLessThan(usageCard.lowerBound, newSessionButton.lowerBound)
+
+        let continueButton = try XCTUnwrap(source.range(of: "Button(\"继续这个任务\""))
+        let continueSnippetEnd = source.index(continueButton.lowerBound, offsetBy: 260, limitedBy: source.endIndex) ?? source.endIndex
+        let continueSnippet = String(source[continueButton.lowerBound..<continueSnippetEnd])
+        XCTAssertTrue(continueSnippet.contains(".buttonStyle(.bordered)"))
+        XCTAssertFalse(continueSnippet.contains(".buttonStyle(.borderedProminent)"))
+
+        let newSessionSnippetEnd = source.index(newSessionButton.lowerBound, offsetBy: 220, limitedBy: source.endIndex) ?? source.endIndex
+        let newSessionSnippet = String(source[newSessionButton.lowerBound..<newSessionSnippetEnd])
+        XCTAssertTrue(newSessionSnippet.contains(".buttonStyle(.borderedProminent)"))
+    }
 }
