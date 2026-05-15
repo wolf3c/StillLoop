@@ -383,6 +383,8 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.modelSetupSelection.source, .bundled)
         XCTAssertFalse(defaults.bool(forKey: "useLocalLLM"))
         XCTAssertEqual(defaults.string(forKey: "modelSource"), "bundled")
+        XCTAssertFalse(model.localLLMStatus.contains("已关闭"))
+        XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }
 
     func testBundledSelectionPreventsManualConnectionCheckFromReenablingHTTP() async {
@@ -398,7 +400,36 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertFalse(canUseManualModel)
         XCTAssertFalse(model.useLocalLLM)
         XCTAssertEqual(model.modelConnectionStatus, "应用自带模型已选中")
+        XCTAssertTrue(model.modelConnectionDetail.contains("专注时启动"))
         XCTAssertFalse(defaults.bool(forKey: "useLocalLLM"))
+    }
+
+    func testBundledModelRuntimeStartsForBundledEvaluationWithoutManualHTTP() async {
+        let runtime = FakeBundledRuntime()
+        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertFalse(model.useLocalLLM)
+        XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+    }
+
+    func testBundledImageReadinessFailureIsVisibleAndDoesNotEnableManualHTTP() async {
+        let runtime = FakeBundledRuntime()
+        runtime.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
+        let model = AppModel(userDefaults: isolatedDefaults, bundledModelRuntime: runtime)
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertFalse(isPrepared)
+        XCTAssertFalse(model.useLocalLLM)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：不支持图片输入")
+        XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
     }
 
     func testModelSetupViewRefreshesBundledModelStatusWhenShownOrSelected() throws {
@@ -425,5 +456,28 @@ final class HomeNavigationTests: XCTestCase {
             model.screen = screen
             XCTAssertTrue(model.shouldShowSettingsNavigation, "Expected settings navigation visible on \(screen)")
         }
+    }
+}
+
+private final class FakeBundledRuntime: BundledModelRuntimeManaging {
+    var baseURL = ModelDownloadSpec.builtIn.localServerBaseURL
+    var modelID = ModelDownloadSpec.builtIn.localServerModelID
+    var state: BundledModelRuntime.State = .notStarted
+    var startError: Error?
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+
+    func startIfNeeded() async throws {
+        startCount += 1
+        if let startError {
+            state = .failed(BundledModelRuntime.RuntimeError.statusMessage(for: startError))
+            throw startError
+        }
+        state = .running
+    }
+
+    func stop() {
+        stopCount += 1
+        state = .stopped
     }
 }

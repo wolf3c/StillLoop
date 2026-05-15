@@ -8,6 +8,10 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         case unknown
     }
 
+    enum ReadinessError: Error {
+        case imageInputUnavailable
+    }
+
     struct ConnectionCheckResult: Equatable {
         var modelFound: Bool
         var chatCompletionWorks: Bool
@@ -104,7 +108,7 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         _ = try await checkModelReadiness()
     }
 
-    func checkModelReadiness() async throws -> ConnectionCheckResult {
+    func checkModelReadiness(requiresImageInput: Bool = false) async throws -> ConnectionCheckResult {
         let models = try await fetchModels()
         let normalizedTarget = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard let selectedModel = models.first(where: { $0.id.lowercased() == normalizedTarget }) else {
@@ -115,10 +119,23 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
             .init(role: .system, content: [.text("Reply with OK only.")]),
             .init(role: .user, content: [.text("OK")])
         ])
+        if requiresImageInput {
+            do {
+                _ = try await complete(messages: [
+                    .init(role: .system, content: [.text("Reply with OK only.")]),
+                    .init(role: .user, content: [
+                        .text("Confirm that you can read this image input. Reply with OK only."),
+                        .image(mimeType: "image/png", data: Self.readinessProbePNG)
+                    ])
+                ])
+            } catch {
+                throw ReadinessError.imageInputUnavailable
+            }
+        }
         return ConnectionCheckResult(
             modelFound: true,
             chatCompletionWorks: true,
-            visualCapability: visualCapability(for: selectedModel.id)
+            visualCapability: requiresImageInput ? .supported : visualCapability(for: selectedModel.id)
         )
     }
 
@@ -190,6 +207,10 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         guard let apiKey else { return }
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     }
+
+    private static let readinessProbePNG = Data(base64Encoded: """
+    iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
+    """)!
 }
 
 private extension String {

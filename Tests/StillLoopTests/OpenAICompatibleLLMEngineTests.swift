@@ -49,6 +49,51 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
     }
 
+    func testReadinessProbeRequiresImageInputWhenRequested() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var chatRequestBodies: [[String: Any]] = []
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/models" {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"data":[{"id":"qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl"}]}
+                """.utf8))
+            }
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                chatRequestBodies.append(body)
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"OK"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "qwen3.5-0.8b-heretic-ara-high-kld-v3-i1-iq4_nl",
+            session: session
+        )
+
+        let result = try await engine.checkModelReadiness(requiresImageInput: true)
+
+        XCTAssertTrue(result.chatCompletionWorks)
+        XCTAssertEqual(result.visualCapability, .supported)
+        XCTAssertEqual(chatRequestBodies.count, 2)
+        let visualBody = try XCTUnwrap(chatRequestBodies.last)
+        let messages = try XCTUnwrap(visualBody["messages"] as? [[String: Any]])
+        let userMessage = try XCTUnwrap(messages.last)
+        let content = try XCTUnwrap(userMessage["content"] as? [[String: Any]])
+        XCTAssertTrue(content.contains { part in
+            guard let imageURL = part["image_url"] as? [String: Any] else { return false }
+            return part["type"] as? String == "image_url"
+                && (imageURL["url"] as? String)?.hasPrefix("data:image/png;base64,") == true
+        })
+    }
+
     func testManualModelBaseURLStartsEmptyWithoutExplicitConfiguration() {
         let baseURL = AppModel.resolvedLLMBaseURLText(
             environmentValue: nil,

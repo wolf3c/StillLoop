@@ -11,7 +11,7 @@ Slogan: **跑偏？回来。**
 
 ## Install Dependencies
 
-No third-party dependencies are required for the current MVP.
+The app bundles a signed llama.cpp `llama-server` runtime for the built-in model path. Swift package resolution is still enough for source builds.
 
 ```sh
 swift package resolve
@@ -122,11 +122,15 @@ The llama.cpp target path is:
 ~/Library/Application Support/StillLoop/Models/Qwen3.5-0.8B-heretic-ara-high-kld-v3-i1-GGUF/Qwen3.5-0.8B-heretic-ara-high-kld-v3.i1-IQ4_NL.gguf
 ```
 
-Current MVP behavior:
+Current runtime behavior:
 
 - `FocusEvaluator` remains the deterministic fallback.
-- `LLMFocusEvaluator` can call any local OpenAI-compatible `/v1/chat/completions` endpoint.
-- If local LLM evaluation fails, StillLoop falls back to the heuristic evaluator instead of blocking the focus session.
+- When the built-in model is selected, StillLoop starts the bundled `llama-server` helper during a focus session and connects to `http://127.0.0.1:17631/v1`.
+- Runtime readiness requires both text completion and an image-input probe. If the bundled model cannot accept `image_url`, StillLoop reports the built-in runtime as unavailable and falls back to the heuristic evaluator.
+- `LLMFocusEvaluator` can still call any user-configured OpenAI-compatible `/v1/chat/completions` endpoint when manual model configuration is selected.
+- If model evaluation fails, StillLoop falls back to the heuristic evaluator instead of blocking the focus session.
+
+The bundled runtime files live under `Sources/StillLoop/Resources/Runtime/` and are copied into `Contents/Helpers` by the development and App Store packaging scripts. The included llama.cpp binary package is the macOS arm64 `b9060` release from `ggml-org/llama.cpp`; keep `LICENSE.llama.cpp` with the runtime files.
 
 ### LM Studio Server
 

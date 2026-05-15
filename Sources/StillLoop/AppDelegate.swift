@@ -79,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sharedAppModel.refreshPermissionStatuses()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        sharedAppModel.stopBundledModelRuntime()
+    }
+
     @objc private func systemDidBecomeInactive() {
         sharedAppModel.suspendForSystemInactivity()
     }

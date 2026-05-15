@@ -271,6 +271,18 @@ private struct ModelSetupView: View {
     private var bundledModelSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             ModelReadinessCard()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.bundledModelRuntimeStatus)
+                    .font(.headline)
+                Text(model.localLLMStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: 520, alignment: .leading)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             HStack {
                 ForEach(AppModel.bundledModelActions(for: model.modelReadiness), id: \.self) { action in
                     bundledModelActionButton(action)
@@ -1141,10 +1153,11 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("隐私")
                     .font(.headline)
-                Label("本地优先：默认连接用户配置的本地模型服务，不做云同步。", systemImage: "lock")
+                Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
                 Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
                 Label("专注摘要保存在本机 Application Support/StillLoop。", systemImage: "internaldrive")
                 Label(model.modelReadiness.title, systemImage: "cpu")
+                Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
                 Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
             }
             .padding(14)
@@ -1164,10 +1177,11 @@ private struct PrivacySettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("设置 / 隐私")
                 .font(.largeTitle.weight(.semibold))
-            Label("本地优先：默认连接用户配置的本地模型服务，不做云同步。", systemImage: "lock")
+            Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
             Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
             Label("专注摘要保存在本机 Application Support/StillLoop。", systemImage: "internaldrive")
             Label(model.modelReadiness.title, systemImage: "cpu")
+            Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
             Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
             if model.shouldShowHomeNavigation {
                 Button("返回主页") { model.openHome() }

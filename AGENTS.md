@@ -38,6 +38,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `2026-05-13`: Left the new skip-download launch setting out of this guide. Root cause: updated the script and test but not the reusable agent instructions. Future rule: when changing development or testing commands, update `AGENTS.md` in the same task.
 - `2026-05-14`: Rebuilt an App Store package with `CFBundleVersion=2` after App Store Connect had already accepted build `2`. Root cause: treated the local package as the source of truth and did not account for server-side uploaded build numbers. Future rule: before every upload retry, set `STILLLOOP_BUNDLE_VERSION` to one greater than the highest build number already accepted by App Store Connect for that marketing version.
 - `2026-05-15`: Treated the local HTTP model as the default development path after the built-in model was already available. Root cause: over-constrained `AGENTS.md` launch guidance with `STILLLOOP_USE_LOCAL_LLM=1`, which made agents preserve stale manual model settings. Future rule: default development runs should use the app's selected/built-in model; only enable local HTTP when explicitly testing manual model configuration or HTTP-model behavior.
+- `2026-05-15`: Described "关闭手动 HTTP 模型" as "模型评估已关闭". Root cause: reused `useLocalLLM` for both manual HTTP selection and overall evaluator availability. Future rule: keep model source, runtime state, and current evaluation path as separate states in code and UI copy.
 
 ## Design And Behavior Changes
 
@@ -141,6 +142,8 @@ cd /Users/wolf3c/Project/StillLoop
 STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 scripts/run-app.sh
 ```
+
+The default built-in-model path uses the bundled llama.cpp helper under `Sources/StillLoop/Resources/Runtime/`. `scripts/run-app.sh` copies `llama-server` and its `lib*.dylib` dependencies into `.build/StillLoop.app/Contents/Helpers`, signs the helper files, and StillLoop starts the helper lazily during a focus session on `http://127.0.0.1:17631/v1`. If the focus screen shows a built-in runtime failure, check `pgrep -fl "llama-server|StillLoop"` and `lsof -nP -iTCP:17631` before falling back to manual HTTP testing.
 
 Only launch with a local HTTP model when the task explicitly requires manual model configuration, HTTP endpoint checks, or fallback behavior:
 

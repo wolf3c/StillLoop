@@ -217,6 +217,7 @@ final class AppModel: ObservableObject {
     @Published var permissionOpenStatus = ""
     @Published var useLocalLLM = false
     @Published var localLLMStatus = "模型评估：基础规则"
+    @Published var bundledModelRuntimeStatus = "自带模型：未启动"
     @Published var llmBaseURLText = ""
     @Published var llmModelText = ""
     @Published var onlineAPIKeyText = ""
@@ -242,6 +243,7 @@ final class AppModel: ObservableObject {
     private let userDefaults: UserDefaults
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
+    private let bundledModelRuntime: BundledModelRuntimeManaging
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private var provider: ContextProvider?
@@ -483,7 +485,7 @@ final class AppModel: ObservableObject {
         return firstIssue == .permissions ? .permissions : .modelSetup
     }
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(userDefaults: UserDefaults = .standard, bundledModelRuntime: BundledModelRuntimeManaging? = nil) {
         self.userDefaults = userDefaults
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
@@ -527,11 +529,15 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("StillLoop", isDirectory: true)
         let supportDirectory = support ?? URL(fileURLWithPath: NSTemporaryDirectory())
         store = FileSessionStore(appSupportDirectory: supportDirectory)
+        let modelDirectory = supportDirectory.appendingPathComponent("Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", isDirectory: true)
         modelDownloader = ModelDownloadManager(
             spec: .builtIn,
-            localDirectory: supportDirectory.appendingPathComponent("Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", isDirectory: true)
+            localDirectory: modelDirectory
         )
-        configureLocalLLM()
+        self.bundledModelRuntime = bundledModelRuntime ?? BundledModelRuntime.defaultRuntime(
+            modelURL: modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename)
+        )
+        configureSelectedModelEvaluator()
         summaries = (try? store.loadSummaries()) ?? []
         refreshPermissionStatuses()
         refreshModelStatus()
@@ -817,7 +823,7 @@ final class AppModel: ObservableObject {
     private func beginSessionWithModelCheck(task: String) {
         beginSession(task: task)
 
-        guard useLocalLLM else {
+        guard modelSetupSelection.source == .manual, useLocalLLM else {
             return
         }
 
@@ -878,6 +884,7 @@ final class AppModel: ObservableObject {
         status = .paused
         postStatusItemMode(.paused)
         cancelSessionLoops()
+        stopBundledModelRuntime()
     }
 
     func resumeSession() {
@@ -892,6 +899,7 @@ final class AppModel: ObservableObject {
 
     func endSession(feedback: SessionFeedback? = nil) {
         cancelSessionLoops()
+        stopBundledModelRuntime()
         provider = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
@@ -913,6 +921,7 @@ final class AppModel: ObservableObject {
 
     func prepareNewSession() {
         cancelSessionLoops()
+        stopBundledModelRuntime()
         provider = nil
         currentSession = nil
         latestContext = nil
@@ -940,6 +949,7 @@ final class AppModel: ObservableObject {
         }
 
         cancelSessionLoops()
+        stopBundledModelRuntime()
         provider = nil
         currentSession = nil
         latestContext = nil
@@ -975,6 +985,9 @@ final class AppModel: ObservableObject {
             modelReadiness = .checking
             modelStatus = modelReadiness.title
         }
+        if modelSetupSelection.source == .bundled {
+            configureBundledModelSelectionStatus()
+        }
     }
 
     func openModelDownloadPage() {
@@ -1001,6 +1014,9 @@ final class AppModel: ObservableObject {
                     self.modelReadiness = .failed
                 }
                 self.modelStatus = self.modelReadiness.title
+                if self.modelSetupSelection.source == .bundled {
+                    self.configureBundledModelSelectionStatus()
+                }
             }
         }
     }
@@ -1056,9 +1072,11 @@ final class AppModel: ObservableObject {
             llmEvaluator = nil
             isModelConnectionUsable = false
             userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
-            localLLMStatus = "模型评估：已关闭，使用基础规则"
             refreshModelStatus()
+            configureBundledModelSelectionStatus()
         case .manual:
+            bundledModelRuntime.stop()
+            bundledModelRuntimeStatus = "自带模型：已停止"
             modelConfigurationChanged()
         }
     }
@@ -1069,9 +1087,29 @@ final class AppModel: ObservableObject {
         modelConfigurationChanged()
     }
 
+    private func configureSelectedModelEvaluator() {
+        switch modelSetupSelection.source {
+        case .bundled:
+            useLocalLLM = false
+            llmEvaluator = nil
+            configureBundledModelSelectionStatus()
+        case .manual:
+            configureLocalLLM()
+        }
+    }
+
+    private func configureBundledModelSelectionStatus() {
+        bundledModelRuntimeStatus = modelDownloader.isDownloaded()
+            ? "自带模型：待专注时启动"
+            : "自带模型：等待模型文件"
+        localLLMStatus = modelDownloader.isDownloaded()
+            ? "当前评估：自带模型将在专注时启动"
+            : "当前评估：基础规则（等待自带模型文件）"
+    }
+
     func configureLocalLLM() {
         guard useLocalLLM else {
-            localLLMStatus = "模型评估：已关闭，使用基础规则"
+            localLLMStatus = "当前评估：基础规则"
             isModelConnectionUsable = false
             llmEvaluator = nil
             persistManualModelConfiguration()
@@ -1097,7 +1135,7 @@ final class AppModel: ObservableObject {
         llmEvaluator = LLMFocusEvaluator(
             engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
         )
-        localLLMStatus = "模型评估：\(effectiveBaseURLText)"
+        localLLMStatus = "当前评估：手动模型 \(effectiveBaseURLText)"
         persistManualModelConfiguration()
     }
 
@@ -1159,6 +1197,7 @@ final class AppModel: ObservableObject {
         evaluationLoopDescription = "屏幕锁定或休眠，已暂停采集和模型运算"
         contextSourceDescription = "上下文来源：屏幕锁定或休眠期间暂停"
         cancelSessionLoops()
+        stopBundledModelRuntime()
         postStatusItemMode(.paused)
     }
 
@@ -1196,9 +1235,9 @@ final class AppModel: ObservableObject {
         guard modelSetupSelection.source == .manual else {
             useLocalLLM = false
             userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
-            configureLocalLLM()
+            configureBundledModelSelectionStatus()
             modelConnectionStatus = "应用自带模型已选中"
-            modelConnectionDetail = "当前不使用手动 HTTP 模型服务。"
+            modelConnectionDetail = "当前不使用手动 HTTP 模型服务；自带模型会在专注时启动，并在首次评估前完成图片输入探测。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
@@ -1255,6 +1294,57 @@ final class AppModel: ObservableObject {
         return "服务可达；目标模型存在；最小推理成功。\(visualText)"
     }
 
+    @discardableResult
+    func prepareBundledModelForEvaluation() async -> Bool {
+        guard modelSetupSelection.source == .bundled else {
+            return false
+        }
+        guard modelDownloader.isDownloaded() else {
+            bundledModelRuntimeStatus = "自带模型：等待模型文件"
+            localLLMStatus = "当前评估：基础规则（等待自带模型文件）"
+            llmEvaluator = nil
+            return false
+        }
+
+        bundledModelRuntimeStatus = "自带模型：启动中"
+        localLLMStatus = "当前评估：自带模型启动中"
+        do {
+            try await bundledModelRuntime.startIfNeeded()
+            llmEvaluator = LLMFocusEvaluator(
+                engine: OpenAICompatibleLLMEngine(baseURL: bundledModelRuntime.baseURL, model: bundledModelRuntime.modelID)
+            )
+            bundledModelRuntimeStatus = "自带模型：已启动"
+            localLLMStatus = "当前评估：自带模型已连接"
+            return true
+        } catch {
+            let status = Self.bundledRuntimeStatusText(for: error)
+            bundledModelRuntimeStatus = status
+            localLLMStatus = "当前评估：基础规则（\(status.replacingOccurrences(of: "自带模型：", with: ""))）"
+            llmEvaluator = nil
+            return false
+        }
+    }
+
+    private static func bundledRuntimeStatusText(for error: Error) -> String {
+        guard let runtimeError = error as? BundledModelRuntime.RuntimeError else {
+            return "自带模型：启动失败"
+        }
+        switch runtimeError {
+        case .imageInputUnavailable:
+            return "自带模型：不支持图片输入"
+        case .missingExecutable:
+            return "自带模型：缺少 llama-server"
+        case .missingModel:
+            return "自带模型：缺少模型文件"
+        case .portInUse:
+            return "自带模型：端口被占用"
+        case .launchFailed:
+            return "自带模型：启动失败"
+        case .readinessFailed:
+            return "自带模型：探测失败"
+        }
+    }
+
     private func startEvaluationLoop() {
         evaluationTask?.cancel()
         evaluationTask = Task { [weak self] in
@@ -1281,6 +1371,14 @@ final class AppModel: ObservableObject {
         captureTask = nil
         evaluationTask?.cancel()
         evaluationTask = nil
+    }
+
+    func stopBundledModelRuntime() {
+        guard modelSetupSelection.source == .bundled else { return }
+        bundledModelRuntime.stop()
+        bundledModelRuntimeStatus = "自带模型：已停止"
+        llmEvaluator = nil
+        localLLMStatus = "当前评估：自带模型将在专注时启动"
     }
 
     private func startCaptureLoop() {
@@ -1380,18 +1478,36 @@ final class AppModel: ObservableObject {
         snapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async -> LLMEvaluationResult {
-        if useLocalLLM, let llmEvaluator {
+        if modelSetupSelection.source == .bundled {
+            let canUseBundledModel = await prepareBundledModelForEvaluation()
+            if canUseBundledModel, let llmEvaluator {
+                do {
+                    localLLMStatus = "当前评估：自带模型运算中"
+                    let result = try await llmEvaluator.evaluate(
+                        task: task,
+                        recentSnapshots: snapshots,
+                        previousEvents: previousEvents
+                    )
+                    localLLMStatus = "当前评估：自带模型已连接"
+                    return result
+                } catch {
+                    localLLMStatus = "当前评估：基础规则（自带模型推理失败）"
+                    bundledModelRuntimeStatus = "自带模型：推理失败"
+                    routeToModelSetupForModelIssue()
+                }
+            }
+        } else if useLocalLLM, let llmEvaluator {
             do {
-                localLLMStatus = "模型评估：运算中"
+                localLLMStatus = "当前评估：手动模型运算中"
                 let result = try await llmEvaluator.evaluate(
                     task: task,
                     recentSnapshots: snapshots,
                     previousEvents: previousEvents
                 )
-                localLLMStatus = "模型评估：已连接"
+                localLLMStatus = "当前评估：手动模型已连接"
                 return result
             } catch {
-                localLLMStatus = "模型评估：连接失败，已使用基础规则"
+                localLLMStatus = "当前评估：基础规则（手动模型连接失败）"
                 routeToModelSetupForModelIssue()
             }
         }
