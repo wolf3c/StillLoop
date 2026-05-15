@@ -30,9 +30,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_IDENTIFIER</string>
   <key>CFBundleName</key>
-  <string>StillLoop</string>
+  <string>StillLoop Dev</string>
   <key>CFBundleDisplayName</key>
-  <string>StillLoop</string>
+  <string>StillLoop Dev</string>
   <key>CFBundleIconFile</key>
   <string>StillLoop</string>
   <key>CFBundlePackageType</key>

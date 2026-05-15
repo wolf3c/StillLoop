@@ -254,7 +254,22 @@ public struct SessionSummary: Codable, Equatable, Identifiable {
         self.offTrackEventCount = session.events.filter { $0.state == .distracted }.count
         self.nudgeCount = session.events.filter { $0.nudge != nil }.count
         self.feedback = session.feedback
-        self.topApps = Dictionary(grouping: session.events.map(\.context)) { $0 }
-            .mapValues(\.count)
+        self.topApps = session.events.reduce(into: [String: Int]()) { counts, event in
+            for appName in SessionSummary.appNames(from: event.context) {
+                counts[appName, default: 0] += 1
+            }
+        }
+    }
+
+    private static func appNames(from context: String) -> [String] {
+        context
+            .components(separatedBy: " -> ")
+            .compactMap { sample in
+                sample
+                    .components(separatedBy: " · ")
+                    .first?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
     }
 }

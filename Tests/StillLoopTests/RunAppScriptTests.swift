@@ -29,6 +29,15 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("/usr/bin/codesign \"${CODESIGN_ARGS[@]}\" \"$APP_DIR\""))
     }
 
+    func testRunAppUsesDistinctDevelopmentDisplayName() throws {
+        let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
+
+        XCTAssertTrue(script.contains("<key>CFBundleDisplayName</key>"))
+        XCTAssertTrue(script.contains("<string>StillLoop Dev</string>"))
+        XCTAssertTrue(script.contains("<key>CFBundleName</key>"))
+        XCTAssertTrue(script.contains("<string>StillLoop Dev</string>"))
+    }
+
     func testRunAppDeclaresAppleEventsUsageForBrowserMetadata() throws {
         let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
 

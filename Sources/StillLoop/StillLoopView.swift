@@ -1,4 +1,5 @@
 import StillLoopCore
+import Charts
 import SwiftUI
 
 enum StillLoopWelcomeCopy {
@@ -865,8 +866,7 @@ private struct ReviewView: View {
                         Button(feedback.displayName) { model.setFeedback(feedback) }
                     }
                 }
-                Text("常见 App：\(summary.topApps.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }.joined(separator: " · "))")
-                    .foregroundStyle(.secondary)
+                ReviewAppUsageCard(topApps: summary.topApps)
             }
             Button("开始新的专注") {
                 model.prepareNewSession()
@@ -876,6 +876,155 @@ private struct ReviewView: View {
             Spacer()
         }
         .padding(40)
+    }
+}
+
+private struct ReviewAppUsageCard: View {
+    var topApps: [String: Int]
+
+    private var items: [ReviewAppUsageItem] {
+        ReviewAppUsageItem.makeItems(from: topApps)
+    }
+
+    private var totalCount: Int {
+        items.reduce(0) { $0 + $1.count }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("常用 App")
+                    .font(.headline)
+                Spacer()
+                Text("按分析样本统计")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if items.isEmpty {
+                Text("暂无足够样本")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if #available(macOS 14.0, *) {
+                HStack(alignment: .center, spacing: 18) {
+                    ReviewAppUsageChart(items: items, totalCount: totalCount)
+                    ReviewAppUsageList(items: items)
+                }
+            } else {
+                ReviewAppUsageList(items: items)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: 640, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ReviewAppUsageList: View {
+    var items: [ReviewAppUsageItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(items) { item in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(item.color)
+                        .frame(width: 8, height: 8)
+                    Text(item.name)
+                        .lineLimit(1)
+                    Spacer(minLength: 12)
+                    Text("\(item.percent)%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(item.count)")
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .frame(minWidth: 24, alignment: .trailing)
+                }
+            }
+        }
+    }
+}
+
+@available(macOS 14.0, *)
+private struct ReviewAppUsageChart: View {
+    var items: [ReviewAppUsageItem]
+    var totalCount: Int
+
+    var body: some View {
+        ZStack {
+            Chart(items) { item in
+                SectorMark(
+                    angle: .value("次数", item.count),
+                    innerRadius: .ratio(0.62),
+                    angularInset: 1.5
+                )
+                .foregroundStyle(item.color)
+            }
+            .chartLegend(.hidden)
+
+            VStack(spacing: 2) {
+                Text("\(totalCount)")
+                    .font(.headline.monospacedDigit())
+                Text("样本")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 132, height: 132)
+        .accessibilityLabel("常用 App 占比图")
+    }
+}
+
+private struct ReviewAppUsageItem: Identifiable {
+    var id: String { name }
+    var name: String
+    var count: Int
+    var fraction: Double
+    var color: Color
+
+    var percent: Int {
+        Int((fraction * 100).rounded())
+    }
+
+    static func makeItems(from counts: [String: Int]) -> [ReviewAppUsageItem] {
+        let sorted = counts
+            .filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.value > 0 }
+            .sorted {
+                if $0.value == $1.value {
+                    $0.key.localizedStandardCompare($1.key) == .orderedAscending
+                } else {
+                    $0.value > $1.value
+                }
+            }
+        let topCount = 5
+        let visible = Array(sorted.prefix(topCount))
+        let otherCount = sorted.dropFirst(topCount).reduce(0) { $0 + $1.value }
+        let combined = otherCount > 0 ? visible + [("其他", otherCount)] : visible
+        let total = combined.reduce(0) { $0 + $1.value }
+        guard total > 0 else { return [] }
+
+        return combined.enumerated().map { index, entry in
+            ReviewAppUsageItem(
+                name: entry.key,
+                count: entry.value,
+                fraction: Double(entry.value) / Double(total),
+                color: usageColor(at: index)
+            )
+        }
+    }
+
+    private static func usageColor(at index: Int) -> Color {
+        let colors: [Color] = [
+            .blue.opacity(0.78),
+            .green.opacity(0.72),
+            .orange.opacity(0.74),
+            .purple.opacity(0.70),
+            .teal.opacity(0.72),
+            .gray.opacity(0.60)
+        ]
+        return colors[index % colors.count]
     }
 }
 
