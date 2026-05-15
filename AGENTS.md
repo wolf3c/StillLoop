@@ -37,6 +37,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `2026-05-13`: Added only a prose testing constraint without a runnable command. Root cause: documented intent but not the exact agent action. Future rule: when test configuration is requested, include the concrete command or environment variables agents should run.
 - `2026-05-13`: Left the new skip-download launch setting out of this guide. Root cause: updated the script and test but not the reusable agent instructions. Future rule: when changing development or testing commands, update `AGENTS.md` in the same task.
 - `2026-05-14`: Rebuilt an App Store package with `CFBundleVersion=2` after App Store Connect had already accepted build `2`. Root cause: treated the local package as the source of truth and did not account for server-side uploaded build numbers. Future rule: before every upload retry, set `STILLLOOP_BUNDLE_VERSION` to one greater than the highest build number already accepted by App Store Connect for that marketing version.
+- `2026-05-15`: Treated the local HTTP model as the default development path after the built-in model was already available. Root cause: over-constrained `AGENTS.md` launch guidance with `STILLLOOP_USE_LOCAL_LLM=1`, which made agents preserve stale manual model settings. Future rule: default development runs should use the app's selected/built-in model; only enable local HTTP when explicitly testing manual model configuration or HTTP-model behavior.
 
 ## Design And Behavior Changes
 
@@ -133,7 +134,15 @@ If the app is already running, stop the old process before launching a fresh bui
 killall StillLoop
 ```
 
-Launch the app with the local HTTP model prefilled:
+Launch the development app with the normal in-app model selection. By default, do not set `STILLLOOP_USE_LOCAL_LLM`, `STILLLOOP_LLM_BASE_URL`, or `STILLLOOP_LLM_MODEL`; those variables force the manual HTTP model path and can mask built-in-model behavior.
+
+```sh
+cd /Users/wolf3c/Project/StillLoop
+STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
+scripts/run-app.sh
+```
+
+Only launch with a local HTTP model when the task explicitly requires manual model configuration, HTTP endpoint checks, or fallback behavior:
 
 ```sh
 cd /Users/wolf3c/Project/StillLoop
@@ -158,7 +167,7 @@ Match the existing project style. For Swift code, prefer clear names, small sing
 
 Add focused tests for behavior changes. Place tests in the target that owns the behavior, and prefer behavior-oriented names. For UI-sensitive changes, verify the rendered state or interaction path when the project has UI test support.
 
-When testing model-backed behavior locally, use the local HTTP model endpoint `http://127.0.0.1:8080/v1` with model `qwen3.5-0.8b`. Configure local app runs with `STILLLOOP_SKIP_MODEL_DOWNLOAD=1` so tests use the local HTTP model instead of downloading or relying on the built-in model.
+When testing model-backed behavior locally, prefer the app's built-in model path and the model source selected in the UI. Use `STILLLOOP_SKIP_MODEL_DOWNLOAD=1` to avoid re-downloading during development, assuming the built-in model is already present under the app's Application Support model directory. Do not force `STILLLOOP_USE_LOCAL_LLM=1` unless the test specifically covers manual/local HTTP model configuration.
 
 Every completed requirement implementation must be verified in two ways before reporting it done:
 
