@@ -584,11 +584,246 @@ private struct Metric: View {
     }
 }
 
+enum AnalysisProgressStepState: Equatable {
+    case waiting
+    case running
+    case done
+    case result
+}
+
+struct AnalysisProgressPresentation: Equatable {
+    var phaseTitle: String
+    var phaseDetail: String
+    var captureText: String
+    var captureState: AnalysisProgressStepState
+    var visualSignalText: String
+    var visualState: AnalysisProgressStepState
+    var judgementText: String
+    var judgementState: AnalysisProgressStepState
+    var resultText: String
+    var resultState: AnalysisProgressStepState
+
+    static func make(
+        snapshot: ContextSnapshot?,
+        phase: AppModel.AnalysisPhase,
+        modelStatus: String,
+        loopDescription: String
+    ) -> AnalysisProgressPresentation {
+        let normalizedModelStatus = modelStatus
+            .replacingOccurrences(of: "当前评估：", with: "")
+            .replacingOccurrences(of: "模型评估：", with: "")
+        let modelIsBusy = modelStatusIndicatesBusy(normalizedModelStatus) || isEvaluating(phase)
+        let hasSnapshot = snapshot != nil
+        let hasVisualSignal = snapshot?.screenshotAvailable == true || snapshot?.cameraFrameAvailable == true
+
+        return AnalysisProgressPresentation(
+            phaseTitle: phaseTitle(
+                phase: phase,
+                hasSnapshot: hasSnapshot,
+                modelIsBusy: modelIsBusy,
+                modelStatus: normalizedModelStatus
+            ),
+            phaseDetail: phaseDetail(
+                phase: phase,
+                hasSnapshot: hasSnapshot,
+                modelIsBusy: modelIsBusy,
+                loopDescription: loopDescription
+            ),
+            captureText: captureText(phase: phase, hasSnapshot: hasSnapshot),
+            captureState: captureState(phase: phase, hasSnapshot: hasSnapshot),
+            visualSignalText: visualSignalText(for: snapshot),
+            visualState: hasVisualSignal ? .done : .waiting,
+            judgementText: judgementText(phase: phase, normalizedModelStatus: normalizedModelStatus),
+            judgementState: judgementState(phase: phase, modelIsBusy: modelIsBusy),
+            resultText: resultText(phase: phase),
+            resultState: resultState(phase: phase)
+        )
+    }
+
+    private static func phaseTitle(
+        phase: AppModel.AnalysisPhase,
+        hasSnapshot: Bool,
+        modelIsBusy: Bool,
+        modelStatus: String
+    ) -> String {
+        if modelIsBusy {
+            return modelStatus.contains("启动中") ? "模型启动中" : "模型运算中"
+        }
+        switch phase {
+        case .idle:
+            return "等待开始"
+        case .capturing:
+            return hasSnapshot ? "持续采样中" : "正在采集"
+        case .contextReady:
+            return "上下文已准备"
+        case .evaluating:
+            return "模型运算中"
+        case .presenting(let state, _):
+            return "结果：\(state.displayName)"
+        case .committed:
+            return "已写入时间线"
+        case .scheduled:
+            return "等待下一轮"
+        }
+    }
+
+    private static func phaseDetail(
+        phase: AppModel.AnalysisPhase,
+        hasSnapshot: Bool,
+        modelIsBusy: Bool,
+        loopDescription: String
+    ) -> String {
+        if modelIsBusy {
+            return "正在提交已采样上下文给模型判断；后台仍按 5 秒继续采样。"
+        }
+        switch phase {
+        case .idle:
+            return "开始专注后才会采集。"
+        case .capturing:
+            return hasSnapshot
+                ? "已拿到最近上下文，继续补充样本等待下一轮判断。"
+                : "读取前台窗口、压缩屏幕和摄像头视觉信号。"
+        case .contextReady:
+            return "本机上下文已准备，等待提交给模型。"
+        case .evaluating:
+            return "正在提交给模型判断当前状态。"
+        case .presenting(_, let nudge):
+            return nudge ?? "模型已返回判断，准备写入右侧时间线。"
+        case .committed:
+            return "这轮结果已放入右侧时间线。"
+        case .scheduled:
+            return loopDescription
+        }
+    }
+
+    private static func captureText(phase: AppModel.AnalysisPhase, hasSnapshot: Bool) -> String {
+        if hasSnapshot {
+            return "已采集"
+        }
+        switch phase {
+        case .idle:
+            return "等待"
+        case .capturing:
+            return "进行中"
+        default:
+            return "已完成"
+        }
+    }
+
+    private static func captureState(phase: AppModel.AnalysisPhase, hasSnapshot: Bool) -> AnalysisProgressStepState {
+        if hasSnapshot {
+            return .done
+        }
+        switch phase {
+        case .idle:
+            return .waiting
+        case .capturing:
+            return .running
+        default:
+            return .done
+        }
+    }
+
+    private static func visualSignalText(for snapshot: ContextSnapshot?) -> String {
+        guard let snapshot else { return "等待" }
+        let screenshot = snapshot.screenshotAvailable ? "屏幕" : nil
+        let camera = snapshot.cameraFrameAvailable ? "摄像头" : nil
+        let signals = [screenshot, camera].compactMap { $0 }
+        return signals.isEmpty ? "不可用" : signals.joined(separator: "+")
+    }
+
+    private static func judgementText(
+        phase: AppModel.AnalysisPhase,
+        normalizedModelStatus: String
+    ) -> String {
+        if normalizedModelStatus.contains("自带模型运算中") {
+            return "自带模型运算中"
+        }
+        if normalizedModelStatus.contains("手动模型运算中") {
+            return "手动模型运算中"
+        }
+        if normalizedModelStatus.contains("启动中") {
+            return normalizedModelStatus
+        }
+        if isEvaluating(phase) {
+            return "运算中"
+        }
+        if normalizedModelStatus.contains("自带模型已连接")
+            || normalizedModelStatus.contains("自带模型已预热") {
+            return "自带模型待命"
+        }
+        if normalizedModelStatus.contains("手动模型已连接") {
+            return "手动模型待命"
+        }
+        if normalizedModelStatus.contains("基础规则") {
+            return "基础规则"
+        }
+        return normalizedModelStatus
+    }
+
+    private static func judgementState(
+        phase: AppModel.AnalysisPhase,
+        modelIsBusy: Bool
+    ) -> AnalysisProgressStepState {
+        if modelIsBusy {
+            return .running
+        }
+        switch phase {
+        case .presenting, .committed, .scheduled:
+            return .done
+        default:
+            return .waiting
+        }
+    }
+
+    private static func resultText(phase: AppModel.AnalysisPhase) -> String {
+        switch phase {
+        case .presenting(let state, _):
+            return state.displayName
+        case .committed, .scheduled:
+            return "已放入时间线"
+        default:
+            return "等待"
+        }
+    }
+
+    private static func resultState(phase: AppModel.AnalysisPhase) -> AnalysisProgressStepState {
+        switch phase {
+        case .presenting:
+            return .result
+        case .committed, .scheduled:
+            return .done
+        default:
+            return .waiting
+        }
+    }
+
+    private static func modelStatusIndicatesBusy(_ modelStatus: String) -> Bool {
+        modelStatus.contains("运算中") || modelStatus.contains("启动中")
+    }
+
+    private static func isEvaluating(_ phase: AppModel.AnalysisPhase) -> Bool {
+        if case .evaluating = phase {
+            return true
+        }
+        return false
+    }
+}
+
 private struct AnalysisContextPanel: View {
     var snapshot: ContextSnapshot?
     var phase: AppModel.AnalysisPhase
     var modelStatus: String
     var loopDescription: String
+
+    private var presentation: AnalysisProgressPresentation {
+        AnalysisProgressPresentation.make(
+            snapshot: snapshot,
+            phase: phase,
+            modelStatus: modelStatus,
+            loopDescription: loopDescription
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -633,9 +868,9 @@ private struct AnalysisContextPanel: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("当前分析")
                         .font(.headline)
-                    Text(phaseTitle)
+                    Text(presentation.phaseTitle)
                         .font(.title3.weight(.semibold))
-                    Text(phaseDetail)
+                    Text(presentation.phaseDetail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -649,142 +884,16 @@ private struct AnalysisContextPanel: View {
             Text("分析过程")
                 .font(.headline)
             HStack(spacing: 10) {
-                AnalysisStep(title: "采集", value: captureText, state: captureState)
-                AnalysisStep(title: "视觉信号", value: visualSignalText, state: visualState)
-                AnalysisStep(title: "模型运算", value: judgementText, state: judgementState)
-                AnalysisStep(title: "结果入列", value: resultText, state: resultState)
+                AnalysisStep(title: "采集", value: presentation.captureText, state: .init(presentation.captureState))
+                AnalysisStep(title: "视觉信号", value: presentation.visualSignalText, state: .init(presentation.visualState))
+                AnalysisStep(title: "模型运算", value: presentation.judgementText, state: .init(presentation.judgementState))
+                AnalysisStep(title: "结果入列", value: presentation.resultText, state: .init(presentation.resultState))
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var phaseTitle: String {
-        switch phase {
-        case .idle:
-            return "等待开始"
-        case .capturing:
-            return "正在采集"
-        case .contextReady:
-            return "上下文已准备"
-        case .evaluating:
-            return "模型运算中"
-        case .presenting(let state, _):
-            return "结果：\(state.displayName)"
-        case .committed:
-            return "已写入时间线"
-        case .scheduled:
-            return "等待下一轮"
-        }
-    }
-
-    private var phaseDetail: String {
-        switch phase {
-        case .idle:
-            return "开始专注后才会采集。"
-        case .capturing:
-            return "读取前台窗口、压缩屏幕和摄像头视觉信号。"
-        case .contextReady:
-            return "本机上下文已准备，等待提交给模型。"
-        case .evaluating:
-            return "正在提交给模型判断当前状态。"
-        case .presenting(_, let nudge):
-            return nudge ?? "模型已返回判断，准备写入右侧时间线。"
-        case .committed:
-            return "这轮结果已放入右侧时间线。"
-        case .scheduled:
-            return loopDescription
-        }
-    }
-
-    private var captureText: String {
-        switch phase {
-        case .idle:
-            return "等待"
-        case .capturing:
-            return "进行中"
-        default:
-            return "已完成"
-        }
-    }
-
-    private var visualSignalText: String {
-        guard let snapshot else { return "等待" }
-        let screenshot = snapshot.screenshotAvailable ? "屏幕" : nil
-        let camera = snapshot.cameraFrameAvailable ? "摄像头" : nil
-        return [screenshot, camera].compactMap { $0 }.joined(separator: "+").isEmpty
-            ? "不可用"
-            : [screenshot, camera].compactMap { $0 }.joined(separator: "+")
-    }
-
-    private var judgementText: String {
-        if case .evaluating = phase {
-            return "运算中"
-        }
-        if modelStatus.contains("已连接") {
-            return "模型"
-        }
-        if modelStatus.contains("失败") {
-            return "基础规则"
-        }
-        return modelStatus.replacingOccurrences(of: "模型评估：", with: "")
-    }
-
-    private var resultText: String {
-        switch phase {
-        case .presenting(let state, _):
-            return state.displayName
-        case .committed, .scheduled:
-            return "已放入时间线"
-        default:
-            return "等待"
-        }
-    }
-
-    private var captureState: AnalysisStep.State {
-        switch phase {
-        case .idle:
-            return .waiting
-        case .capturing:
-            return .running
-        default:
-            return .done
-        }
-    }
-
-    private var visualState: AnalysisStep.State {
-        switch phase {
-        case .idle, .capturing:
-            return .waiting
-        case .contextReady:
-            return .running
-        default:
-            return snapshot == nil ? .waiting : .done
-        }
-    }
-
-    private var judgementState: AnalysisStep.State {
-        switch phase {
-        case .evaluating:
-            return .running
-        case .presenting, .committed, .scheduled:
-            return .done
-        default:
-            return .waiting
-        }
-    }
-
-    private var resultState: AnalysisStep.State {
-        switch phase {
-        case .presenting:
-            return .result
-        case .committed, .scheduled:
-            return .done
-        default:
-            return .waiting
-        }
     }
 }
 
@@ -794,6 +903,19 @@ private struct AnalysisStep: View {
         case running
         case done
         case result
+
+        init(_ state: AnalysisProgressStepState) {
+            switch state {
+            case .waiting:
+                self = .waiting
+            case .running:
+                self = .running
+            case .done:
+                self = .done
+            case .result:
+                self = .result
+            }
+        }
     }
 
     var title: String
