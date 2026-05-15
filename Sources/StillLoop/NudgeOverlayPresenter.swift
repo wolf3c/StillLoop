@@ -5,12 +5,14 @@ enum NudgeIntensity: Equatable {
     case gentle
     case noticeable
     case strong
+    case permission
 
     var displayDuration: TimeInterval {
         switch self {
         case .gentle: return 2.4
         case .noticeable: return 8.0
         case .strong: return 12.0
+        case .permission: return 3.2
         }
     }
 
@@ -18,7 +20,7 @@ enum NudgeIntensity: Equatable {
         switch self {
         case .gentle:
             return .floating
-        case .noticeable, .strong:
+        case .noticeable, .strong, .permission:
             return .statusBar
         }
     }
@@ -28,6 +30,7 @@ enum NudgeIntensity: Equatable {
         case .gentle: return 320
         case .noticeable: return 360
         case .strong: return 390
+        case .permission: return 450
         }
     }
 
@@ -36,6 +39,7 @@ enum NudgeIntensity: Equatable {
         case .gentle: return 52
         case .noticeable: return 58
         case .strong: return 64
+        case .permission: return 62
         }
     }
 
@@ -44,6 +48,7 @@ enum NudgeIntensity: Equatable {
         case .gentle: return .systemGreen
         case .noticeable: return .systemOrange
         case .strong: return .systemRed
+        case .permission: return .systemBlue
         }
     }
 
@@ -52,6 +57,7 @@ enum NudgeIntensity: Equatable {
         case .gentle: return "轻轻提醒"
         case .noticeable: return "回来一下"
         case .strong: return "先停一下"
+        case .permission: return "权限说明"
         }
     }
 }
@@ -82,7 +88,7 @@ final class NudgeOverlayPresenter {
         panels.removeAll()
     }
 
-    private func show(message: String, intensity: NudgeIntensity) {
+    func show(message: String, intensity: NudgeIntensity) {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: intensity.width, height: intensity.height),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -121,7 +127,7 @@ final class NudgeOverlayPresenter {
         accent.translatesAutoresizingMaskIntoConstraints = false
 
         let body = NSTextField(wrappingLabelWithString: message)
-        body.font = .systemFont(ofSize: intensity == .gentle ? 17 : 19, weight: .semibold)
+        body.font = .systemFont(ofSize: intensity == .gentle || intensity == .permission ? 17 : 19, weight: .semibold)
         body.textColor = .labelColor
         body.maximumNumberOfLines = 1
         body.lineBreakMode = .byTruncatingTail
@@ -169,5 +175,55 @@ final class NudgeOverlayPresenter {
                 }
             }
         }
+    }
+}
+
+final class BrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
+    typealias ShowNotice = (String) async -> Void
+    typealias WaitBeforeAutomationPrompt = (Duration) async -> Void
+
+    private static let shownBrowserAutomationNoticeKey = "shownBrowserAutomationNoticeAppNames"
+    private static let delayBeforeAutomationPrompt: Duration = .milliseconds(900)
+
+    private let userDefaults: UserDefaults
+    private let showNotice: ShowNotice
+    private let waitBeforeAutomationPrompt: WaitBeforeAutomationPrompt
+
+    init(userDefaults: UserDefaults, overlayPresenter: NudgeOverlayPresenter) {
+        self.userDefaults = userDefaults
+        self.showNotice = { message in
+            await MainActor.run {
+                overlayPresenter.show(message: message, intensity: .permission)
+            }
+        }
+        self.waitBeforeAutomationPrompt = { duration in
+            try? await Task.sleep(for: duration)
+        }
+    }
+
+    init(
+        userDefaults: UserDefaults,
+        showNotice: @escaping ShowNotice,
+        waitBeforeAutomationPrompt: @escaping WaitBeforeAutomationPrompt
+    ) {
+        self.userDefaults = userDefaults
+        self.showNotice = showNotice
+        self.waitBeforeAutomationPrompt = waitBeforeAutomationPrompt
+    }
+
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {
+        guard AppleScriptBrowserTabMetadataReader.supportsMetadata(for: appName) else { return }
+        var shownAppNames = Set(userDefaults.stringArray(forKey: Self.shownBrowserAutomationNoticeKey) ?? [])
+        guard !shownAppNames.contains(appName) else { return }
+
+        shownAppNames.insert(appName)
+        userDefaults.set(Array(shownAppNames), forKey: Self.shownBrowserAutomationNoticeKey)
+        await showNotice(Self.noticeMessage(for: appName))
+        await waitBeforeAutomationPrompt(Self.delayBeforeAutomationPrompt)
+    }
+
+    private static func noticeMessage(for appName: String) -> String {
+        let displayName = appName == "Google Chrome" ? "Chrome" : appName
+        return "读取 \(displayName) 当前标签标题和网址，仅用于本机判断"
     }
 }

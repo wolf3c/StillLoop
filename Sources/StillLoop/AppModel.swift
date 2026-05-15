@@ -242,7 +242,8 @@ final class AppModel: ObservableObject {
     private let userDefaults: UserDefaults
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
-    private let nudgeOverlayPresenter = NudgeOverlayPresenter()
+    private let nudgeOverlayPresenter: NudgeOverlayPresenter
+    private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private var provider: ContextProvider?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
     private var captureTask: Task<Void, Never>?
@@ -483,6 +484,12 @@ final class AppModel: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        let nudgeOverlayPresenter = NudgeOverlayPresenter()
+        self.nudgeOverlayPresenter = nudgeOverlayPresenter
+        self.browserAutomationNoticePresenter = BrowserAutomationNoticePresenter(
+            userDefaults: userDefaults,
+            overlayPresenter: nudgeOverlayPresenter
+        )
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
         let resolvedBaseURLText = AppModel.resolvedLLMBaseURLText(
             environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
@@ -837,7 +844,7 @@ final class AppModel: ObservableObject {
 
     private func beginSession(task: String) {
         currentSession = FocusSession(task: task, startedAt: Date(), endedAt: nil, events: [], feedback: nil)
-        provider = MacLocalContextProvider()
+        provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)
         contextSourceDescription = "上下文来源：真实本机"
         status = .running
         currentState = .uncertain

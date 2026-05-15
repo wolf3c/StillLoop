@@ -8,21 +8,25 @@ final class MacLocalContextProvider: ContextProvider {
     private let browserMetadataReader: BrowserTabMetadataReading
     private let focusedWindowReader: FocusedWindowReading
     private let visualCapture: VisualCapture
+    private let browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting
 
     init(
         browserMetadataReader: BrowserTabMetadataReading = AppleScriptBrowserTabMetadataReader(),
         focusedWindowReader: FocusedWindowReading = CGWindowFocusedWindowReader(),
-        visualCapture: VisualCapture = SystemVisualCapture()
+        visualCapture: VisualCapture = SystemVisualCapture(),
+        browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting = NoBrowserAutomationNoticePresenter()
     ) {
         self.browserMetadataReader = browserMetadataReader
         self.focusedWindowReader = focusedWindowReader
         self.visualCapture = visualCapture
+        self.browserAutomationNoticePresenter = browserAutomationNoticePresenter
     }
 
     func capture() async -> ContextSnapshot {
         let focusedWindow = focusedWindowReader.bestFocusedWindow()
         let appName = focusedWindow.appName
         let windowTitle = focusedWindow.title
+        await browserAutomationNoticePresenter.presentBrowserAutomationNoticeIfNeeded(for: appName)
         let browserMetadata = browserMetadataReader.currentTabMetadata(for: appName)
         let screenshot = visualCapture.captureCompressedScreenshot()
         let camera = await visualCapture.captureCameraStill()
@@ -47,6 +51,14 @@ final class MacLocalContextProvider: ContextProvider {
             cameraData: camera?.data
         )
     }
+}
+
+protocol BrowserAutomationNoticePresenting {
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async
+}
+
+struct NoBrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {}
 }
 
 struct FocusedWindow: Equatable {
@@ -77,11 +89,15 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
             return FocusedWindow(appName: ownerName, title: title?.isEmpty == false ? title! : "当前窗口")
         }
 
-        if frontmostApp != "StillLoop" {
+        if !Self.isStillLoopAppName(frontmostApp) {
             return visibleWindows.first { $0.appName == frontmostApp } ?? FocusedWindow(appName: frontmostApp, title: "当前窗口")
         }
 
-        return visibleWindows.first { $0.appName != "StillLoop" } ?? FocusedWindow(appName: frontmostApp, title: "StillLoop")
+        return visibleWindows.first { !Self.isStillLoopAppName($0.appName) } ?? FocusedWindow(appName: frontmostApp, title: "StillLoop")
+    }
+
+    static func isStillLoopAppName(_ appName: String) -> Bool {
+        appName == "StillLoop" || appName == "StillLoop Dev"
     }
 }
 
@@ -140,6 +156,10 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
         }
 
         return nil
+    }
+
+    static func supportsMetadata(for appName: String) -> Bool {
+        chromiumBrowserNames.contains(appName) || safariBrowserNames.contains(appName)
     }
 
     private func metadata(from output: String?) -> BrowserTabMetadata? {

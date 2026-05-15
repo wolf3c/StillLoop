@@ -30,4 +30,30 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .statusBar)
         XCTAssertEqual(NudgeIntensity.strong.windowLevel, .statusBar)
     }
+
+    func testPermissionNoticeUsesHighVisibilityOverlay() {
+        XCTAssertEqual(NudgeIntensity.permission.windowLevel, .statusBar)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.displayDuration, 3)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.width, 430)
+    }
+
+    func testBrowserAutomationNoticeShowsOnceForSupportedBrowser() async {
+        let suiteName = "BrowserAutomationNotice-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var messages: [String] = []
+        var waitCount = 0
+        let presenter = BrowserAutomationNoticePresenter(
+            userDefaults: defaults,
+            showNotice: { messages.append($0) },
+            waitBeforeAutomationPrompt: { _ in waitCount += 1 }
+        )
+
+        await presenter.presentBrowserAutomationNoticeIfNeeded(for: "Google Chrome")
+        await presenter.presentBrowserAutomationNoticeIfNeeded(for: "Google Chrome")
+        await presenter.presentBrowserAutomationNoticeIfNeeded(for: "Zed")
+
+        XCTAssertEqual(messages, ["读取 Chrome 当前标签标题和网址，仅用于本机判断"])
+        XCTAssertEqual(waitCount, 1)
+    }
 }
