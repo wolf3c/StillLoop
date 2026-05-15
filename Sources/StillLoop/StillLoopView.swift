@@ -492,37 +492,73 @@ private struct FocusRunningView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(model.currentSession?.task ?? "")
-                    .font(.system(size: 28, weight: .semibold))
-                HStack(spacing: 16) {
-                    Metric(title: "已专注", value: formatted(model.elapsed))
-                    Metric(title: "当前状态", value: model.currentState.displayName)
-                    Metric(title: "提醒", value: model.lastNudge)
-                }
-                AnalysisContextPanel(
-                    snapshot: model.latestContext,
-                    phase: model.analysisPhase,
-                    modelStatus: model.localLLMStatus,
-                    loopDescription: model.evaluationLoopDescription
-                )
-                .animation(.easeInOut(duration: 0.24), value: model.analysisPhase)
-                Text("\(model.contextSourceDescription)。\(model.evaluationLoopDescription)。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button(model.status == .paused ? "继续" : "暂停") {
-                        model.status == .paused ? model.resumeSession() : model.pauseSession()
-                    }
-                    Button("结束并复盘") { model.endSession() }
-                        .keyboardShortcut(.defaultAction)
-                }
-                Spacer()
+        GeometryReader { proxy in
+            HStack(alignment: .top, spacing: 24) {
+                mainColumn
+                TimelineView(events: model.currentSession?.events ?? [])
             }
-            TimelineView(events: model.currentSession?.events ?? [])
+            .padding(32)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
-        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var mainColumn: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                focusTitle
+                metrics
+                analysisPanel
+                footerText
+                actions
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.bottom, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var focusTitle: some View {
+        Text(model.currentSession?.task ?? "")
+            .font(.system(size: 28, weight: .semibold))
+            .lineLimit(2)
+            .truncationMode(.tail)
+    }
+
+    private var metrics: some View {
+        HStack(spacing: 16) {
+            Metric(title: "已专注", value: formatted(model.elapsed))
+            Metric(title: "当前状态", value: model.currentState.displayName)
+            Metric(title: "提醒", value: model.lastNudge)
+        }
+    }
+
+    private var analysisPanel: some View {
+        AnalysisContextPanel(
+            snapshot: model.latestContext,
+            phase: model.analysisPhase,
+            modelStatus: model.localLLMStatus,
+            loopDescription: model.evaluationLoopDescription
+        )
+        .animation(.easeInOut(duration: 0.24), value: model.analysisPhase)
+    }
+
+    private var footerText: some View {
+        Text("\(model.contextSourceDescription)。\(model.evaluationLoopDescription)。")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .truncationMode(.tail)
+    }
+
+    private var actions: some View {
+        HStack(alignment: .top, spacing: 24) {
+            Button(model.status == .paused ? "继续" : "暂停") {
+                model.status == .paused ? model.resumeSession() : model.pauseSession()
+            }
+            Button("结束并复盘") { model.endSession() }
+                .keyboardShortcut(.defaultAction)
+        }
     }
 
     private func formatted(_ interval: TimeInterval) -> String {
@@ -565,6 +601,8 @@ private struct AnalysisContextPanel: View {
                     if let windowTitle = snapshot?.displayWindowTitle {
                         Text(windowTitle)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                     } else if snapshot == nil {
                         Text("开始任务后采集真实本机上下文")
                             .foregroundStyle(.secondary)
@@ -575,6 +613,7 @@ private struct AnalysisContextPanel: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                     if let browserURL = snapshot?.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !browserURL.isEmpty {
@@ -587,6 +626,8 @@ private struct AnalysisContextPanel: View {
                     Text(snapshot?.visualSummary ?? "等待视觉信号")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 8) {
@@ -597,7 +638,8 @@ private struct AnalysisContextPanel: View {
                     Text(phaseDetail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
                 }
                 .frame(maxWidth: 300, alignment: .leading)
             }
@@ -839,8 +881,13 @@ private struct TimelineView: View {
                             }
                             Text(event.context)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                                .truncationMode(.tail)
                             if let nudge = event.nudge {
-                                Text(nudge).font(.caption)
+                                Text(nudge)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .truncationMode(.tail)
                             }
                         }
                         Divider()
@@ -850,6 +897,7 @@ private struct TimelineView: View {
             }
         }
         .frame(width: 260)
+        .frame(maxHeight: .infinity)
     }
 }
 
