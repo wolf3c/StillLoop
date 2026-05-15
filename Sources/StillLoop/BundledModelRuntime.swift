@@ -13,6 +13,7 @@ protocol BundledModelRuntimeManaging: AnyObject {
 
 protocol BundledModelProcessManaging: AnyObject {
     var isRunning: Bool { get }
+    var processIdentifier: Int32 { get }
     func terminate()
 }
 
@@ -79,6 +80,10 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     private let readinessProbe: (URL, String) async throws -> Readiness
     private let readinessMaxAttempts: Int
     private let readinessRetryDelayNanoseconds: UInt64
+    private let maximumResidentMemoryBytes: UInt64
+    private let residentMemoryBytes: (Int32) -> UInt64?
+    private let processExitMaxAttempts: Int
+    private let processExitRetryDelayNanoseconds: UInt64
     private var process: BundledModelProcessManaging?
 
     init(
@@ -91,7 +96,11 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         isPortInUse: @escaping (Int) -> Bool = BundledModelRuntime.isTCPPortInUse,
         readinessProbe: @escaping (URL, String) async throws -> Readiness = BundledModelRuntime.defaultReadinessProbe,
         readinessMaxAttempts: Int = 60,
-        readinessRetryDelayNanoseconds: UInt64 = 500_000_000
+        readinessRetryDelayNanoseconds: UInt64 = 500_000_000,
+        maximumResidentMemoryBytes: UInt64 = BundledModelRuntime.defaultMaximumResidentMemoryBytes,
+        residentMemoryBytes: @escaping (Int32) -> UInt64? = BundledModelRuntime.residentMemoryBytes,
+        processExitMaxAttempts: Int = 20,
+        processExitRetryDelayNanoseconds: UInt64 = 100_000_000
     ) {
         self.executableURL = executableURL
         self.modelURL = modelURL
@@ -103,6 +112,10 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         self.readinessProbe = readinessProbe
         self.readinessMaxAttempts = readinessMaxAttempts
         self.readinessRetryDelayNanoseconds = readinessRetryDelayNanoseconds
+        self.maximumResidentMemoryBytes = maximumResidentMemoryBytes
+        self.residentMemoryBytes = residentMemoryBytes
+        self.processExitMaxAttempts = processExitMaxAttempts
+        self.processExitRetryDelayNanoseconds = processExitRetryDelayNanoseconds
         baseURL = spec.localServerBaseURL
         modelID = spec.localServerModelID
     }
@@ -147,7 +160,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             "--parallel", "1",
             "--n-gpu-layers", "99",
             "--cache-type-k", spec.recommendedCacheTypeK,
-            "--cache-type-v", spec.recommendedCacheTypeV
+            "--cache-type-v", spec.recommendedCacheTypeV,
+            "--no-cache-prompt",
+            "--cache-ram", "0"
         ]
         if let mmprojURL {
             arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)
@@ -156,6 +171,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     }
 
     func startIfNeeded() async throws {
+        await restartForMemoryPressureIfNeeded()
+
         if process?.isRunning == true {
             state = .running
             return
@@ -198,6 +215,27 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
                 throw runtimeError
             }
             throw RuntimeError.readinessFailed(String(describing: error))
+        }
+    }
+
+    private func restartForMemoryPressureIfNeeded() async {
+        guard
+            let process,
+            process.isRunning,
+            let bytes = residentMemoryBytes(process.processIdentifier),
+            bytes > maximumResidentMemoryBytes
+        else {
+            return
+        }
+
+        process.terminate()
+        for _ in 0..<max(0, processExitMaxAttempts) {
+            guard process.isRunning else { break }
+            try? await Task.sleep(nanoseconds: processExitRetryDelayNanoseconds)
+        }
+        if !process.isRunning {
+            self.process = nil
+            state = .stopped
         }
     }
 
@@ -264,6 +302,18 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         }
         return result == 0
     }
+
+    private static let defaultMaximumResidentMemoryBytes: UInt64 = 2_500 * 1024 * 1024
+
+    private static func residentMemoryBytes(for processIdentifier: Int32) -> UInt64? {
+        var taskInfo = proc_taskinfo()
+        let size = Int32(MemoryLayout<proc_taskinfo>.size)
+        let result = withUnsafeMutablePointer(to: &taskInfo) { pointer in
+            proc_pidinfo(processIdentifier, PROC_PIDTASKINFO, 0, pointer, size)
+        }
+        guard result == size else { return nil }
+        return taskInfo.pti_resident_size
+    }
 }
 
 struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
@@ -291,6 +341,10 @@ private final class FoundationBundledModelProcess: BundledModelProcessManaging {
 
     var isRunning: Bool {
         process.isRunning
+    }
+
+    var processIdentifier: Int32 {
+        process.processIdentifier
     }
 
     func terminate() {

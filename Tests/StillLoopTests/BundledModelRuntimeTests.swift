@@ -37,7 +37,9 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--parallel", "1",
             "--n-gpu-layers", "99",
             "--cache-type-k", "f16",
-            "--cache-type-v", "f16"
+            "--cache-type-v", "f16",
+            "--no-cache-prompt",
+            "--cache-ram", "0"
         ])
     }
 
@@ -146,6 +148,37 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state, .running)
     }
 
+    func testStartRestartsWarmProcessWhenResidentMemoryExceedsLimit() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        var residentMemoryByPID: [Int32: UInt64] = [:]
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { _ in false },
+            readinessProbe: { _, _ in .ready },
+            maximumResidentMemoryBytes: 1_000,
+            residentMemoryBytes: { residentMemoryByPID[$0] },
+            processExitRetryDelayNanoseconds: 0
+        )
+
+        try await runtime.startIfNeeded()
+        let firstProcess = try XCTUnwrap(launcher.launchedProcesses.first)
+        residentMemoryByPID[firstProcess.processIdentifier] = 1_001
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(firstProcess.terminateCount, 1)
+        XCTAssertFalse(firstProcess.isRunning)
+        XCTAssertEqual(launcher.launchCount, 2)
+        XCTAssertEqual(runtime.state, .running)
+    }
+
     func testStartPollsReadinessUntilServerAcceptsImageRequests() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
@@ -227,7 +260,10 @@ final class BundledModelRuntimeTests: XCTestCase {
 }
 
 private final class FakeBundledModelProcessLauncher: BundledModelProcessLaunching {
-    let process = FakeBundledModelProcess()
+    private(set) var launchedProcesses: [FakeBundledModelProcess] = []
+    var process: FakeBundledModelProcess {
+        launchedProcesses.last ?? FakeBundledModelProcess(processIdentifier: -1)
+    }
     private(set) var launchCount = 0
     private(set) var lastExecutableURL: URL?
     private(set) var lastArguments: [String]?
@@ -236,13 +272,20 @@ private final class FakeBundledModelProcessLauncher: BundledModelProcessLaunchin
         launchCount += 1
         lastExecutableURL = executableURL
         lastArguments = arguments
+        let process = FakeBundledModelProcess(processIdentifier: Int32(10_000 + launchCount))
+        launchedProcesses.append(process)
         return process
     }
 }
 
 private final class FakeBundledModelProcess: BundledModelProcessManaging {
     var isRunning = true
+    let processIdentifier: Int32
     private(set) var terminateCount = 0
+
+    init(processIdentifier: Int32) {
+        self.processIdentifier = processIdentifier
+    }
 
     func terminate() {
         terminateCount += 1
