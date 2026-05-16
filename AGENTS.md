@@ -40,6 +40,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `2026-05-15`: Treated the local HTTP model as the default development path after the built-in model was already available. Root cause: over-constrained `AGENTS.md` launch guidance with `STILLLOOP_USE_LOCAL_LLM=1`, which made agents preserve stale manual model settings. Future rule: default development runs should use the app's selected/built-in model; only enable local HTTP when explicitly testing manual model configuration or HTTP-model behavior.
 - `2026-05-15`: Described "关闭手动 HTTP 模型" as "模型评估已关闭". Root cause: reused `useLocalLLM` for both manual HTTP selection and overall evaluator availability. Future rule: keep model source, runtime state, and current evaluation path as separate states in code and UI copy.
 - `2026-05-16`: Analyzed the focus analysis progress cards but did not implement the confirmed fix before moving on. Root cause: treated diagnosis as enough after the thread shifted to a later runtime issue. Future rule: when a user raises a product defect and asks to reflect on correctness, either implement the confirmed fix in that work item or explicitly call out that it remains pending.
+- `2026-05-17`: Replaced the nudge overlay's straight-corner window shadow with a custom layer shadow that created a large rectangular gray haze. Root cause: verified only window structure instead of the actual rendered visual. Future rule: for visual fixes, keep the first change visually minimal and confirm the rendered app before committing.
 
 ## Design And Behavior Changes
 

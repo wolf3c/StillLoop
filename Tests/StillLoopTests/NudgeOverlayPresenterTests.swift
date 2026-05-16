@@ -102,7 +102,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testOverlayUsesRoundedContentShadowInsteadOfWindowShadow() throws {
+    func testOverlayUsesCardSizedPanelWithoutWindowOrLayerShadow() throws {
         let app = NSApplication.shared
         let presenter = NudgeOverlayPresenter()
         let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
@@ -116,9 +116,10 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         let contentView = try XCTUnwrap(panel.contentView)
 
         XCTAssertFalse(panel.hasShadow)
-        XCTAssertGreaterThan(panel.frame.width, NudgeIntensity.noticeable.width)
-        XCTAssertGreaterThan(panel.frame.height, NudgeIntensity.noticeable.height)
-        XCTAssertNotNil(contentView.layer?.shadowPath)
+        XCTAssertEqual(panel.frame.width, NudgeIntensity.noticeable.width, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.height, NudgeIntensity.noticeable.height, accuracy: 0.5)
+        XCTAssertTrue(contentView is NudgeOverlayInteractionView)
+        XCTAssertNil(contentView.layer?.shadowPath)
     }
 
     func testPermissionNoticeUsesHighVisibilityOverlay() {
