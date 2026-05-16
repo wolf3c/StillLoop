@@ -62,12 +62,32 @@ enum NudgeIntensity: Equatable {
     }
 }
 
+struct NudgeOverlayMotionPresentation: Equatable {
+    var offset: CGSize
+    var alpha: CGFloat
+    var scale: CGFloat
+}
+
+enum NudgeOverlayReleaseAction: Equatable {
+    case rebound
+    case dismiss
+}
+
 enum NudgeOverlayInteraction {
-    static let dismissDragThreshold: CGFloat = 28
+    static let dismissDragThreshold: CGFloat = 44
+    static let topTravelDistance: CGFloat = 42
+    static let entryPresentation = NudgeOverlayMotionPresentation(
+        offset: CGSize(width: 0, height: topTravelDistance),
+        alpha: 0.2,
+        scale: 0.96
+    )
+    static let visiblePresentation = NudgeOverlayMotionPresentation(offset: .zero, alpha: 1, scale: 1)
+
     private static let clickMovementTolerance: CGFloat = 8
+    private static let dismissVelocityThreshold: CGFloat = 720
 
     static func shouldDismiss(translation: CGSize) -> Bool {
-        translation.height >= dismissDragThreshold
+        releaseAction(translation: translation) == .dismiss
     }
 
     static func shouldDismissScroll(
@@ -75,8 +95,7 @@ enum NudgeOverlayInteraction {
         hasPreciseScrollingDeltas: Bool = true
     ) -> Bool {
         guard hasPreciseScrollingDeltas else { return false }
-        return accumulatedDelta.height >= dismissDragThreshold
-            && abs(accumulatedDelta.height) > abs(accumulatedDelta.width)
+        return releaseAction(translation: accumulatedDelta) == .dismiss
     }
 
     static func deviceScrollDelta(scrollingDelta: CGFloat, directionInvertedFromDevice: Bool) -> CGFloat {
@@ -87,6 +106,46 @@ enum NudgeOverlayInteraction {
         deltaY > 0 && abs(deltaY) > abs(deltaX)
     }
 
+    static func releaseAction(
+        translation: CGSize,
+        velocity: CGSize = .zero
+    ) -> NudgeOverlayReleaseAction {
+        if isUpwardDominant(translation), translation.height >= dismissDragThreshold {
+            return .dismiss
+        }
+        if isUpwardDominant(velocity),
+           velocity.height >= dismissVelocityThreshold,
+           translation.height > clickMovementTolerance {
+            return .dismiss
+        }
+        return .rebound
+    }
+
+    static func motionPresentation(for offset: CGSize) -> NudgeOverlayMotionPresentation {
+        let upwardProgress = min(max(offset.height, 0) / dismissDragThreshold, 1)
+        let nonDismissProgress = min(max(abs(offset.width), max(-offset.height, 0)) / dismissDragThreshold, 1)
+        let alpha = upwardProgress > 0
+            ? 1 - 0.36 * upwardProgress
+            : 1 - 0.08 * nonDismissProgress
+        let scale = upwardProgress > 0
+            ? 1 - 0.04 * upwardProgress
+            : 1 - 0.012 * nonDismissProgress
+
+        return NudgeOverlayMotionPresentation(
+            offset: offset,
+            alpha: alpha,
+            scale: scale
+        )
+    }
+
+    static func entryOrigin(for restingOrigin: NSPoint) -> NSPoint {
+        NSPoint(x: restingOrigin.x, y: restingOrigin.y + topTravelDistance)
+    }
+
+    static func flyOutOrigin(for restingOrigin: NSPoint) -> NSPoint {
+        entryOrigin(for: restingOrigin)
+    }
+
     static func shouldOpen(translation: CGSize) -> Bool {
         abs(translation.width) <= clickMovementTolerance
             && abs(translation.height) <= clickMovementTolerance
@@ -95,22 +154,35 @@ enum NudgeOverlayInteraction {
     static func requestOpenApp(using notificationCenter: NotificationCenter = .default) {
         notificationCenter.post(name: .stillLoopNudgeOverlayDidRequestOpenApp, object: nil)
     }
+
+    private static func isUpwardDominant(_ vector: CGSize) -> Bool {
+        vector.height > 0 && vector.height > abs(vector.width)
+    }
 }
 
 final class NudgeOverlayInteractionView: NSVisualEffectView {
     private let onOpen: @MainActor () -> Void
-    private let onDismiss: @MainActor () -> Void
+    private let onInteractionBegan: @MainActor () -> Void
+    private let onMotionChanged: @MainActor (NudgeOverlayMotionPresentation) -> Void
+    private let onRelease: @MainActor (NudgeOverlayReleaseAction) -> Void
     private var mouseDownScreenLocation: NSPoint?
+    private var lastMouseScreenLocation: NSPoint?
+    private var lastMouseEventTimestamp: TimeInterval?
+    private var mouseVelocity = CGSize.zero
     private var hasDismissed = false
     private var scrollAccumulatedDelta = CGSize.zero
     private var lastScrollEventTimestamp: TimeInterval?
 
     init(
         onOpen: @escaping @MainActor () -> Void,
-        onDismiss: @escaping @MainActor () -> Void
+        onInteractionBegan: @escaping @MainActor () -> Void = {},
+        onMotionChanged: @escaping @MainActor (NudgeOverlayMotionPresentation) -> Void = { _ in },
+        onRelease: @escaping @MainActor (NudgeOverlayReleaseAction) -> Void = { _ in }
     ) {
         self.onOpen = onOpen
-        self.onDismiss = onDismiss
+        self.onInteractionBegan = onInteractionBegan
+        self.onMotionChanged = onMotionChanged
+        self.onRelease = onRelease
         super.init(frame: .zero)
     }
 
@@ -129,33 +201,44 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
 
     override func mouseDown(with event: NSEvent) {
         mouseDownScreenLocation = NSEvent.mouseLocation
+        lastMouseScreenLocation = NSEvent.mouseLocation
+        lastMouseEventTimestamp = event.timestamp
+        mouseVelocity = .zero
         hasDismissed = false
+        onInteractionBegan()
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let mouseDownScreenLocation, !hasDismissed else { return }
+        updateMouseVelocity(with: event)
         let translation = CGSize(
             width: NSEvent.mouseLocation.x - mouseDownScreenLocation.x,
             height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
         )
-        guard NudgeOverlayInteraction.shouldDismiss(translation: translation) else { return }
-        dismissFromGesture()
+        onMotionChanged(NudgeOverlayInteraction.motionPresentation(for: translation))
     }
 
     override func mouseUp(with event: NSEvent) {
         guard let mouseDownScreenLocation, !hasDismissed else { return }
+        updateMouseVelocity(with: event)
         let translation = CGSize(
             width: NSEvent.mouseLocation.x - mouseDownScreenLocation.x,
             height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
         )
-        self.mouseDownScreenLocation = nil
-        guard NudgeOverlayInteraction.shouldOpen(translation: translation) else { return }
-        onOpen()
+        if NudgeOverlayInteraction.shouldOpen(translation: translation) {
+            resetMouseTracking()
+            onOpen()
+            return
+        }
+        let action = NudgeOverlayInteraction.releaseAction(translation: translation, velocity: mouseVelocity)
+        finishGesture(action)
     }
 
     override func scrollWheel(with event: NSEvent) {
         guard !hasDismissed else { return }
+        guard event.hasPreciseScrollingDeltas else { return }
         resetScrollTrackingIfNeeded(for: event)
+        onInteractionBegan()
         let delta = CGSize(
             width: NudgeOverlayInteraction.deviceScrollDelta(
                 scrollingDelta: event.scrollingDeltaX,
@@ -169,12 +252,14 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         scrollAccumulatedDelta.width += delta.width
         scrollAccumulatedDelta.height += delta.height
         lastScrollEventTimestamp = event.timestamp
+        let presentation = NudgeOverlayInteraction.motionPresentation(for: scrollAccumulatedDelta)
+        onMotionChanged(presentation)
 
         if NudgeOverlayInteraction.shouldDismissScroll(
             accumulatedDelta: scrollAccumulatedDelta,
-            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+            hasPreciseScrollingDeltas: true
         ) {
-            dismissFromGesture()
+            finishGesture(.dismiss)
             return
         }
 
@@ -182,15 +267,16 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             || event.phase.contains(.cancelled)
             || event.momentumPhase.contains(.ended)
             || event.momentumPhase.contains(.cancelled) {
-            scrollAccumulatedDelta = .zero
-            lastScrollEventTimestamp = nil
+            finishGesture(.rebound)
         }
     }
 
     override func swipe(with event: NSEvent) {
         guard !hasDismissed else { return }
         guard NudgeOverlayInteraction.shouldDismissSwipe(deltaX: event.deltaX, deltaY: event.deltaY) else { return }
-        dismissFromGesture()
+        onInteractionBegan()
+        onMotionChanged(NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 0, height: NudgeOverlayInteraction.dismissDragThreshold)))
+        finishGesture(.dismiss)
     }
 
     private func resetScrollTrackingIfNeeded(for event: NSEvent) {
@@ -201,20 +287,66 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         }
     }
 
-    private func dismissFromGesture() {
-        hasDismissed = true
+    private func updateMouseVelocity(with event: NSEvent) {
+        guard let lastMouseScreenLocation, let lastMouseEventTimestamp else { return }
+        let elapsed = max(event.timestamp - lastMouseEventTimestamp, 0.001)
+        let location = NSEvent.mouseLocation
+        let delta = CGSize(
+            width: location.x - lastMouseScreenLocation.x,
+            height: location.y - lastMouseScreenLocation.y
+        )
+        if abs(delta.width) > 0.1 || abs(delta.height) > 0.1 {
+            mouseVelocity = CGSize(
+                width: delta.width / elapsed,
+                height: delta.height / elapsed
+            )
+        }
+        self.lastMouseScreenLocation = location
+        self.lastMouseEventTimestamp = event.timestamp
+    }
+
+    private func resetMouseTracking() {
         mouseDownScreenLocation = nil
+        lastMouseScreenLocation = nil
+        lastMouseEventTimestamp = nil
+        mouseVelocity = .zero
+    }
+
+    private func finishGesture(_ action: NudgeOverlayReleaseAction) {
+        if action == .dismiss {
+            hasDismissed = true
+        }
+        resetMouseTracking()
         scrollAccumulatedDelta = .zero
         lastScrollEventTimestamp = nil
-        onDismiss()
+        onRelease(action)
     }
 }
 
 @MainActor
 final class NudgeOverlayPresenter {
     private static let overlayCornerRadius: CGFloat = 18
+    private static let enterDuration: TimeInterval = 0.22
+    private static let reboundDuration: TimeInterval = 0.22
+    private static let flyOutDuration: TimeInterval = 0.16
+    private static let postInteractionAutoDismissDelay: TimeInterval = 1.5
 
-    private var panels: [NSPanel] = []
+    @MainActor
+    private final class PanelState {
+        let panel: NSPanel
+        let restingOrigin: NSPoint
+        let topOrigin: NSPoint
+        var autoDismissTask: Task<Void, Never>?
+        var isClosing = false
+
+        init(panel: NSPanel, restingOrigin: NSPoint) {
+            self.panel = panel
+            self.restingOrigin = restingOrigin
+            self.topOrigin = NudgeOverlayInteraction.flyOutOrigin(for: restingOrigin)
+        }
+    }
+
+    private var panelStates: [PanelState] = []
 
     nonisolated static func intensity(for state: FocusState) -> NudgeIntensity {
         switch state {
@@ -234,8 +366,11 @@ final class NudgeOverlayPresenter {
     }
 
     func closeAll() {
-        panels.forEach { $0.close() }
-        panels.removeAll()
+        panelStates.forEach { state in
+            state.autoDismissTask?.cancel()
+            state.panel.close()
+        }
+        panelStates.removeAll()
     }
 
     func show(message: String, intensity: NudgeIntensity) {
@@ -253,6 +388,9 @@ final class NudgeOverlayPresenter {
         panel.isOpaque = false
         panel.hasShadow = false
 
+        let restingOrigin = origin(for: intensity)
+        let state = PanelState(panel: panel, restingOrigin: restingOrigin)
+
         panel.contentView = overlayView(
             message: message,
             intensity: intensity,
@@ -261,26 +399,41 @@ final class NudgeOverlayPresenter {
                 self.dismiss(panel, animated: false)
                 NudgeOverlayInteraction.requestOpenApp()
             },
-            onDismiss: { [weak self, weak panel] in
-                guard let self, let panel else { return }
-                self.dismiss(panel, animated: true)
+            onInteractionBegan: { [weak self, weak state] in
+                guard let self, let state else { return }
+                self.cancelAutoDismiss(for: state)
+            },
+            onMotionChanged: { [weak self, weak state] presentation in
+                guard let self, let state else { return }
+                self.apply(presentation, to: state, animated: false)
+            },
+            onRelease: { [weak self, weak state] action in
+                guard let self, let state else { return }
+                self.handleRelease(action, for: state)
             }
         )
-        position(panel, intensity: intensity)
-        panels.append(panel)
-        panel.alphaValue = 0
+        apply(NudgeOverlayInteraction.entryPresentation, to: state, animated: false)
+        panelStates.append(state)
         panel.orderFrontRegardless()
 
-        animate(panel, intensity: intensity)
+        animateIn(state)
+        scheduleAutoDismiss(for: state, delay: intensity.displayDuration)
     }
 
     private func overlayView(
         message: String,
         intensity: NudgeIntensity,
         onOpen: @escaping @MainActor () -> Void,
-        onDismiss: @escaping @MainActor () -> Void
+        onInteractionBegan: @escaping @MainActor () -> Void,
+        onMotionChanged: @escaping @MainActor (NudgeOverlayMotionPresentation) -> Void,
+        onRelease: @escaping @MainActor (NudgeOverlayReleaseAction) -> Void
     ) -> NSView {
-        let container = NudgeOverlayInteractionView(onOpen: onOpen, onDismiss: onDismiss)
+        let container = NudgeOverlayInteractionView(
+            onOpen: onOpen,
+            onInteractionBegan: onInteractionBegan,
+            onMotionChanged: onMotionChanged,
+            onRelease: onRelease
+        )
         container.material = .hudWindow
         container.blendingMode = .behindWindow
         container.state = .active
@@ -317,37 +470,103 @@ final class NudgeOverlayPresenter {
         return container
     }
 
-    private func position(_ panel: NSPanel, intensity: NudgeIntensity) {
+    private func origin(for intensity: NudgeIntensity) -> NSPoint {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let x = screenFrame.midX - intensity.width / 2
         let y = screenFrame.maxY - intensity.height - 10
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        return NSPoint(x: x, y: y)
     }
 
-    private func animate(_ panel: NSPanel, intensity: NudgeIntensity) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            panel.animator().alphaValue = 1
+    private func scheduleAutoDismiss(for state: PanelState, delay: TimeInterval) {
+        state.autoDismissTask?.cancel()
+        state.autoDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self.dismiss(state, animated: true)
         }
+    }
 
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(intensity.displayDuration))
-            self.dismiss(panel, animated: true)
+    private func cancelAutoDismiss(for state: PanelState) {
+        state.autoDismissTask?.cancel()
+        state.autoDismissTask = nil
+    }
+
+    private func animateIn(_ state: PanelState) {
+        apply(NudgeOverlayInteraction.visiblePresentation, to: state, animated: true, duration: Self.enterDuration)
+    }
+
+    private func handleRelease(_ action: NudgeOverlayReleaseAction, for state: PanelState) {
+        switch action {
+        case .dismiss:
+            dismiss(state, animated: true)
+        case .rebound:
+            apply(NudgeOverlayInteraction.visiblePresentation, to: state, animated: true, duration: Self.reboundDuration)
+            scheduleAutoDismiss(for: state, delay: Self.postInteractionAutoDismissDelay)
+        }
+    }
+
+    private func apply(
+        _ presentation: NudgeOverlayMotionPresentation,
+        to state: PanelState,
+        animated: Bool,
+        duration: TimeInterval = 0
+    ) {
+        let origin = NSPoint(
+            x: state.restingOrigin.x + presentation.offset.width,
+            y: state.restingOrigin.y + presentation.offset.height
+        )
+        let updates = {
+            if animated {
+                state.panel.animator().setFrameOrigin(origin)
+                state.panel.animator().alphaValue = presentation.alpha
+            } else {
+                state.panel.setFrameOrigin(origin)
+                state.panel.alphaValue = presentation.alpha
+            }
+            state.panel.contentView?.layer?.setAffineTransform(
+                CGAffineTransform(scaleX: presentation.scale, y: presentation.scale)
+            )
+        }
+        guard animated else {
+            updates()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.allowsImplicitAnimation = true
+            updates()
         }
     }
 
     private func dismiss(_ panel: NSPanel, animated: Bool) {
-        guard panels.contains(where: { $0 === panel }) else { return }
-        panels.removeAll { $0 === panel }
-        guard animated else {
-            panel.close()
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            panel.animator().alphaValue = 0
-        } completionHandler: {
-            panel.close()
+        guard let state = panelStates.first(where: { $0.panel === panel }) else { return }
+        dismiss(state, animated: animated)
+    }
+
+    private func dismiss(_ state: PanelState, animated: Bool) {
+        guard !state.isClosing else { return }
+        state.isClosing = true
+        state.autoDismissTask?.cancel()
+        panelStates.removeAll { $0 === state }
+        Task { @MainActor in
+            guard animated else {
+                state.panel.close()
+                return
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.flyOutDuration
+                context.allowsImplicitAnimation = true
+                state.panel.animator().setFrameOrigin(state.topOrigin)
+                state.panel.animator().alphaValue = NudgeOverlayInteraction.entryPresentation.alpha
+                state.panel.contentView?.layer?.setAffineTransform(
+                    CGAffineTransform(
+                        scaleX: NudgeOverlayInteraction.entryPresentation.scale,
+                        y: NudgeOverlayInteraction.entryPresentation.scale
+                    )
+                )
+            } completionHandler: {
+                state.panel.close()
+            }
         }
     }
 }

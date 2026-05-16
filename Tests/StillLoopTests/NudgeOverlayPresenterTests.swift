@@ -1,6 +1,7 @@
 import XCTest
 @testable import StillLoop
 import StillLoopCore
+import CoreGraphics
 
 final class NudgeOverlayPresenterTests: XCTestCase {
     func testDistractedStateUsesNoticeableOverlay() {
@@ -32,23 +33,38 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     func testShortOrDownwardDragsDoNotDismissOverlay() {
-        XCTAssertFalse(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: 18)))
-        XCTAssertFalse(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: -40)))
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: CGSize(width: 0, height: 18)), .rebound)
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: CGSize(width: 0, height: -40)), .rebound)
     }
 
     func testUpwardDragPastThresholdDismissesOverlay() {
-        XCTAssertTrue(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: 32)))
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: CGSize(width: 0, height: 44)), .dismiss)
+    }
+
+    func testFastUpwardDragDismissesBeforeDistanceThreshold() {
+        XCTAssertEqual(
+            NudgeOverlayInteraction.releaseAction(
+                translation: CGSize(width: 0, height: 24),
+                velocity: CGSize(width: 0, height: 760)
+            ),
+            .dismiss
+        )
+    }
+
+    func testDiagonalDragDismissesOnlyWhenUpwardMotionDominates() {
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: CGSize(width: 18, height: 48)), .dismiss)
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: CGSize(width: 54, height: 48)), .rebound)
     }
 
     func testPreciseUpwardScrollPastThresholdDismissesOverlay() {
-        XCTAssertTrue(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 0, height: 32)))
+        XCTAssertTrue(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 0, height: 44)))
     }
 
     func testScrollDismissalRequiresPreciseVerticalUpwardMotion() {
         XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 0, height: -40)))
         XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 36, height: 32)))
         XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(
-            accumulatedDelta: CGSize(width: 0, height: 32),
+            accumulatedDelta: CGSize(width: 0, height: 44),
             hasPreciseScrollingDeltas: false
         ))
     }
@@ -73,6 +89,50 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertFalse(NudgeOverlayInteraction.shouldDismissSwipe(deltaX: 1, deltaY: 0))
     }
 
+    func testEntryAndFlyOutOriginsUseSameTopSource() {
+        let restingOrigin = NSPoint(x: 540, y: 820)
+
+        XCTAssertEqual(
+            NudgeOverlayInteraction.entryOrigin(for: restingOrigin),
+            NudgeOverlayInteraction.flyOutOrigin(for: restingOrigin)
+        )
+        XCTAssertGreaterThan(NudgeOverlayInteraction.entryOrigin(for: restingOrigin).y, restingOrigin.y)
+    }
+
+    func testEntryPresentationStartsDimmedAndSlightlyScaledDown() {
+        let presentation = NudgeOverlayInteraction.entryPresentation
+
+        XCTAssertEqual(presentation.offset.height, NudgeOverlayInteraction.topTravelDistance, accuracy: 0.1)
+        XCTAssertEqual(presentation.alpha, 0.2, accuracy: 0.01)
+        XCTAssertEqual(presentation.scale, 0.96, accuracy: 0.001)
+    }
+
+    func testUpwardMotionPresentationFollowsAndSignalsDismiss() {
+        let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 0, height: 44))
+
+        XCTAssertEqual(presentation.offset.height, 44, accuracy: 0.1)
+        XCTAssertLessThan(presentation.alpha, 0.78)
+        XCTAssertLessThan(presentation.scale, 0.98)
+    }
+
+    func testHorizontalAndDownwardMotionFollowWithoutStrongFade() {
+        let horizontal = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 44, height: 0))
+        let downward = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 0, height: -36))
+
+        XCTAssertEqual(horizontal.offset.width, 44, accuracy: 0.1)
+        XCTAssertEqual(downward.offset.height, -36, accuracy: 0.1)
+        XCTAssertGreaterThan(horizontal.alpha, 0.9)
+        XCTAssertGreaterThan(downward.alpha, 0.9)
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: horizontal.offset), .rebound)
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: downward.offset), .rebound)
+    }
+
+    func testVisibleAndReboundPresentationsReturnToRestingState() {
+        XCTAssertEqual(NudgeOverlayInteraction.visiblePresentation.offset, .zero)
+        XCTAssertEqual(NudgeOverlayInteraction.visiblePresentation.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(NudgeOverlayInteraction.visiblePresentation.scale, 1, accuracy: 0.001)
+    }
+
     func testOverlayOpenActionPostsAppOpenRequest() {
         let notificationCenter = NotificationCenter()
         var didRequestOpenApp = false
@@ -92,13 +152,55 @@ final class NudgeOverlayPresenterTests: XCTestCase {
 
     @MainActor
     func testOverlayInteractionViewOwnsSubviewHitTesting() {
-        let view = NudgeOverlayInteractionView(onOpen: {}, onDismiss: {})
+        let view = NudgeOverlayInteractionView(onOpen: {})
         view.frame = NSRect(x: 0, y: 0, width: 240, height: 64)
         let label = NSTextField(labelWithString: "回到任务")
         label.frame = NSRect(x: 16, y: 20, width: 160, height: 24)
         view.addSubview(label)
 
         XCTAssertTrue(view.hitTest(NSPoint(x: 24, y: 24)) === view)
+    }
+
+    @MainActor
+    func testPreciseScrollMovesAndDismissesInteractionView() throws {
+        var didBeginInteraction = false
+        var presentations: [NudgeOverlayMotionPresentation] = []
+        var releaseActions: [NudgeOverlayReleaseAction] = []
+        let view = NudgeOverlayInteractionView(
+            onOpen: {},
+            onInteractionBegan: { didBeginInteraction = true },
+            onMotionChanged: { presentations.append($0) },
+            onRelease: { releaseActions.append($0) }
+        )
+
+        view.scrollWheel(with: try scrollEvent(deltaY: 18, units: .pixel))
+        view.scrollWheel(with: try scrollEvent(deltaY: 18, units: .pixel))
+        view.scrollWheel(with: try scrollEvent(deltaY: 18, units: .pixel))
+        let presentation = try XCTUnwrap(presentations.last)
+
+        XCTAssertTrue(didBeginInteraction)
+        XCTAssertEqual(presentation.offset.height, 54, accuracy: 0.1)
+        XCTAssertLessThan(presentation.alpha, 0.7)
+        XCTAssertEqual(releaseActions, [.dismiss])
+    }
+
+    @MainActor
+    func testNonPreciseScrollIsIgnoredByInteractionView() throws {
+        var didBeginInteraction = false
+        var presentations: [NudgeOverlayMotionPresentation] = []
+        var releaseActions: [NudgeOverlayReleaseAction] = []
+        let view = NudgeOverlayInteractionView(
+            onOpen: {},
+            onInteractionBegan: { didBeginInteraction = true },
+            onMotionChanged: { presentations.append($0) },
+            onRelease: { releaseActions.append($0) }
+        )
+
+        view.scrollWheel(with: try scrollEvent(deltaY: 54, units: .line))
+
+        XCTAssertFalse(didBeginInteraction)
+        XCTAssertTrue(presentations.isEmpty)
+        XCTAssertTrue(releaseActions.isEmpty)
     }
 
     @MainActor
@@ -146,5 +248,18 @@ final class NudgeOverlayPresenterTests: XCTestCase {
 
         XCTAssertEqual(messages, ["读取 Chrome 当前标签标题和网址，仅用于本机判断"])
         XCTAssertEqual(waitCount, 1)
+    }
+
+    private func scrollEvent(deltaY: Int32, units: CGScrollEventUnit) throws -> NSEvent {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let event = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: units,
+            wheelCount: 2,
+            wheel1: deltaY,
+            wheel2: 0,
+            wheel3: 0
+        )
+        return try XCTUnwrap(event.flatMap(NSEvent.init(cgEvent:)))
     }
 }
