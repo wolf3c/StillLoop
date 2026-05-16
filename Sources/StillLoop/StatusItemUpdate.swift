@@ -42,4 +42,5 @@ enum StatusItemMode: String {
 
 extension Notification.Name {
     static let stillLoopStatusItemModeDidChange = Notification.Name("StillLoopStatusItemModeDidChange")
+    static let stillLoopNudgeOverlayDidRequestOpenApp = Notification.Name("StillLoopNudgeOverlayDidRequestOpenApp")
 }

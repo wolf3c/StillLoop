@@ -32,6 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: .stillLoopStatusItemModeDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(nudgeOverlayDidRequestOpenApp),
+            name: .stillLoopNudgeOverlayDidRequestOpenApp,
+            object: nil
+        )
         let workspaceNotifications = NSWorkspace.shared.notificationCenter
         workspaceNotifications.addObserver(
             self,
@@ -105,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func nudgeOverlayDidRequestOpenApp() {
+        showApp()
     }
 
     private func makeMainWindow() -> NSWindow {

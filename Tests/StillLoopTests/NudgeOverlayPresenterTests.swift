@@ -31,6 +31,43 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(NudgeIntensity.strong.windowLevel, .statusBar)
     }
 
+    func testShortOrDownwardDragsDoNotDismissOverlay() {
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: 18)))
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: -40)))
+    }
+
+    func testUpwardDragPastThresholdDismissesOverlay() {
+        XCTAssertTrue(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: 32)))
+    }
+
+    func testOverlayOpenActionPostsAppOpenRequest() {
+        let notificationCenter = NotificationCenter()
+        var didRequestOpenApp = false
+        let observer = notificationCenter.addObserver(
+            forName: .stillLoopNudgeOverlayDidRequestOpenApp,
+            object: nil,
+            queue: nil
+        ) { _ in
+            didRequestOpenApp = true
+        }
+        defer { notificationCenter.removeObserver(observer) }
+
+        NudgeOverlayInteraction.requestOpenApp(using: notificationCenter)
+
+        XCTAssertTrue(didRequestOpenApp)
+    }
+
+    @MainActor
+    func testOverlayInteractionViewOwnsSubviewHitTesting() {
+        let view = NudgeOverlayInteractionView(onOpen: {}, onDismiss: {})
+        view.frame = NSRect(x: 0, y: 0, width: 240, height: 64)
+        let label = NSTextField(labelWithString: "回到任务")
+        label.frame = NSRect(x: 16, y: 20, width: 160, height: 24)
+        view.addSubview(label)
+
+        XCTAssertTrue(view.hitTest(NSPoint(x: 24, y: 24)) === view)
+    }
+
     func testPermissionNoticeUsesHighVisibilityOverlay() {
         XCTAssertEqual(NudgeIntensity.permission.windowLevel, .statusBar)
         XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.displayDuration, 3)

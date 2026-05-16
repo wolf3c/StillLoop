@@ -62,6 +62,81 @@ enum NudgeIntensity: Equatable {
     }
 }
 
+enum NudgeOverlayInteraction {
+    static let dismissDragThreshold: CGFloat = 28
+    private static let clickMovementTolerance: CGFloat = 8
+
+    static func shouldDismiss(translation: CGSize) -> Bool {
+        translation.height >= dismissDragThreshold
+    }
+
+    static func shouldOpen(translation: CGSize) -> Bool {
+        abs(translation.width) <= clickMovementTolerance
+            && abs(translation.height) <= clickMovementTolerance
+    }
+
+    static func requestOpenApp(using notificationCenter: NotificationCenter = .default) {
+        notificationCenter.post(name: .stillLoopNudgeOverlayDidRequestOpenApp, object: nil)
+    }
+}
+
+final class NudgeOverlayInteractionView: NSVisualEffectView {
+    private let onOpen: @MainActor () -> Void
+    private let onDismiss: @MainActor () -> Void
+    private var mouseDownScreenLocation: NSPoint?
+    private var hasDismissed = false
+
+    init(
+        onOpen: @escaping @MainActor () -> Void,
+        onDismiss: @escaping @MainActor () -> Void
+    ) {
+        self.onOpen = onOpen
+        self.onDismiss = onDismiss
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownScreenLocation = NSEvent.mouseLocation
+        hasDismissed = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let mouseDownScreenLocation, !hasDismissed else { return }
+        let translation = CGSize(
+            width: NSEvent.mouseLocation.x - mouseDownScreenLocation.x,
+            height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
+        )
+        guard NudgeOverlayInteraction.shouldDismiss(translation: translation) else { return }
+        hasDismissed = true
+        self.mouseDownScreenLocation = nil
+        onDismiss()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let mouseDownScreenLocation, !hasDismissed else { return }
+        let translation = CGSize(
+            width: NSEvent.mouseLocation.x - mouseDownScreenLocation.x,
+            height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
+        )
+        self.mouseDownScreenLocation = nil
+        guard NudgeOverlayInteraction.shouldOpen(translation: translation) else { return }
+        onOpen()
+    }
+}
+
 @MainActor
 final class NudgeOverlayPresenter {
     private var panels: [NSPanel] = []
@@ -103,7 +178,19 @@ final class NudgeOverlayPresenter {
         panel.isOpaque = false
         panel.hasShadow = true
 
-        panel.contentView = overlayView(message: message, intensity: intensity)
+        panel.contentView = overlayView(
+            message: message,
+            intensity: intensity,
+            onOpen: { [weak self, weak panel] in
+                guard let self, let panel else { return }
+                self.dismiss(panel, animated: false)
+                NudgeOverlayInteraction.requestOpenApp()
+            },
+            onDismiss: { [weak self, weak panel] in
+                guard let self, let panel else { return }
+                self.dismiss(panel, animated: true)
+            }
+        )
         position(panel, intensity: intensity)
         panels.append(panel)
         panel.alphaValue = 0
@@ -112,8 +199,13 @@ final class NudgeOverlayPresenter {
         animate(panel, intensity: intensity)
     }
 
-    private func overlayView(message: String, intensity: NudgeIntensity) -> NSView {
-        let container = NSVisualEffectView()
+    private func overlayView(
+        message: String,
+        intensity: NudgeIntensity,
+        onOpen: @escaping @MainActor () -> Void,
+        onDismiss: @escaping @MainActor () -> Void
+    ) -> NSView {
+        let container = NudgeOverlayInteractionView(onOpen: onOpen, onDismiss: onDismiss)
         container.material = .hudWindow
         container.blendingMode = .behindWindow
         container.state = .active
@@ -165,15 +257,22 @@ final class NudgeOverlayPresenter {
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(intensity.displayDuration))
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                panel.animator().alphaValue = 0
-            } completionHandler: {
-                Task { @MainActor in
-                    panel.close()
-                    self.panels.removeAll { $0 === panel }
-                }
-            }
+            self.dismiss(panel, animated: true)
+        }
+    }
+
+    private func dismiss(_ panel: NSPanel, animated: Bool) {
+        guard panels.contains(where: { $0 === panel }) else { return }
+        panels.removeAll { $0 === panel }
+        guard animated else {
+            panel.close()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            panel.close()
         }
     }
 }
