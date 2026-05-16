@@ -40,6 +40,39 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertTrue(NudgeOverlayInteraction.shouldDismiss(translation: CGSize(width: 0, height: 32)))
     }
 
+    func testPreciseUpwardScrollPastThresholdDismissesOverlay() {
+        XCTAssertTrue(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 0, height: 32)))
+    }
+
+    func testScrollDismissalRequiresPreciseVerticalUpwardMotion() {
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 0, height: -40)))
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(accumulatedDelta: CGSize(width: 36, height: 32)))
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismissScroll(
+            accumulatedDelta: CGSize(width: 0, height: 32),
+            hasPreciseScrollingDeltas: false
+        ))
+    }
+
+    func testInvertedScrollDeltasNormalizeToDeviceDirection() {
+        XCTAssertEqual(
+            NudgeOverlayInteraction.deviceScrollDelta(scrollingDelta: 18, directionInvertedFromDevice: true),
+            -18
+        )
+        XCTAssertEqual(
+            NudgeOverlayInteraction.deviceScrollDelta(scrollingDelta: 18, directionInvertedFromDevice: false),
+            18
+        )
+    }
+
+    func testUpwardSwipeDismissesOverlay() {
+        XCTAssertTrue(NudgeOverlayInteraction.shouldDismissSwipe(deltaX: 0, deltaY: 1))
+    }
+
+    func testDownwardOrHorizontalSwipeDoesNotDismissOverlay() {
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismissSwipe(deltaX: 0, deltaY: -1))
+        XCTAssertFalse(NudgeOverlayInteraction.shouldDismissSwipe(deltaX: 1, deltaY: 0))
+    }
+
     func testOverlayOpenActionPostsAppOpenRequest() {
         let notificationCenter = NotificationCenter()
         var didRequestOpenApp = false

@@ -70,6 +70,23 @@ enum NudgeOverlayInteraction {
         translation.height >= dismissDragThreshold
     }
 
+    static func shouldDismissScroll(
+        accumulatedDelta: CGSize,
+        hasPreciseScrollingDeltas: Bool = true
+    ) -> Bool {
+        guard hasPreciseScrollingDeltas else { return false }
+        return accumulatedDelta.height >= dismissDragThreshold
+            && abs(accumulatedDelta.height) > abs(accumulatedDelta.width)
+    }
+
+    static func deviceScrollDelta(scrollingDelta: CGFloat, directionInvertedFromDevice: Bool) -> CGFloat {
+        directionInvertedFromDevice ? -scrollingDelta : scrollingDelta
+    }
+
+    static func shouldDismissSwipe(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        deltaY > 0 && abs(deltaY) > abs(deltaX)
+    }
+
     static func shouldOpen(translation: CGSize) -> Bool {
         abs(translation.width) <= clickMovementTolerance
             && abs(translation.height) <= clickMovementTolerance
@@ -85,6 +102,8 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
     private let onDismiss: @MainActor () -> Void
     private var mouseDownScreenLocation: NSPoint?
     private var hasDismissed = false
+    private var scrollAccumulatedDelta = CGSize.zero
+    private var lastScrollEventTimestamp: TimeInterval?
 
     init(
         onOpen: @escaping @MainActor () -> Void,
@@ -120,9 +139,7 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
         )
         guard NudgeOverlayInteraction.shouldDismiss(translation: translation) else { return }
-        hasDismissed = true
-        self.mouseDownScreenLocation = nil
-        onDismiss()
+        dismissFromGesture()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -134,6 +151,62 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         self.mouseDownScreenLocation = nil
         guard NudgeOverlayInteraction.shouldOpen(translation: translation) else { return }
         onOpen()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !hasDismissed else { return }
+        resetScrollTrackingIfNeeded(for: event)
+        let delta = CGSize(
+            width: NudgeOverlayInteraction.deviceScrollDelta(
+                scrollingDelta: event.scrollingDeltaX,
+                directionInvertedFromDevice: event.isDirectionInvertedFromDevice
+            ),
+            height: NudgeOverlayInteraction.deviceScrollDelta(
+                scrollingDelta: event.scrollingDeltaY,
+                directionInvertedFromDevice: event.isDirectionInvertedFromDevice
+            )
+        )
+        scrollAccumulatedDelta.width += delta.width
+        scrollAccumulatedDelta.height += delta.height
+        lastScrollEventTimestamp = event.timestamp
+
+        if NudgeOverlayInteraction.shouldDismissScroll(
+            accumulatedDelta: scrollAccumulatedDelta,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+        ) {
+            dismissFromGesture()
+            return
+        }
+
+        if event.phase.contains(.ended)
+            || event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.ended)
+            || event.momentumPhase.contains(.cancelled) {
+            scrollAccumulatedDelta = .zero
+            lastScrollEventTimestamp = nil
+        }
+    }
+
+    override func swipe(with event: NSEvent) {
+        guard !hasDismissed else { return }
+        guard NudgeOverlayInteraction.shouldDismissSwipe(deltaX: event.deltaX, deltaY: event.deltaY) else { return }
+        dismissFromGesture()
+    }
+
+    private func resetScrollTrackingIfNeeded(for event: NSEvent) {
+        if event.phase.contains(.began)
+            || event.momentumPhase.contains(.began)
+            || lastScrollEventTimestamp.map({ event.timestamp - $0 > 0.35 }) != false {
+            scrollAccumulatedDelta = .zero
+        }
+    }
+
+    private func dismissFromGesture() {
+        hasDismissed = true
+        mouseDownScreenLocation = nil
+        scrollAccumulatedDelta = .zero
+        lastScrollEventTimestamp = nil
+        onDismiss()
     }
 }
 
