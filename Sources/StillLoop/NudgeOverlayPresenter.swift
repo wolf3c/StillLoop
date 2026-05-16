@@ -210,8 +210,80 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
     }
 }
 
+final class NudgeOverlayShadowContainerView: NSView {
+    private let cardView: NSView
+    private let cardSize: CGSize
+    private let cornerRadius: CGFloat
+    private let shadowPadding: CGFloat
+
+    init(
+        cardView: NSView,
+        cardSize: CGSize,
+        cornerRadius: CGFloat,
+        shadowPadding: CGFloat
+    ) {
+        self.cardView = cardView
+        self.cardSize = cardSize
+        self.cornerRadius = cornerRadius
+        self.shadowPadding = shadowPadding
+        super.init(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: cardSize.width + shadowPadding * 2,
+            height: cardSize.height + shadowPadding * 2
+        ))
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.22
+        layer?.shadowRadius = 14
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+
+        cardView.frame = cardFrame
+        addSubview(cardView)
+        updateShadowPath()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        cardView.frame = cardFrame
+        updateShadowPath()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard cardFrame.contains(point) else { return nil }
+        return super.hitTest(point)
+    }
+
+    private var cardFrame: NSRect {
+        NSRect(
+            x: shadowPadding,
+            y: shadowPadding,
+            width: cardSize.width,
+            height: cardSize.height
+        )
+    }
+
+    private func updateShadowPath() {
+        layer?.shadowPath = CGPath(
+            roundedRect: cardFrame,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+    }
+}
+
 @MainActor
 final class NudgeOverlayPresenter {
+    private static let overlayCornerRadius: CGFloat = 18
+    private static let overlayShadowPadding: CGFloat = 14
+
     private var panels: [NSPanel] = []
 
     nonisolated static func intensity(for state: FocusState) -> NudgeIntensity {
@@ -237,8 +309,12 @@ final class NudgeOverlayPresenter {
     }
 
     func show(message: String, intensity: NudgeIntensity) {
+        let panelSize = CGSize(
+            width: intensity.width + Self.overlayShadowPadding * 2,
+            height: intensity.height + Self.overlayShadowPadding * 2
+        )
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: intensity.width, height: intensity.height),
+            contentRect: NSRect(x: 0, y: 0, width: panelSize.width, height: panelSize.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -249,7 +325,7 @@ final class NudgeOverlayPresenter {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        panel.hasShadow = false
 
         panel.contentView = overlayView(
             message: message,
@@ -283,7 +359,7 @@ final class NudgeOverlayPresenter {
         container.blendingMode = .behindWindow
         container.state = .active
         container.wantsLayer = true
-        container.layer?.cornerRadius = 18
+        container.layer?.cornerRadius = Self.overlayCornerRadius
         container.layer?.masksToBounds = true
 
         let accent = NSView()
@@ -312,13 +388,18 @@ final class NudgeOverlayPresenter {
             body.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
-        return container
+        return NudgeOverlayShadowContainerView(
+            cardView: container,
+            cardSize: CGSize(width: intensity.width, height: intensity.height),
+            cornerRadius: Self.overlayCornerRadius,
+            shadowPadding: Self.overlayShadowPadding
+        )
     }
 
     private func position(_ panel: NSPanel, intensity: NudgeIntensity) {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let x = screenFrame.midX - intensity.width / 2
-        let y = screenFrame.maxY - intensity.height - 10
+        let x = screenFrame.midX - panel.frame.width / 2
+        let y = screenFrame.maxY - intensity.height - Self.overlayShadowPadding - 10
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
