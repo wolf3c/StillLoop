@@ -198,7 +198,11 @@ final class AppModel: ObservableObject {
         var isAllowed: Bool
     }
 
-    @Published var screen: Screen = .welcome
+    @Published var screen: Screen = .welcome {
+        didSet {
+            telemetry.setScreen(screen)
+        }
+    }
     @Published var taskText = ""
     @Published var status: SessionStatus = .idle
     @Published var currentSession: FocusSession?
@@ -247,6 +251,7 @@ final class AppModel: ObservableObject {
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
+    private let telemetry: StillLoopTelemetryRecording
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
@@ -498,9 +503,11 @@ final class AppModel: ObservableObject {
         userDefaults: UserDefaults = .standard,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
         supportDirectory overrideSupportDirectory: URL? = nil,
-        reviewCommentGenerator: SessionReviewCommentGenerating? = nil
+        reviewCommentGenerator: SessionReviewCommentGenerating? = nil,
+        telemetry: StillLoopTelemetryRecording? = nil
     ) {
         self.userDefaults = userDefaults
+        self.telemetry = telemetry ?? NoopStillLoopTelemetry()
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
         self.browserAutomationNoticePresenter = BrowserAutomationNoticePresenter(
@@ -890,6 +897,13 @@ final class AppModel: ObservableObject {
         accumulatedSystemSuspendedDuration = 0
         analysisPhase = .idle
         screen = .focus
+        telemetry.record(
+            .focusSessionStarted(
+                modelSource: modelSetupSelection.source,
+                screenCaptureAllowed: screenCapturePermission == "已允许",
+                cameraAllowed: cameraPermission == "已允许"
+            )
+        )
         postStatusItemMode(.uncertain)
         startCaptureLoop()
         startEvaluationLoop()
@@ -901,6 +915,13 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.paused)
         cancelSessionLoops()
         markBundledModelRuntimeWarmIfRunning()
+        telemetry.record(
+            .focusSessionPaused(
+                modelSource: modelSetupSelection.source,
+                reason: "user",
+                duration: activeElapsed()
+            )
+        )
     }
 
     func resumeSession() {
@@ -911,6 +932,13 @@ final class AppModel: ObservableObject {
         postStatusItemMode(mode(for: currentState))
         startCaptureLoop()
         startEvaluationLoop()
+        telemetry.record(
+            .focusSessionResumed(
+                modelSource: modelSetupSelection.source,
+                reason: "user",
+                duration: activeElapsed()
+            )
+        )
     }
 
     func endSession(feedback: SessionFeedback? = nil) {
@@ -926,6 +954,15 @@ final class AppModel: ObservableObject {
         session.feedback = feedback
         currentSession = session
         let summary = SessionSummary(session: session)
+        telemetry.record(
+            .focusSessionEnded(
+                modelSource: modelSetupSelection.source,
+                duration: summary.totalDuration,
+                eventCount: session.events.count,
+                nudgeCount: session.events.filter { $0.nudge != nil }.count,
+                feedback: feedback
+            )
+        )
         try? store.save(summary: summary)
         summaries = (try? store.loadSummaries()) ?? [summary]
         status = .ended
@@ -1292,6 +1329,13 @@ final class AppModel: ObservableObject {
         cancelSessionLoops()
         stopBundledModelRuntime()
         postStatusItemMode(.paused)
+        telemetry.record(
+            .focusSessionPaused(
+                modelSource: modelSetupSelection.source,
+                reason: "systemInactivity",
+                duration: elapsed
+            )
+        )
     }
 
     func resumeAfterSystemInactivity(now: Date = Date()) {
@@ -1313,6 +1357,13 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.uncertain)
         startCaptureLoop()
         startEvaluationLoop()
+        telemetry.record(
+            .focusSessionResumed(
+                modelSource: modelSetupSelection.source,
+                reason: "systemInactivity",
+                duration: elapsed
+            )
+        )
     }
 
     func activeElapsed(at now: Date = Date()) -> TimeInterval {
@@ -1370,6 +1421,13 @@ final class AppModel: ObservableObject {
             modelConnectionStatus = "模型不可用"
             modelConnectionDetail = "请检查服务地址、/v1 路径、模型名称，以及服务是否支持 chat/completions。"
             isCheckingModelConnection = false
+            telemetry.record(
+                .modelIssueDetected(
+                    modelSource: .manual,
+                    issueType: "manualModelConnectionFailed",
+                    screen: "model_setup"
+                )
+            )
             return false
         }
     }
@@ -1423,6 +1481,13 @@ final class AppModel: ObservableObject {
             applyBundledRuntimeFailureStatus(status)
             llmEngine = nil
             llmEvaluator = nil
+            telemetry.record(
+                .modelIssueDetected(
+                    modelSource: .bundled,
+                    issueType: Self.bundledRuntimeIssueType(for: error),
+                    screen: "model_setup"
+                )
+            )
             return false
         }
     }
@@ -1451,6 +1516,28 @@ final class AppModel: ObservableObject {
             return "自带模型：启动失败"
         case .readinessFailed:
             return "自带模型：探测失败"
+        }
+    }
+
+    private static func bundledRuntimeIssueType(for error: Error) -> String {
+        guard let runtimeError = error as? BundledModelRuntime.RuntimeError else {
+            return "bundledRuntimeLaunchFailed"
+        }
+        switch runtimeError {
+        case .imageInputUnavailable:
+            return "bundledRuntimeImageInputUnavailable"
+        case .missingExecutable:
+            return "bundledRuntimeMissingExecutable"
+        case .missingModel:
+            return "bundledRuntimeMissingModel"
+        case .missingProjector:
+            return "bundledRuntimeMissingProjector"
+        case .portInUse:
+            return "bundledRuntimePortInUse"
+        case .launchFailed:
+            return "bundledRuntimeLaunchFailed"
+        case .readinessFailed:
+            return "bundledRuntimeReadinessFailed"
         }
     }
 
@@ -1570,6 +1657,13 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, var latestSession = currentSession else { return false }
         if let nudge {
             lastNudge = nudge
+            telemetry.record(
+                .focusNudgeShown(
+                    modelSource: modelSetupSelection.source,
+                    focusState: result.state,
+                    evaluator: result.evaluator
+                )
+            )
             sendNudge(nudge, state: result.state)
         }
         let context = snapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
@@ -1625,6 +1719,13 @@ final class AppModel: ObservableObject {
                 } catch {
                     localLLMStatus = "当前评估：基础规则（自带模型推理失败）"
                     bundledModelRuntimeStatus = "自带模型：推理失败"
+                    telemetry.record(
+                        .modelIssueDetected(
+                            modelSource: .bundled,
+                            issueType: "bundledModelInferenceFailed",
+                            screen: "focus"
+                        )
+                    )
                     routeToModelSetupForModelIssue()
                 }
             }
@@ -1641,6 +1742,13 @@ final class AppModel: ObservableObject {
                 return result
             } catch {
                 localLLMStatus = "当前评估：基础规则（手动模型连接失败）"
+                telemetry.record(
+                    .modelIssueDetected(
+                        modelSource: .manual,
+                        issueType: "manualModelInferenceFailed",
+                        screen: "focus"
+                    )
+                )
                 routeToModelSetupForModelIssue()
             }
         }

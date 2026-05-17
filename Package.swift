@@ -11,10 +11,16 @@ let package = Package(
         .executable(name: "StillLoop", targets: ["StillLoop"]),
         .library(name: "StillLoopCore", targets: ["StillLoopCore"])
     ],
+    dependencies: [
+        .package(path: "../TraceMind/sdk/ios")
+    ],
     targets: [
         .executableTarget(
             name: "StillLoop",
-            dependencies: ["StillLoopCore"],
+            dependencies: [
+                "StillLoopCore",
+                .product(name: "TraceMind", package: "ios")
+            ],
             resources: [
                 .process("Resources")
             ]

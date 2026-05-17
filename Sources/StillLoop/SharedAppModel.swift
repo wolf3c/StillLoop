@@ -1,4 +1,7 @@
 import Foundation
 
 @MainActor
-let sharedAppModel = AppModel()
+let sharedTelemetry = StillLoopTelemetry()
+
+@MainActor
+let sharedAppModel = AppModel(telemetry: sharedTelemetry)

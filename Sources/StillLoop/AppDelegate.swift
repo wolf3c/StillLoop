@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        sharedTelemetry.start()
+        sharedTelemetry.setScreen(sharedAppModel.screen)
         NSApp.setActivationPolicy(.regular)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateStatusItem(.idle)
