@@ -297,6 +297,24 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertNotNil(layer.shadowPath)
     }
 
+    @MainActor
+    func testOverlayMovesToActiveSpaceWhenShownFromBackgroundApp() throws {
+        let app = NSApplication.shared
+        let presenter = NudgeOverlayPresenter()
+        let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
+
+        presenter.show(message: "先推进一步：写日记", intensity: .strong)
+        defer { presenter.closeAll() }
+
+        let panel = try XCTUnwrap(app.windows.first { window in
+            !existingWindows.contains(ObjectIdentifier(window)) && window is NSPanel
+        } as? NSPanel)
+
+        XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertTrue(panel.collectionBehavior.contains(.moveToActiveSpace))
+    }
+
     func testPermissionNoticeUsesHighVisibilityOverlay() {
         XCTAssertEqual(NudgeIntensity.permission.windowLevel, .statusBar)
         XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.displayDuration, 3)

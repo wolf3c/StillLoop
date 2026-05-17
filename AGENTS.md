@@ -41,6 +41,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `2026-05-15`: Described "关闭手动 HTTP 模型" as "模型评估已关闭". Root cause: reused `useLocalLLM` for both manual HTTP selection and overall evaluator availability. Future rule: keep model source, runtime state, and current evaluation path as separate states in code and UI copy.
 - `2026-05-16`: Analyzed the focus analysis progress cards but did not implement the confirmed fix before moving on. Root cause: treated diagnosis as enough after the thread shifted to a later runtime issue. Future rule: when a user raises a product defect and asks to reflect on correctness, either implement the confirmed fix in that work item or explicitly call out that it remains pending.
 - `2026-05-17`: Replaced the nudge overlay's straight-corner window shadow with a custom layer shadow that created a large rectangular gray haze. Root cause: verified only window structure instead of the actual rendered visual. Future rule: for visual fixes, keep the first change visually minimal and confirm the rendered app before committing.
+- `2026-05-17`: Let nudge overlay tests confirm panel creation but not whether background-triggered panels move to the user's active Space. Root cause: treated `canJoinAllSpaces` as sufficient for real foreground visibility. Future rule: for overlay reminders, test active-Space behavior and manually verify from a different foreground app before calling the reminder path done.
 
 ## Design And Behavior Changes
 

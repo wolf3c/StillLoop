@@ -451,7 +451,7 @@ final class NudgeOverlayPresenter {
         panel.level = intensity.windowLevel
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
