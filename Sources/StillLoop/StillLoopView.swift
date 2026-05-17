@@ -138,6 +138,7 @@ private struct WelcomeView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            LaunchAtLoginPreferenceView()
             Button(StillLoopWelcomeCopy.primaryActionTitle) { model.continueFromWelcome() }
                 .keyboardShortcut(.defaultAction)
             VStack(alignment: .leading, spacing: 8) {
@@ -163,6 +164,7 @@ private struct PermissionsView: View {
                 .font(.largeTitle.weight(.semibold))
             Text(StillLoopPermissionsCopy.subtitle)
                 .foregroundStyle(.secondary)
+            LaunchAtLoginPreferenceView()
             PermissionRow(
                 title: "屏幕录制",
                 detail: model.screenCapturePermission,
@@ -224,6 +226,45 @@ private struct PermissionRow: View {
         .padding(14)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct LaunchAtLoginPreferenceView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Toggle(isOn: launchAtLoginBinding) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("登录时启动 StillLoop")
+                    .font(.headline)
+                Text("登录后只保留菜单栏入口，不会自动开始专注、采集屏幕/摄像头或启动模型。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.launchAtLoginStatus.isEmpty {
+                    Text(model.launchAtLoginStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .toggleStyle(.checkbox)
+        .padding(14)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: {
+                model.launchAtLoginEnabled
+            },
+            set: { enabled in
+                model.setLaunchAtLoginEnabled(enabled)
+            }
+        )
     }
 }
 
@@ -1515,6 +1556,7 @@ private struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            LaunchAtLoginPreferenceView()
             VStack(alignment: .leading, spacing: 10) {
                 Text("隐私")
                     .font(.headline)

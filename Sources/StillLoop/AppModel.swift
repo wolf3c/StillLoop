@@ -248,6 +248,8 @@ final class AppModel: ObservableObject {
     @Published var evaluationLoopDescription = "每轮完成后按耗时安排下一次采集"
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
+    @Published private(set) var launchAtLoginEnabled = true
+    @Published private(set) var launchAtLoginStatus = ""
     @Published private(set) var isSuspendedForSystemInactivity = false
     @Published private(set) var hasBypassedInitialSetup = false
     let captureCadenceSeconds: TimeInterval = 5
@@ -262,6 +264,7 @@ final class AppModel: ObservableObject {
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
     private let bundledModelRuntime: BundledModelRuntimeManaging
+    private let launchAtLoginManager: LaunchAtLoginManaging
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
@@ -285,6 +288,7 @@ final class AppModel: ObservableObject {
         static let useLocalLLM = "useLocalLLM"
         static let llmBaseURL = "llmBaseURL"
         static let llmModel = "llmModel"
+        static let launchAtLoginEnabled = "launchAtLoginEnabled"
     }
 
     nonisolated static let screenCaptureSettingsURLStrings = [
@@ -518,10 +522,13 @@ final class AppModel: ObservableObject {
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
         supportDirectory overrideSupportDirectory: URL? = nil,
         reviewCommentGenerator: SessionReviewCommentGenerating? = nil,
-        telemetry: StillLoopTelemetryRecording? = nil
+        telemetry: StillLoopTelemetryRecording? = nil,
+        launchAtLoginManager: LaunchAtLoginManaging? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
+        let resolvedLaunchAtLoginManager = launchAtLoginManager ?? InertLaunchAtLoginManager()
+        self.launchAtLoginManager = resolvedLaunchAtLoginManager
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
         self.browserAutomationNoticePresenter = BrowserAutomationNoticePresenter(
@@ -559,7 +566,13 @@ final class AppModel: ObservableObject {
         }
         llmBaseURLText = resolvedBaseURLText
         llmModelText = resolvedModelText
-        hasBypassedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
+        let hasCompletedInitialSetup = userDefaults.bool(forKey: DefaultsKey.hasCompletedInitialSetup)
+        hasBypassedInitialSetup = hasCompletedInitialSetup
+        if let storedLaunchAtLoginEnabled = userDefaults.object(forKey: DefaultsKey.launchAtLoginEnabled) as? Bool {
+            launchAtLoginEnabled = storedLaunchAtLoginEnabled
+        } else {
+            launchAtLoginEnabled = hasCompletedInitialSetup ? resolvedLaunchAtLoginManager.isRegistered : true
+        }
         let support = overrideSupportDirectory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
                 .first?
@@ -579,6 +592,7 @@ final class AppModel: ObservableObject {
         refreshPermissionStatuses()
         refreshModelStatus()
         routeInitialLaunch()
+        updateLaunchAtLoginStatusText()
     }
 
     func openHome() {
@@ -631,6 +645,13 @@ final class AppModel: ObservableObject {
     func bypassInitialSetup() {
         hasBypassedInitialSetup = true
         userDefaults.set(true, forKey: DefaultsKey.hasCompletedInitialSetup)
+        applyLaunchAtLoginPreference()
+    }
+
+    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+        launchAtLoginEnabled = enabled
+        userDefaults.set(enabled, forKey: DefaultsKey.launchAtLoginEnabled)
+        applyLaunchAtLoginPreference()
     }
 
     func openUserFeedback() {
@@ -722,6 +743,38 @@ final class AppModel: ObservableObject {
             hasCompletedInitialSetup: hasBypassedInitialSetup,
             setupIssueIndicators: setupIssueIndicators
         )
+    }
+
+    private func applyLaunchAtLoginPreference() {
+        userDefaults.set(launchAtLoginEnabled, forKey: DefaultsKey.launchAtLoginEnabled)
+
+        guard hasBypassedInitialSetup else {
+            updateLaunchAtLoginStatusText()
+            return
+        }
+
+        do {
+            if launchAtLoginEnabled {
+                if !launchAtLoginManager.isRegistered {
+                    try launchAtLoginManager.register()
+                }
+            } else if launchAtLoginManager.isRegistered {
+                try launchAtLoginManager.unregister()
+            }
+            updateLaunchAtLoginStatusText()
+        } catch {
+            launchAtLoginStatus = "无法更新登录时启动：\(error.localizedDescription)"
+        }
+    }
+
+    private func updateLaunchAtLoginStatusText() {
+        if launchAtLoginEnabled {
+            launchAtLoginStatus = hasBypassedInitialSetup
+                ? "已开启。登录后只显示菜单栏入口，不会自动开始专注或采集。"
+                : "完成设置后开启。登录后只显示菜单栏入口，不会自动开始专注或采集。"
+        } else {
+            launchAtLoginStatus = "已关闭。StillLoop 不会在登录后自动启动。"
+        }
     }
 
     func requestScreenCapturePermission() {

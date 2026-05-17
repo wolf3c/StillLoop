@@ -20,9 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let wasLaunchedAtLogin = LaunchAtLoginLaunchDetector.wasLaunchedAtLogin()
         sharedTelemetry.start()
         sharedTelemetry.setScreen(sharedAppModel.screen)
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(wasLaunchedAtLogin ? .accessory : .regular)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateStatusItem(.idle)
         statusItem?.button?.target = self
@@ -66,7 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
 
-        showApp()
+        if Self.shouldShowMainWindowOnLaunch(wasLaunchedAtLogin: wasLaunchedAtLogin) {
+            showApp()
+        }
+    }
+
+    static func shouldShowMainWindowOnLaunch(wasLaunchedAtLogin: Bool) -> Bool {
+        !wasLaunchedAtLogin
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -111,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func showApp() {
         let window = mainWindow ?? makeMainWindow()
         mainWindow = window
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
