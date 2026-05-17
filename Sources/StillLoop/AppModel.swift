@@ -527,7 +527,7 @@ final class AppModel: ObservableObject {
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
-        let resolvedLaunchAtLoginManager = launchAtLoginManager ?? InertLaunchAtLoginManager()
+        let resolvedLaunchAtLoginManager = launchAtLoginManager ?? LaunchAtLoginManagerFactory.defaultManager()
         self.launchAtLoginManager = resolvedLaunchAtLoginManager
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter

@@ -1509,75 +1509,126 @@ private struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("设置")
-                .font(.largeTitle.weight(.semibold))
-            Button {
-                model.screen = .modelSetup
-            } label: {
-                HStack {
-                    Image(systemName: "cpu")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("模型设置")
-                            .font(.headline)
-                        Text("配置本地 HTTP 或线上 OpenAI-compatible 模型服务。")
-                            .font(.caption)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("设置")
+                    .font(.largeTitle.weight(.semibold))
+                Button {
+                    model.screen = .modelSetup
+                } label: {
+                    HStack {
+                        Image(systemName: "cpu")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("模型设置")
+                                .font(.headline)
+                            Text("配置本地 HTTP 或线上 OpenAI-compatible 模型服务。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.secondary)
+                    .padding(14)
+                    .frame(maxWidth: 520)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .padding(14)
-                .frame(maxWidth: 520)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            Button {
-                model.openUserFeedback()
-            } label: {
-                HStack {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("反馈与建议")
-                            .font(.headline)
-                        Text("提交问题、建议或其他使用反馈。")
-                            .font(.caption)
+                .buttonStyle(.plain)
+                Button {
+                    model.openUserFeedback()
+                } label: {
+                    HStack {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("反馈与建议")
+                                .font(.headline)
+                            Text("提交问题、建议或其他使用反馈。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.secondary)
+                    .padding(14)
+                    .frame(maxWidth: 520)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .padding(14)
-                .frame(maxWidth: 520)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .buttonStyle(.plain)
+                SettingsPrivacySection()
             }
-            .buttonStyle(.plain)
-            LaunchAtLoginPreferenceView()
-            VStack(alignment: .leading, spacing: 10) {
-                Text("隐私")
-                    .font(.headline)
-                Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
-                Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
-                Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
-                Label(model.modelReadiness.title, systemImage: "cpu")
-                Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
-                Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
-            }
-            .padding(14)
-            .frame(maxWidth: 520, alignment: .leading)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            Spacer()
+            .padding(40)
+            .frame(maxWidth: 600, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $model.isUserFeedbackPresented) {
             UserFeedbackSheet()
                 .environmentObject(model)
         }
+    }
+}
+
+private struct SettingsLaunchAtLoginRow: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Toggle("", isOn: launchAtLoginBinding)
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("登录时启动 StillLoop")
+                    .font(.body.weight(.medium))
+                Text("登录后只保留菜单栏入口，不会自动开始专注、采集屏幕/摄像头或启动模型。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.launchAtLoginStatus.isEmpty {
+                    Text(model.launchAtLoginStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: {
+                model.launchAtLoginEnabled
+            },
+            set: { enabled in
+                model.setLaunchAtLoginEnabled(enabled)
+            }
+        )
+    }
+}
+
+private struct SettingsPrivacySection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("隐私")
+                .font(.headline)
+            SettingsLaunchAtLoginRow()
+            Divider()
+            Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
+            Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
+            Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
+            Label(model.modelReadiness.title, systemImage: "cpu")
+            Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
+            Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
+        }
+        .padding(14)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

@@ -101,6 +101,22 @@ final class LaunchAtLoginTests: XCTestCase {
         XCTAssertEqual(runtime.startCount, 0)
     }
 
+    func testDefaultLaunchAtLoginManagerIsInertForXCTestHost() {
+        let manager = LaunchAtLoginManagerFactory.defaultManager(
+            bundleURL: URL(fileURLWithPath: "/tmp/StillLoopPackageTests.xctest")
+        )
+
+        XCTAssertTrue(manager is InertLaunchAtLoginManager)
+    }
+
+    func testDefaultLaunchAtLoginManagerIsSystemBackedForAppBundle() {
+        let manager = LaunchAtLoginManagerFactory.defaultManager(
+            bundleURL: URL(fileURLWithPath: "/Applications/StillLoop.app")
+        )
+
+        XCTAssertTrue(manager is SystemLaunchAtLoginManager)
+    }
+
     private static func openApplicationEvent() -> NSAppleEventDescriptor {
         NSAppleEventDescriptor(
             eventClass: AEEventClass(kCoreEventClass),

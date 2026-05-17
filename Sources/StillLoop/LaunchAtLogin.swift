@@ -40,6 +40,15 @@ final class InertLaunchAtLoginManager: LaunchAtLoginManaging {
     func unregister() throws {}
 }
 
+enum LaunchAtLoginManagerFactory {
+    @MainActor
+    static func defaultManager(bundleURL: URL = Bundle.main.bundleURL) -> LaunchAtLoginManaging {
+        bundleURL.pathExtension == "app"
+            ? SystemLaunchAtLoginManager()
+            : InertLaunchAtLoginManager()
+    }
+}
+
 enum LaunchAtLoginLaunchDetector {
     static func wasLaunchedAtLogin(
         event: NSAppleEventDescriptor? = NSAppleEventManager.shared().currentAppleEvent

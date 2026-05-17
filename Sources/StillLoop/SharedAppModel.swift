@@ -4,7 +4,4 @@ import Foundation
 let sharedTelemetry = StillLoopTelemetry()
 
 @MainActor
-let sharedAppModel = AppModel(
-    telemetry: sharedTelemetry,
-    launchAtLoginManager: SystemLaunchAtLoginManager()
-)
+let sharedAppModel = AppModel(telemetry: sharedTelemetry)
