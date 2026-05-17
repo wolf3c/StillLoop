@@ -31,9 +31,9 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(NudgeIntensity.strong.displayDuration, 12)
     }
 
-    func testDistractedAndStuckOverlaysUseHighVisibilityWindowLevel() {
-        XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .statusBar)
-        XCTAssertEqual(NudgeIntensity.strong.windowLevel, .statusBar)
+    func testDistractedAndStuckOverlaysUseGlobalHudWindowLevel() {
+        XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .screenSaver)
+        XCTAssertEqual(NudgeIntensity.strong.windowLevel, .screenSaver)
     }
 
     func testShortOrDownwardDragsDoNotDismissOverlay() {
@@ -298,7 +298,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testOverlayMovesToActiveSpaceWhenShownFromBackgroundApp() throws {
+    func testOverlayStaysVisibleAcrossSpacesWhenShownFromBackgroundApp() throws {
         let app = NSApplication.shared
         let presenter = NudgeOverlayPresenter()
         let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
@@ -310,9 +310,10 @@ final class NudgeOverlayPresenterTests: XCTestCase {
             !existingWindows.contains(ObjectIdentifier(window)) && window is NSPanel
         } as? NSPanel)
 
-        XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
-        XCTAssertTrue(panel.collectionBehavior.contains(.moveToActiveSpace))
+        XCTAssertTrue(panel.collectionBehavior.contains(.stationary))
+        XCTAssertFalse(panel.collectionBehavior.contains(.moveToActiveSpace))
     }
 
     func testPermissionNoticeUsesHighVisibilityOverlay() {

@@ -20,7 +20,9 @@ enum NudgeIntensity: Equatable {
         switch self {
         case .gentle:
             return .floating
-        case .noticeable, .strong, .permission:
+        case .noticeable, .strong:
+            return .screenSaver
+        case .permission:
             return .statusBar
         }
     }
@@ -451,7 +453,7 @@ final class NudgeOverlayPresenter {
         panel.level = intensity.windowLevel
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
