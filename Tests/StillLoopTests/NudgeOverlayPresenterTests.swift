@@ -146,6 +146,34 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertLessThanOrEqual(panel.frame.maxY, screenFrame.maxY)
     }
 
+    @MainActor
+    func testOverlayUsesLiquidLikeDepthTreatment() throws {
+        let app = NSApplication.shared
+        let presenter = NudgeOverlayPresenter()
+        let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
+
+        presenter.show(message: "先推进一步：写日记", intensity: .strong)
+        defer { presenter.closeAll() }
+
+        let panel = try XCTUnwrap(app.windows.first { window in
+            !existingWindows.contains(ObjectIdentifier(window)) && window is NSPanel
+        } as? NSPanel)
+        let contentView = try XCTUnwrap(panel.contentView as? NudgeOverlayInteractionView)
+        let glassOverlay = try XCTUnwrap(contentView.subviews.first {
+            $0.identifier?.rawValue == "nudgeGlassOverlay"
+        })
+        let accentLight = try XCTUnwrap(contentView.subviews.first {
+            $0.identifier?.rawValue == "nudgeAccentLight"
+        })
+
+        XCTAssertTrue(panel.hasShadow)
+        XCTAssertEqual(contentView.material, .hudWindow)
+        XCTAssertEqual(contentView.layer?.cornerRadius, 18)
+        XCTAssertEqual(glassOverlay.layer?.borderWidth, 1)
+        XCTAssertGreaterThan(glassOverlay.layer?.borderColor?.alpha ?? 0, 0.2)
+        XCTAssertGreaterThan(accentLight.layer?.cornerRadius ?? 0, 0)
+    }
+
     func testUpwardMotionPresentationFollowsAndSignalsDismiss() {
         let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 16, height: 44))
 
@@ -307,7 +335,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         } as? NSPanel)
         let contentView = try XCTUnwrap(panel.contentView)
 
-        XCTAssertFalse(panel.hasShadow)
+        XCTAssertTrue(panel.hasShadow)
         XCTAssertEqual(panel.frame.width, NudgeIntensity.noticeable.width, accuracy: 0.5)
         XCTAssertEqual(panel.frame.height, NudgeIntensity.noticeable.height, accuracy: 0.5)
         let interactionView = try XCTUnwrap(contentView as? NudgeOverlayInteractionView)

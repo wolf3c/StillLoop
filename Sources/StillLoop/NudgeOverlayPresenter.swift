@@ -454,7 +454,7 @@ final class NudgeOverlayPresenter {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        panel.hasShadow = true
 
         let restingOrigin = origin(for: intensity)
         let state = PanelState(panel: panel, restingOrigin: restingOrigin)
@@ -509,9 +509,27 @@ final class NudgeOverlayPresenter {
         container.layer?.cornerRadius = Self.overlayCornerRadius
         container.layer?.masksToBounds = true
 
+        let glassOverlay = NSView()
+        glassOverlay.identifier = NSUserInterfaceItemIdentifier("nudgeGlassOverlay")
+        glassOverlay.wantsLayer = true
+        glassOverlay.layer?.cornerRadius = Self.overlayCornerRadius
+        glassOverlay.layer?.masksToBounds = true
+        glassOverlay.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.18).cgColor
+        glassOverlay.layer?.borderWidth = 1
+        glassOverlay.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.32).cgColor
+        glassOverlay.translatesAutoresizingMaskIntoConstraints = false
+
+        let topHighlight = NSView()
+        topHighlight.wantsLayer = true
+        topHighlight.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.34).cgColor
+        topHighlight.translatesAutoresizingMaskIntoConstraints = false
+
         let accent = NSView()
+        accent.identifier = NSUserInterfaceItemIdentifier("nudgeAccentLight")
         accent.wantsLayer = true
-        accent.layer?.backgroundColor = intensity.accentColor.cgColor
+        let accentWidth: CGFloat = intensity == .gentle ? 4 : 5
+        accent.layer?.cornerRadius = accentWidth / 2
+        accent.layer?.backgroundColor = intensity.accentColor.withAlphaComponent(0.88).cgColor
         accent.translatesAutoresizingMaskIntoConstraints = false
 
         let body = NSTextField(wrappingLabelWithString: message)
@@ -521,17 +539,29 @@ final class NudgeOverlayPresenter {
         body.lineBreakMode = .byTruncatingTail
         body.translatesAutoresizingMaskIntoConstraints = false
 
+        container.addSubview(glassOverlay)
+        container.addSubview(topHighlight)
         container.addSubview(accent)
         container.addSubview(body)
 
         NSLayoutConstraint.activate([
-            accent.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            accent.topAnchor.constraint(equalTo: container.topAnchor),
-            accent.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            accent.widthAnchor.constraint(equalToConstant: intensity == .gentle ? 4 : 6),
+            glassOverlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            glassOverlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            glassOverlay.topAnchor.constraint(equalTo: container.topAnchor),
+            glassOverlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
 
-            body.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 16),
-            body.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+            topHighlight.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.overlayCornerRadius),
+            topHighlight.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Self.overlayCornerRadius),
+            topHighlight.topAnchor.constraint(equalTo: container.topAnchor, constant: 1),
+            topHighlight.heightAnchor.constraint(equalToConstant: 1),
+
+            accent.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            accent.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            accent.widthAnchor.constraint(equalToConstant: accentWidth),
+            accent.heightAnchor.constraint(equalToConstant: intensity == .gentle ? 24 : 38),
+
+            body.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 18),
+            body.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
             body.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
