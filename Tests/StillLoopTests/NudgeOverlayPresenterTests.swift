@@ -99,6 +99,16 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertGreaterThan(NudgeOverlayInteraction.entryOrigin(for: restingOrigin).y, restingOrigin.y)
     }
 
+    func testFlyOutOriginLeavesVisibleTravelAfterDismissThreshold() {
+        let restingOrigin = NSPoint(x: 540, y: 820)
+        let flyOutOrigin = NudgeOverlayInteraction.flyOutOrigin(for: restingOrigin)
+
+        XCTAssertGreaterThanOrEqual(
+            flyOutOrigin.y - restingOrigin.y,
+            NudgeOverlayInteraction.dismissDragThreshold + 48
+        )
+    }
+
     func testEntryPresentationStartsDimmedAndSlightlyScaledDown() {
         let presentation = NudgeOverlayInteraction.entryPresentation
 
@@ -112,8 +122,8 @@ final class NudgeOverlayPresenterTests: XCTestCase {
 
         XCTAssertEqual(presentation.offset.width, 0, accuracy: 0.1)
         XCTAssertEqual(presentation.offset.height, 44, accuracy: 0.1)
-        XCTAssertLessThan(presentation.alpha, 0.78)
-        XCTAssertLessThan(presentation.scale, 0.98)
+        XCTAssertGreaterThan(presentation.alpha, 0.84)
+        XCTAssertGreaterThan(presentation.scale, 0.98)
     }
 
     func testHorizontalAndDownwardMotionStayAtRestAndRebound() {
@@ -168,7 +178,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testPreciseScrollMovesAndDismissesInteractionView() throws {
+    func testPreciseScrollMovesAndDismissesInteractionView() async throws {
         var didBeginInteraction = false
         var presentations: [NudgeOverlayMotionPresentation] = []
         var releaseActions: [NudgeOverlayReleaseAction] = []
@@ -185,8 +195,13 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         let presentation = try XCTUnwrap(presentations.last)
 
         XCTAssertTrue(didBeginInteraction)
+        XCTAssertEqual(presentations.map(\.offset.height), [18, 36, 54])
         XCTAssertEqual(presentation.offset.height, 54, accuracy: 0.1)
-        XCTAssertLessThan(presentation.alpha, 0.7)
+        XCTAssertGreaterThan(presentation.alpha, 0.82)
+        XCTAssertTrue(releaseActions.isEmpty)
+
+        try await Task.sleep(for: .milliseconds(300))
+
         XCTAssertEqual(releaseActions, [.dismiss])
     }
 
