@@ -121,7 +121,7 @@ PLIST
 plutil -lint "$HELPER_ENTITLEMENTS_FILE" >/dev/null
 /usr/bin/xattr -cr "$APP_DIR"
 find "$HELPERS_DIR" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$HELPER_ENTITLEMENTS_FILE" {} \;
-/usr/bin/codesign --force --deep --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$ENTITLEMENTS_FILE" "$APP_DIR"
+/usr/bin/codesign --force --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$ENTITLEMENTS_FILE" "$APP_DIR"
 /usr/bin/codesign --verify --strict --deep --verbose=2 "$APP_DIR"
 /usr/bin/productbuild --sign "$STILLLOOP_INSTALLER_SIGN_IDENTITY" --component "$APP_DIR" /Applications "$PKG_PATH"
 

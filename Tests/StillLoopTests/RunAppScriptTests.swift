@@ -92,7 +92,9 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("STATIC_ENTITLEMENTS_FILE=\"$ROOT_DIR/Config/StillLoop-AppStore.entitlements\""))
         XCTAssertTrue(script.contains("ENTITLEMENTS_FILE=\"$OUTPUT_DIR/StillLoop-AppStore.generated.entitlements\""))
         XCTAssertTrue(script.contains("HELPER_ENTITLEMENTS_FILE=\"$OUTPUT_DIR/StillLoop-Helper.generated.entitlements\""))
-        XCTAssertTrue(script.contains("/usr/bin/codesign --force --deep --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$ENTITLEMENTS_FILE\" \"$APP_DIR\""))
+        XCTAssertTrue(script.contains("/usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$ENTITLEMENTS_FILE\" \"$APP_DIR\""))
+        XCTAssertFalse(script.contains("/usr/bin/codesign --force --deep --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$ENTITLEMENTS_FILE\" \"$APP_DIR\""))
+        XCTAssertTrue(script.contains("/usr/bin/codesign --verify --strict --deep --verbose=2 \"$APP_DIR\""))
         XCTAssertTrue(script.contains("/usr/bin/productbuild --sign \"$STILLLOOP_INSTALLER_SIGN_IDENTITY\" --component \"$APP_DIR\" /Applications \"$PKG_PATH\""))
     }
 
@@ -101,7 +103,7 @@ final class RunAppScriptTests: XCTestCase {
 
         XCTAssertTrue(script.contains(": \"${STILLLOOP_PROVISIONING_PROFILE:?Set STILLLOOP_PROVISIONING_PROFILE"))
         XCTAssertTrue(script.contains("cp \"$STILLLOOP_PROVISIONING_PROFILE\" \"$CONTENTS_DIR/embedded.provisionprofile\""))
-        XCTAssertTrue(script.range(of: "cp \"$STILLLOOP_PROVISIONING_PROFILE\" \"$CONTENTS_DIR/embedded.provisionprofile\"")!.lowerBound < script.range(of: "/usr/bin/codesign --force --deep --options runtime")!.lowerBound)
+        XCTAssertTrue(script.range(of: "cp \"$STILLLOOP_PROVISIONING_PROFILE\" \"$CONTENTS_DIR/embedded.provisionprofile\"")!.lowerBound < script.range(of: "/usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$ENTITLEMENTS_FILE\" \"$APP_DIR\"")!.lowerBound)
     }
 
     func testAppStorePackageScriptSignsApplicationIdentifierEntitlement() throws {
@@ -118,7 +120,7 @@ final class RunAppScriptTests: XCTestCase {
         let script = try String(contentsOfFile: "scripts/build-app-store-package.sh", encoding: .utf8)
 
         XCTAssertTrue(script.contains("/usr/bin/xattr -cr \"$APP_DIR\""))
-        XCTAssertTrue(script.range(of: "/usr/bin/xattr -cr \"$APP_DIR\"")!.lowerBound < script.range(of: "/usr/bin/codesign --force --deep --options runtime")!.lowerBound)
+        XCTAssertTrue(script.range(of: "/usr/bin/xattr -cr \"$APP_DIR\"")!.lowerBound < script.range(of: "/usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$ENTITLEMENTS_FILE\" \"$APP_DIR\"")!.lowerBound)
     }
 
     func testAppStorePackageScriptEmbedsAndSignsBundledLlamaServerHelper() throws {
