@@ -1513,6 +1513,9 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("设置")
                     .font(.largeTitle.weight(.semibold))
+                SettingsLaunchAtLoginRow()
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: 520, alignment: .leading)
                 Button {
                     model.screen = .modelSetup
                 } label: {
@@ -1616,8 +1619,6 @@ private struct SettingsPrivacySection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("隐私")
                 .font(.headline)
-            SettingsLaunchAtLoginRow()
-            Divider()
             Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
             Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
             Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")

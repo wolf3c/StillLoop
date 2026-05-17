@@ -28,6 +28,26 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertTrue(settingsSnippet.contains("SettingsPrivacySection()"))
     }
 
+    func testSettingsLaunchAtLoginRowAppearsBeforeModelSettings() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let settingsStart = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
+        let rowStart = try XCTUnwrap(source.range(of: "private struct SettingsLaunchAtLoginRow: View"))
+        let settingsSnippet = String(source[settingsStart.lowerBound..<rowStart.lowerBound])
+        let launchRowRange = try XCTUnwrap(settingsSnippet.range(of: "SettingsLaunchAtLoginRow()"))
+        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "Text(\"模型设置\")"))
+
+        XCTAssertLessThan(launchRowRange.lowerBound, modelSettingsRange.lowerBound)
+    }
+
+    func testPrivacySectionDoesNotContainLaunchAtLoginRow() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let privacyStart = try XCTUnwrap(source.range(of: "private struct SettingsPrivacySection: View"))
+        let feedbackStart = try XCTUnwrap(source.range(of: "private struct UserFeedbackSheet: View"))
+        let privacySnippet = String(source[privacyStart.lowerBound..<feedbackStart.lowerBound])
+
+        XCTAssertFalse(privacySnippet.contains("SettingsLaunchAtLoginRow()"))
+    }
+
     func testSettingsLaunchAtLoginRowUsesCompactRowStyling() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
         let rowStart = try XCTUnwrap(source.range(of: "private struct SettingsLaunchAtLoginRow: View"))
