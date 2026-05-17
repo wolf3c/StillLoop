@@ -57,6 +57,58 @@ final class AppModelReviewCommentTests: XCTestCase {
         let summaries = try FileSessionStore(appSupportDirectory: supportDirectory).loadSummaries()
         XCTAssertEqual(summaries.first?.id, sessionID)
         XCTAssertEqual(summaries.first?.reviewComment, comment)
+        let sessions = try FileSessionStore(appSupportDirectory: supportDirectory).loadSessions()
+        XCTAssertEqual(sessions.first?.id, sessionID)
+        XCTAssertEqual(sessions.first?.reviewComment, comment)
+        XCTAssertEqual(sessions.first?.events.count, 1)
+    }
+
+    func testEndSessionStoresEvaluationEvents() throws {
+        let supportDirectory = makeSupportDirectory()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            supportDirectory: supportDirectory
+        )
+        let sessionID = UUID(uuidString: "55555555-aaaa-4aaa-8aaa-555555555555")!
+        let eventID = UUID(uuidString: "66666666-aaaa-4aaa-8aaa-666666666666")!
+        model.status = .running
+        model.currentSession = FocusSession(
+            id: sessionID,
+            task: "整理运行记录",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    id: eventID,
+                    timestamp: Date(timeIntervalSince1970: 60),
+                    state: .stuck,
+                    context: "Codex · StillLoop",
+                    nudge: "先写一个测试。",
+                    debugDetail: FocusEventDebugDetail(
+                        task: "整理运行记录",
+                        evaluator: "基础规则",
+                        capturedContext: ["capture[1] 1970-01-01T00:01:00Z\nCodex · StillLoop\nscreenshot=available; camera=unavailable"],
+                        resultState: .stuck,
+                        confidence: 0.64,
+                        reason: "No visible progress",
+                        shouldNudge: true,
+                        nudge: "先写一个测试。"
+                    )
+                )
+            ],
+            feedback: nil
+        )
+
+        model.endSession(feedback: .helpful)
+
+        let store = FileSessionStore(appSupportDirectory: supportDirectory)
+        let sessions = try store.loadSessions()
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, sessionID)
+        XCTAssertEqual(sessions.first?.feedback, .helpful)
+        XCTAssertNotNil(sessions.first?.endedAt)
+        XCTAssertEqual(sessions.first?.events.first?.id, eventID)
+        XCTAssertEqual(sessions.first?.events.first?.debugDetail?.reason, "No visible progress")
     }
 
     func testReviewCommentFailureIsHiddenAndKeepsSavedSummary() async throws {
@@ -158,6 +210,13 @@ final class AppModelReviewCommentTests: XCTestCase {
             summaries.first?.reviewComment,
             "你保持了稳定推进。下次继续开一段专注，可以先处理刚才留下的下一步。"
         )
+        let sessions = try FileSessionStore(appSupportDirectory: supportDirectory).loadSessions()
+        XCTAssertEqual(sessions.first?.feedback, .helpful)
+        XCTAssertEqual(
+            sessions.first?.reviewComment,
+            "你保持了稳定推进。下次继续开一段专注，可以先处理刚才留下的下一步。"
+        )
+        XCTAssertEqual(sessions.first?.events, model.currentSession?.events)
     }
 
     private func waitForReviewComment(in model: AppModel, sessionID: UUID) async throws -> String {

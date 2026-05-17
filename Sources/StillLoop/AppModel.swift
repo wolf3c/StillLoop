@@ -1019,6 +1019,7 @@ final class AppModel: ObservableObject {
             )
         )
         try? store.save(summary: summary)
+        try? store.save(session: session)
         summaries = (try? store.loadSummaries()) ?? [summary]
         status = .ended
         screen = .review
@@ -1083,6 +1084,7 @@ final class AppModel: ObservableObject {
         currentSession = session
         let summary = SessionSummary(session: session)
         try? store.update(summary: summary)
+        try? store.update(session: session)
         summaries = (try? store.loadSummaries()) ?? summaries
     }
 
@@ -1135,13 +1137,21 @@ final class AppModel: ObservableObject {
             currentSession.reviewComment = comment
             self.currentSession = currentSession
             summary = SessionSummary(session: currentSession)
+            try? store.update(session: currentSession)
         } else if var existingSummary = summaries.first(where: { $0.id == session.id }) {
             existingSummary.reviewComment = comment
             summary = existingSummary
+            let storedSession = (try? store.loadSessions())?.first { $0.id == session.id }
+            var updatedSession = storedSession ?? session
+            updatedSession.endedAt = existingSummary.endedAt
+            updatedSession.feedback = existingSummary.feedback
+            updatedSession.reviewComment = comment
+            try? store.update(session: updatedSession)
         } else {
             var updatedSession = session
             updatedSession.reviewComment = comment
             summary = SessionSummary(session: updatedSession)
+            try? store.update(session: updatedSession)
         }
 
         try? store.update(summary: summary)

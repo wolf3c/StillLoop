@@ -100,7 +100,7 @@ The task setup screen includes a `使用模拟上下文` toggle. Keep it enabled
 - No app or website blocking.
 - Screenshots are captured in memory, downscaled, compressed, summarized, and then discarded; original screenshots are not written to disk.
 - Camera photos are captured in memory, downscaled, compressed, summarized, and then discarded; original frames are not written to disk.
-- Session summaries are stored locally under `Application Support/StillLoop/session-summaries.json`.
+- Session summaries and evaluation events are stored locally under `Application Support/StillLoop/session-summaries.json` and `Application Support/StillLoop/session-events.json`; images, photos, and screenshots are not written to disk.
 
 ## Local Model And Inference
 
