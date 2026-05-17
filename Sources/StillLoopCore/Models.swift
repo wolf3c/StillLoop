@@ -296,6 +296,7 @@ public struct FocusSession: Codable, Equatable, Identifiable {
     public var endedAt: Date?
     public var events: [FocusEvent]
     public var feedback: SessionFeedback?
+    public var reviewComment: String?
 
     public init(
         id: UUID = UUID(),
@@ -303,7 +304,8 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         startedAt: Date,
         endedAt: Date?,
         events: [FocusEvent],
-        feedback: SessionFeedback?
+        feedback: SessionFeedback?,
+        reviewComment: String? = nil
     ) {
         self.id = id
         self.task = task
@@ -311,6 +313,7 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         self.endedAt = endedAt
         self.events = events
         self.feedback = feedback
+        self.reviewComment = reviewComment
     }
 }
 
@@ -339,6 +342,7 @@ public struct SessionSummary: Codable, Equatable, Identifiable {
     public var nudgeCount: Int
     public var feedback: SessionFeedback?
     public var topApps: [String: Int]
+    public var reviewComment: String?
 
     public init(session: FocusSession) {
         let endedAt = session.endedAt ?? Date()
@@ -351,6 +355,7 @@ public struct SessionSummary: Codable, Equatable, Identifiable {
         self.offTrackEventCount = session.events.filter { $0.state == .distracted }.count
         self.nudgeCount = session.events.filter { $0.nudge != nil }.count
         self.feedback = session.feedback
+        self.reviewComment = session.reviewComment
         self.topApps = session.events.reduce(into: [String: Int]()) { counts, event in
             for appName in SessionSummary.appNames(from: event.context) {
                 counts[appName, default: 0] += 1

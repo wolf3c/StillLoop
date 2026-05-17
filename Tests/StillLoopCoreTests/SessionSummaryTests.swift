@@ -55,4 +55,48 @@ final class SessionSummaryTests: XCTestCase {
         XCTAssertEqual(summary.topApps["Zed"], 1)
         XCTAssertNil(summary.topApps["Codex · Codex 13 -> Google Chrome · 公司背调收集表 -> Codex · Codex 7"])
     }
+
+    func testDecodesLegacyFocusSessionWithoutReviewComment() throws {
+        let data = Data("""
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "task": "写复盘",
+          "startedAt": "2026-05-17T08:00:00Z",
+          "endedAt": "2026-05-17T08:10:00Z",
+          "events": [],
+          "feedback": null
+        }
+        """.utf8)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let session = try decoder.decode(FocusSession.self, from: data)
+
+        XCTAssertNil(session.reviewComment)
+    }
+
+    func testDecodesLegacySessionSummaryWithoutReviewComment() throws {
+        let data = Data("""
+        {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "task": "写复盘",
+          "startedAt": "2026-05-17T08:00:00Z",
+          "endedAt": "2026-05-17T08:10:00Z",
+          "totalDuration": 600,
+          "estimatedFocusedDuration": 240,
+          "offTrackEventCount": 1,
+          "nudgeCount": 1,
+          "feedback": null,
+          "topApps": {
+            "Codex": 2
+          }
+        }
+        """.utf8)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let summary = try decoder.decode(SessionSummary.self, from: data)
+
+        XCTAssertNil(summary.reviewComment)
+    }
 }

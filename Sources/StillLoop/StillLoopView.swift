@@ -1172,6 +1172,10 @@ private struct ReviewView: View {
                     model.continueReviewTask()
                 }
 
+                if let reviewComment = session.reviewComment {
+                    ReviewCommentCard(comment: reviewComment)
+                }
+
                 HStack(spacing: 12) {
                     Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
                     Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
@@ -1188,6 +1192,33 @@ private struct ReviewView: View {
             Spacer()
         }
         .padding(40)
+    }
+}
+
+private struct ReviewCommentCard: View {
+    var comment: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("本次表现")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(comment)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: 640, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12))
+        )
     }
 }
 

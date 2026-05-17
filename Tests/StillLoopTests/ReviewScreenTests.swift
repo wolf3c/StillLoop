@@ -47,11 +47,15 @@ final class ReviewScreenTests: XCTestCase {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
 
         XCTAssertTrue(source.contains("ReviewTaskSummary(task: session.task)"))
+        XCTAssertTrue(source.contains("ReviewCommentCard(comment: reviewComment)"))
         XCTAssertFalse(source.contains(".font(.title2.weight(.semibold))"))
 
         let taskSummary = try XCTUnwrap(source.range(of: "ReviewTaskSummary(task: session.task)"))
+        let commentCard = try XCTUnwrap(source.range(of: "ReviewCommentCard(comment: reviewComment)"))
         let usageCard = try XCTUnwrap(source.range(of: "ReviewAppUsageCard(topApps: summary.topApps)"))
         let newSessionButton = try XCTUnwrap(source.range(of: "Button(\"开始新的专注\""))
+        XCTAssertLessThan(taskSummary.lowerBound, commentCard.lowerBound)
+        XCTAssertLessThan(commentCard.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(taskSummary.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(usageCard.lowerBound, newSessionButton.lowerBound)
 
@@ -77,5 +81,15 @@ final class ReviewScreenTests: XCTestCase {
         XCTAssertTrue(snippet.contains(".frame(maxWidth: 380, alignment: .leading)"))
         XCTAssertTrue(snippet.contains(".layoutPriority(1)"))
         XCTAssertTrue(snippet.contains(".help(task)"))
+    }
+
+    func testReviewCommentCardRendersOnlyWhenCommentExists() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("if let reviewComment = session.reviewComment"))
+        XCTAssertTrue(source.contains("private struct ReviewCommentCard: View"))
+        XCTAssertTrue(source.contains("Text(\"本次表现\")"))
+        XCTAssertFalse(source.contains("暂未生成"))
+        XCTAssertFalse(source.contains("重新生成"))
     }
 }

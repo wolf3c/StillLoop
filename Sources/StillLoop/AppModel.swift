@@ -246,10 +246,13 @@ final class AppModel: ObservableObject {
     private let bundledModelRuntime: BundledModelRuntimeManaging
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
+    private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
     private var provider: ContextProvider?
+    private var llmEngine: LocalLLMEngine?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
+    private var reviewCommentTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
     private var bundledModelRuntimeFailureStatus: String?
@@ -494,7 +497,8 @@ final class AppModel: ObservableObject {
     init(
         userDefaults: UserDefaults = .standard,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
-        supportDirectory overrideSupportDirectory: URL? = nil
+        supportDirectory overrideSupportDirectory: URL? = nil,
+        reviewCommentGenerator: SessionReviewCommentGenerating? = nil
     ) {
         self.userDefaults = userDefaults
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
@@ -503,6 +507,7 @@ final class AppModel: ObservableObject {
             userDefaults: userDefaults,
             overlayPresenter: nudgeOverlayPresenter
         )
+        self.reviewCommentGeneratorOverride = reviewCommentGenerator
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
         let storedModelSource = userDefaults.string(forKey: DefaultsKey.modelSource)
             .flatMap(ModelSetupSelection.Source.init(rawValue:))
@@ -928,6 +933,7 @@ final class AppModel: ObservableObject {
         evaluationLoopDescription = "任务已结束，已停止采集"
         analysisPhase = .idle
         postStatusItemMode(.review)
+        startReviewCommentGeneration(for: session)
     }
 
     func prepareNewSession() {
@@ -984,8 +990,73 @@ final class AppModel: ObservableObject {
         session.feedback = feedback
         currentSession = session
         let summary = SessionSummary(session: session)
-        try? store.save(summary: summary)
+        try? store.update(summary: summary)
         summaries = (try? store.loadSummaries()) ?? summaries
+    }
+
+    private func startReviewCommentGeneration(for session: FocusSession) {
+        reviewCommentTask = Task { [weak self] in
+            await self?.generateReviewComment(for: session)
+        }
+    }
+
+    private func generateReviewComment(for session: FocusSession) async {
+        guard let generator = await reviewCommentGeneratorForCurrentModel() else {
+            return
+        }
+
+        do {
+            let comment = try await generator.generateComment(for: session)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !comment.isEmpty else { return }
+            applyReviewComment(comment, to: session)
+        } catch {
+            return
+        }
+    }
+
+    private func reviewCommentGeneratorForCurrentModel() async -> SessionReviewCommentGenerating? {
+        if let reviewCommentGeneratorOverride {
+            return reviewCommentGeneratorOverride
+        }
+
+        switch modelSetupSelection.source {
+        case .bundled:
+            guard await prepareBundledModelForEvaluation(), let llmEngine else {
+                return nil
+            }
+            return SessionReviewCommentGenerator(engine: llmEngine)
+        case .manual:
+            if llmEngine == nil {
+                configureLocalLLM()
+            }
+            guard let llmEngine else {
+                return nil
+            }
+            return SessionReviewCommentGenerator(engine: llmEngine)
+        }
+    }
+
+    private func applyReviewComment(_ comment: String, to session: FocusSession) {
+        let summary: SessionSummary
+        if var currentSession, currentSession.id == session.id {
+            currentSession.reviewComment = comment
+            self.currentSession = currentSession
+            summary = SessionSummary(session: currentSession)
+        } else if var existingSummary = summaries.first(where: { $0.id == session.id }) {
+            existingSummary.reviewComment = comment
+            summary = existingSummary
+        } else {
+            var updatedSession = session
+            updatedSession.reviewComment = comment
+            summary = SessionSummary(session: updatedSession)
+        }
+
+        try? store.update(summary: summary)
+        summaries = (try? store.loadSummaries()) ?? summaries.map { existing in
+            guard existing.id == summary.id else { return existing }
+            return summary
+        }
     }
 
     func refreshModelStatus() {
@@ -1081,6 +1152,7 @@ final class AppModel: ObservableObject {
             modelConnectionCheckTask?.cancel()
             modelConnectionCheckTask = nil
             useLocalLLM = false
+            llmEngine = nil
             llmEvaluator = nil
             isModelConnectionUsable = false
             userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
@@ -1104,6 +1176,7 @@ final class AppModel: ObservableObject {
         switch modelSetupSelection.source {
         case .bundled:
             useLocalLLM = false
+            llmEngine = nil
             llmEvaluator = nil
             configureBundledModelSelectionStatus()
         case .manual:
@@ -1128,6 +1201,7 @@ final class AppModel: ObservableObject {
         guard useLocalLLM else {
             localLLMStatus = "当前评估：基础规则"
             isModelConnectionUsable = false
+            llmEngine = nil
             llmEvaluator = nil
             persistManualModelConfiguration()
             return
@@ -1137,6 +1211,7 @@ final class AppModel: ObservableObject {
         guard !trimmedBaseURLText.isEmpty, !trimmedModelText.isEmpty else {
             localLLMStatus = "模型服务：待配置"
             isModelConnectionUsable = false
+            llmEngine = nil
             llmEvaluator = nil
             persistManualModelConfiguration()
             return
@@ -1145,13 +1220,14 @@ final class AppModel: ObservableObject {
         guard let baseURL = URL(string: effectiveBaseURLText) else {
             localLLMStatus = "模型服务：端点无效"
             isModelConnectionUsable = false
+            llmEngine = nil
             llmEvaluator = nil
             persistManualModelConfiguration()
             return
         }
-        llmEvaluator = LLMFocusEvaluator(
-            engine: OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-        )
+        let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        llmEngine = engine
+        llmEvaluator = LLMFocusEvaluator(engine: engine)
         localLLMStatus = "当前评估：手动模型 \(effectiveBaseURLText)"
         persistManualModelConfiguration()
     }
@@ -1318,12 +1394,14 @@ final class AppModel: ObservableObject {
         }
         if let bundledModelRuntimeFailureStatus {
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
+            llmEngine = nil
             llmEvaluator = nil
             return false
         }
         guard modelDownloader.isDownloaded() else {
             bundledModelRuntimeStatus = "自带模型：等待模型文件"
             localLLMStatus = "当前评估：基础规则（等待自带模型文件）"
+            llmEngine = nil
             llmEvaluator = nil
             return false
         }
@@ -1332,9 +1410,9 @@ final class AppModel: ObservableObject {
         localLLMStatus = "当前评估：自带模型启动中"
         do {
             try await bundledModelRuntime.startIfNeeded()
-            llmEvaluator = LLMFocusEvaluator(
-                engine: OpenAICompatibleLLMEngine(baseURL: bundledModelRuntime.baseURL, model: bundledModelRuntime.modelID)
-            )
+            let engine = OpenAICompatibleLLMEngine(baseURL: bundledModelRuntime.baseURL, model: bundledModelRuntime.modelID)
+            llmEngine = engine
+            llmEvaluator = LLMFocusEvaluator(engine: engine)
             bundledModelRuntimeStatus = "自带模型：已启动"
             localLLMStatus = "当前评估：自带模型已连接"
             bundledModelRuntimeFailureStatus = nil
@@ -1343,6 +1421,7 @@ final class AppModel: ObservableObject {
             let status = Self.bundledRuntimeStatusText(for: error)
             bundledModelRuntimeFailureStatus = status
             applyBundledRuntimeFailureStatus(status)
+            llmEngine = nil
             llmEvaluator = nil
             return false
         }
@@ -1406,6 +1485,7 @@ final class AppModel: ObservableObject {
     func stopBundledModelRuntime() {
         guard modelSetupSelection.source == .bundled else { return }
         bundledModelRuntime.stop()
+        llmEngine = nil
         llmEvaluator = nil
         if let bundledModelRuntimeFailureStatus {
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)

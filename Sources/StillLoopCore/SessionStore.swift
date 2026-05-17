@@ -38,4 +38,19 @@ public final class FileSessionStore: SessionStore {
         let data = try encoder.encode(summaries)
         try data.write(to: fileURL, options: .atomic)
     }
+
+    public func update(summary: SessionSummary) throws {
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        var summaries = try loadSummaries()
+        if let index = summaries.firstIndex(where: { $0.id == summary.id }) {
+            summaries[index] = summary
+        } else {
+            summaries.insert(summary, at: 0)
+        }
+        let data = try encoder.encode(summaries)
+        try data.write(to: fileURL, options: .atomic)
+    }
 }
