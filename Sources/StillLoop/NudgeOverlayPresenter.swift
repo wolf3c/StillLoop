@@ -454,7 +454,7 @@ final class NudgeOverlayPresenter {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        panel.hasShadow = false
 
         let restingOrigin = origin(for: intensity)
         let state = PanelState(panel: panel, restingOrigin: restingOrigin)

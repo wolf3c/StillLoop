@@ -166,7 +166,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
             $0.identifier?.rawValue == "nudgeAccentLight"
         })
 
-        XCTAssertTrue(panel.hasShadow)
+        XCTAssertFalse(panel.hasShadow)
         XCTAssertEqual(contentView.material, .hudWindow)
         XCTAssertEqual(contentView.layer?.cornerRadius, 18)
         XCTAssertEqual(glassOverlay.layer?.borderWidth, 1)
@@ -335,7 +335,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         } as? NSPanel)
         let contentView = try XCTUnwrap(panel.contentView)
 
-        XCTAssertTrue(panel.hasShadow)
+        XCTAssertFalse(panel.hasShadow)
         XCTAssertEqual(panel.frame.width, NudgeIntensity.noticeable.width, accuracy: 0.5)
         XCTAssertEqual(panel.frame.height, NudgeIntensity.noticeable.height, accuracy: 0.5)
         let interactionView = try XCTUnwrap(contentView as? NudgeOverlayInteractionView)
