@@ -70,6 +70,20 @@ final class ReviewScreenTests: XCTestCase {
         XCTAssertTrue(newSessionSnippet.contains(".buttonStyle(.borderedProminent)"))
     }
 
+    func testReviewContentIsScrollableSoBottomActionsRemainReachable() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let reviewStart = try XCTUnwrap(source.range(of: "private struct ReviewView: View"))
+        let nextSection = try XCTUnwrap(source.range(of: "private struct ReviewCommentCard: View"))
+        let snippet = String(source[reviewStart.lowerBound..<nextSection.lowerBound])
+
+        XCTAssertTrue(snippet.contains("ScrollView {"))
+        XCTAssertFalse(snippet.contains("Spacer()"))
+
+        let scrollView = try XCTUnwrap(snippet.range(of: "ScrollView {"))
+        let newSessionButton = try XCTUnwrap(snippet.range(of: "Button(\"开始新的专注\""))
+        XCTAssertLessThan(scrollView.lowerBound, newSessionButton.lowerBound)
+    }
+
     func testReviewTaskTitleCannotPushContinueButtonAway() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
         let summaryStart = try XCTUnwrap(source.range(of: "private struct ReviewTaskSummary: View"))
@@ -77,8 +91,9 @@ final class ReviewScreenTests: XCTestCase {
         let snippet = String(source[summaryStart.lowerBound..<nextSection.lowerBound])
 
         XCTAssertFalse(snippet.contains(".fixedSize(horizontal: true, vertical: false)"))
-        XCTAssertFalse(snippet.contains(".frame(width: 320, alignment: .leading)"))
-        XCTAssertTrue(snippet.contains(".frame(maxWidth: 380, alignment: .leading)"))
+        XCTAssertFalse(snippet.contains(".frame(width:"))
+        XCTAssertFalse(snippet.contains(".frame(maxWidth: 380"))
+        XCTAssertTrue(snippet.contains("taskText\n                    .layoutPriority(0)\n                continueButton"))
         XCTAssertTrue(snippet.contains(".layoutPriority(1)"))
         XCTAssertTrue(snippet.contains(".help(task)"))
     }

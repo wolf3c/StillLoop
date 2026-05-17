@@ -1164,34 +1164,37 @@ private struct ReviewView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("专注复盘")
-                .font(.largeTitle.weight(.semibold))
-            if let session = model.currentSession, let summary, let stats {
-                ReviewTaskSummary(task: session.task) {
-                    model.continueReviewTask()
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("专注复盘")
+                    .font(.largeTitle.weight(.semibold))
+                if let session = model.currentSession, let summary, let stats {
+                    ReviewTaskSummary(task: session.task) {
+                        model.continueReviewTask()
+                    }
 
-                if let reviewComment = session.reviewComment {
-                    ReviewCommentCard(comment: reviewComment)
-                }
+                    if let reviewComment = session.reviewComment {
+                        ReviewCommentCard(comment: reviewComment)
+                    }
 
-                HStack(spacing: 12) {
-                    Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
-                    Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
-                    Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
-                    Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
+                    HStack(spacing: 12) {
+                        Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
+                        Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
+                        Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
+                        Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
+                    }
+                    ReviewAppUsageCard(topApps: summary.topApps)
                 }
-                ReviewAppUsageCard(topApps: summary.topApps)
+                Button("开始新的专注") {
+                    model.prepareNewSession()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            Button("开始新的专注") {
-                model.prepareNewSession()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(40)
         }
-        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -1233,7 +1236,7 @@ private struct ReviewTaskSummary: View {
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 taskText
-                    .frame(maxWidth: 380, alignment: .leading)
+                    .layoutPriority(0)
                 continueButton
             }
         }
