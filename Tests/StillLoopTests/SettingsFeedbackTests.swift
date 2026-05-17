@@ -10,6 +10,10 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertTrue(settingsSnippet.contains("反馈与建议"))
         XCTAssertTrue(settingsSnippet.contains("UserFeedbackSheet"))
         XCTAssertTrue(settingsSnippet.contains(".sheet(isPresented: $model.isUserFeedbackPresented)"))
+        XCTAssertTrue(source.contains("联系方式（可选）"))
+        XCTAssertTrue(source.contains("仅用于回复本次反馈"))
+        XCTAssertTrue(source.contains("Toggle(isOn: $model.userFeedbackAllowsContact)"))
+        XCTAssertTrue(source.contains("text: $model.userFeedbackReplyAddress"))
         XCTAssertTrue(source.contains("private struct UserFeedbackSheet: View"))
         XCTAssertTrue(source.contains("model.submitUserFeedback()"))
     }

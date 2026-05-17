@@ -76,6 +76,8 @@ final class StillLoopTelemetryTests: XCTestCase {
         let draft = StillLoopUserFeedbackDraft(
             kind: .issue,
             body: "模型设置页打不开",
+            replyAddress: "reply@example.com",
+            allowsContact: true,
             screen: "settings",
             modelSource: .manual
         )
@@ -84,16 +86,35 @@ final class StillLoopTelemetryTests: XCTestCase {
 
         XCTAssertEqual(message.kind, "issue")
         XCTAssertEqual(message.body, "模型设置页打不开")
-        XCTAssertNil(message.contact.email)
-        XCTAssertFalse(message.contact.consent)
+        XCTAssertEqual(message.contact.email, "reply@example.com")
+        XCTAssertEqual(message.contact.preferredChannel, "email")
+        XCTAssertTrue(message.contact.consent)
         XCTAssertEqual(message.fields["screen"], TraceMindValue.string("settings"))
         XCTAssertEqual(message.fields["modelSource"], TraceMindValue.string("manual"))
+        XCTAssertEqual(message.fields.count, 2)
 
         let serializedMessage = String(describing: message)
         XCTAssertFalse(serializedMessage.contains("taskText"))
         XCTAssertFalse(serializedMessage.contains("windowTitle"))
         XCTAssertFalse(serializedMessage.contains("screenshot"))
         XCTAssertFalse(serializedMessage.contains("apiKey"))
+    }
+
+    func testUserFeedbackDraftOmitsContactWithoutExplicitConsent() {
+        let draft = StillLoopUserFeedbackDraft(
+            kind: .question,
+            body: "想了解数据保存位置",
+            replyAddress: "reply@example.com",
+            allowsContact: false,
+            screen: "settings",
+            modelSource: .bundled
+        )
+
+        let message = draft.traceMindMessage
+
+        XCTAssertNil(message.contact.email)
+        XCTAssertFalse(message.contact.consent)
+        XCTAssertEqual(message.fields.count, 2)
     }
 
     func testSubmittingUserFeedbackUsesFeedbackApiAndUpdatesStatus() async {
@@ -107,17 +128,39 @@ final class StillLoopTelemetryTests: XCTestCase {
         model.screen = .settings
         model.userFeedbackKind = .idea
         model.userFeedbackBody = "希望增加快捷反馈入口"
+        model.userFeedbackReplyAddress = "reply@example.com"
+        model.userFeedbackAllowsContact = true
 
         await model.submitUserFeedback()
 
         XCTAssertEqual(model.userFeedbackSubmissionStatus, .sent)
         XCTAssertEqual(model.userFeedbackBody, "")
+        XCTAssertEqual(model.userFeedbackReplyAddress, "")
+        XCTAssertFalse(model.userFeedbackAllowsContact)
         XCTAssertEqual(telemetry.feedbackDrafts.count, 1)
         XCTAssertEqual(telemetry.feedbackDrafts.first?.kind, .idea)
         XCTAssertEqual(telemetry.feedbackDrafts.first?.body, "希望增加快捷反馈入口")
+        XCTAssertEqual(telemetry.feedbackDrafts.first?.replyAddress, "reply@example.com")
+        XCTAssertTrue(telemetry.feedbackDrafts.first?.allowsContact == true)
         XCTAssertEqual(telemetry.feedbackDrafts.first?.screen, "settings")
         XCTAssertEqual(telemetry.feedbackDrafts.first?.modelSource, .bundled)
         XCTAssertTrue(telemetry.events.isEmpty)
+    }
+
+    func testContactRequiresExplicitConsentBeforeSubmit() {
+        let model = AppModel(
+            userDefaults: Self.makeIsolatedUserDefaults(),
+            supportDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        model.userFeedbackBody = "希望得到回复"
+        model.userFeedbackReplyAddress = "reply@example.com"
+
+        XCTAssertFalse(model.canSubmitUserFeedback)
+
+        model.userFeedbackAllowsContact = true
+
+        XCTAssertTrue(model.canSubmitUserFeedback)
     }
 
     private static func makeIsolatedUserDefaults() -> UserDefaults {

@@ -235,6 +235,8 @@ final class AppModel: ObservableObject {
     @Published var isUserFeedbackPresented = false
     @Published var userFeedbackKind: StillLoopUserFeedbackKind = .issue
     @Published var userFeedbackBody = ""
+    @Published var userFeedbackReplyAddress = ""
+    @Published var userFeedbackAllowsContact = false
     @Published var userFeedbackSubmissionStatus: UserFeedbackSubmissionStatus = .idle
     @Published var userFeedbackSubmissionMessage = ""
     @Published var modelConnectionStatus = "尚未检查"
@@ -608,8 +610,11 @@ final class AppModel: ObservableObject {
     }
 
     var canSubmitUserFeedback: Bool {
-        !userFeedbackBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasBody = !userFeedbackBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasReplyAddress = !userFeedbackReplyAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasBody
             && userFeedbackSubmissionStatus != .submitting
+            && (!hasReplyAddress || userFeedbackAllowsContact)
     }
 
     var setupIssueIndicators: [SetupIssueIndicator] {
@@ -640,6 +645,8 @@ final class AppModel: ObservableObject {
         let draft = StillLoopUserFeedbackDraft(
             kind: userFeedbackKind,
             body: userFeedbackBody,
+            replyAddress: userFeedbackReplyAddress,
+            allowsContact: userFeedbackAllowsContact,
             screen: StillLoopTelemetry.screenName(for: screen),
             modelSource: modelSetupSelection.source
         )
@@ -651,6 +658,8 @@ final class AppModel: ObservableObject {
             userFeedbackSubmissionStatus = .sent
             userFeedbackSubmissionMessage = "已发送，感谢反馈。"
             userFeedbackBody = ""
+            userFeedbackReplyAddress = ""
+            userFeedbackAllowsContact = false
         } catch {
             userFeedbackSubmissionStatus = .failed
             userFeedbackSubmissionMessage = "发送失败，请稍后重试。"

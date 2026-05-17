@@ -1566,6 +1566,19 @@ private struct UserFeedbackSheet: View {
                         .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                 )
 
+            TextField("联系方式（可选）", text: $model.userFeedbackReplyAddress)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: model.userFeedbackReplyAddress) { value in
+                    if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        model.userFeedbackAllowsContact = false
+                    }
+                }
+
+            Toggle(isOn: $model.userFeedbackAllowsContact) {
+                Text("仅用于回复本次反馈")
+            }
+            .disabled(model.userFeedbackReplyAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
             if !model.userFeedbackSubmissionMessage.isEmpty {
                 Text(model.userFeedbackSubmissionMessage)
                     .font(.caption)

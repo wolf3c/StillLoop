@@ -217,14 +217,26 @@ enum StillLoopUserFeedbackKind: String, CaseIterable, Equatable, Identifiable {
 struct StillLoopUserFeedbackDraft: Equatable {
     var kind: StillLoopUserFeedbackKind
     var body: String
+    var replyAddress: String = ""
+    var allowsContact: Bool = false
     var screen: String
     var modelSource: ModelSetupSelection.Source
 
     var traceMindMessage: TraceMindFeedbackMessage {
-        TraceMindFeedbackMessage(
+        let trimmedReplyAddress = replyAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let feedbackContact = trimmedReplyAddress.isEmpty || !allowsContact
+            ? TraceMindFeedbackContact()
+            : TraceMindFeedbackContact(
+                email: trimmedReplyAddress,
+                preferredChannel: "email",
+                consent: true
+            )
+
+        return TraceMindFeedbackMessage(
             kind: kind.rawValue,
             title: kind.title,
             body: body.trimmingCharacters(in: .whitespacesAndNewlines),
+            contact: feedbackContact,
             fields: [
                 "screen": .string(screen),
                 "modelSource": .string(modelSource.rawValue)
