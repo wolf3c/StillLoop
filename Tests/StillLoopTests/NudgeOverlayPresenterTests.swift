@@ -127,6 +127,14 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: downward.offset), .rebound)
     }
 
+    func testHorizontalMotionUsesResistancePastThreshold() {
+        let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 220, height: 0))
+
+        XCTAssertGreaterThan(abs(presentation.offset.width), NudgeOverlayInteraction.dismissDragThreshold)
+        XCTAssertLessThan(abs(presentation.offset.width), 100)
+        XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: presentation.offset), .rebound)
+    }
+
     func testVisibleAndReboundPresentationsReturnToRestingState() {
         XCTAssertEqual(NudgeOverlayInteraction.visiblePresentation.offset, .zero)
         XCTAssertEqual(NudgeOverlayInteraction.visiblePresentation.alpha, 1, accuracy: 0.001)
@@ -182,6 +190,24 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(presentation.offset.height, 54, accuracy: 0.1)
         XCTAssertLessThan(presentation.alpha, 0.7)
         XCTAssertEqual(releaseActions, [.dismiss])
+    }
+
+    @MainActor
+    func testPreciseHorizontalScrollReboundsAfterIdleWithoutEndedPhase() async throws {
+        var presentations: [NudgeOverlayMotionPresentation] = []
+        var releaseActions: [NudgeOverlayReleaseAction] = []
+        let view = NudgeOverlayInteractionView(
+            onOpen: {},
+            onMotionChanged: { presentations.append($0) },
+            onRelease: { releaseActions.append($0) }
+        )
+
+        view.scrollWheel(with: try scrollEvent(deltaX: 220, units: .pixel))
+        try await Task.sleep(for: .milliseconds(300))
+
+        let presentation = try XCTUnwrap(presentations.first)
+        XCTAssertLessThan(abs(presentation.offset.width), 100)
+        XCTAssertEqual(releaseActions, [.rebound])
     }
 
     @MainActor
@@ -250,14 +276,14 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(waitCount, 1)
     }
 
-    private func scrollEvent(deltaY: Int32, units: CGScrollEventUnit) throws -> NSEvent {
+    private func scrollEvent(deltaX: Int32 = 0, deltaY: Int32 = 0, units: CGScrollEventUnit) throws -> NSEvent {
         let source = CGEventSource(stateID: .hidSystemState)
         let event = CGEvent(
             scrollWheelEvent2Source: source,
             units: units,
             wheelCount: 2,
             wheel1: deltaY,
-            wheel2: 0,
+            wheel2: deltaX,
             wheel3: 0
         )
         return try XCTUnwrap(event.flatMap(NSEvent.init(cgEvent:)))

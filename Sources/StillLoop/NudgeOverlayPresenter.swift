@@ -85,6 +85,7 @@ enum NudgeOverlayInteraction {
 
     private static let clickMovementTolerance: CGFloat = 8
     private static let dismissVelocityThreshold: CGFloat = 720
+    private static let nonDismissResistanceLimit: CGFloat = 82
 
     static func shouldDismiss(translation: CGSize) -> Bool {
         releaseAction(translation: translation) == .dismiss
@@ -122,8 +123,16 @@ enum NudgeOverlayInteraction {
     }
 
     static func motionPresentation(for offset: CGSize) -> NudgeOverlayMotionPresentation {
-        let upwardProgress = min(max(offset.height, 0) / dismissDragThreshold, 1)
-        let nonDismissProgress = min(max(abs(offset.width), max(-offset.height, 0)) / dismissDragThreshold, 1)
+        let visualOffset = CGSize(
+            width: resistedNonDismissOffset(offset.width),
+            height: offset.height >= 0 ? offset.height : resistedNonDismissOffset(offset.height)
+        )
+        let isDismissDirection = isUpwardDominant(offset)
+        let upwardProgress = isDismissDirection ? min(max(offset.height, 0) / dismissDragThreshold, 1) : 0
+        let nonDismissProgress = min(
+            max(abs(visualOffset.width), isDismissDirection ? 0 : abs(visualOffset.height)) / dismissDragThreshold,
+            1
+        )
         let alpha = upwardProgress > 0
             ? 1 - 0.36 * upwardProgress
             : 1 - 0.08 * nonDismissProgress
@@ -132,7 +141,7 @@ enum NudgeOverlayInteraction {
             : 1 - 0.012 * nonDismissProgress
 
         return NudgeOverlayMotionPresentation(
-            offset: offset,
+            offset: visualOffset,
             alpha: alpha,
             scale: scale
         )
@@ -158,9 +167,21 @@ enum NudgeOverlayInteraction {
     private static func isUpwardDominant(_ vector: CGSize) -> Bool {
         vector.height > 0 && vector.height > abs(vector.width)
     }
+
+    private static func resistedNonDismissOffset(_ value: CGFloat) -> CGFloat {
+        let magnitude = abs(value)
+        guard magnitude > dismissDragThreshold else { return value }
+        let resistedMagnitude = min(
+            dismissDragThreshold + (magnitude - dismissDragThreshold) * 0.18,
+            nonDismissResistanceLimit
+        )
+        return value < 0 ? -resistedMagnitude : resistedMagnitude
+    }
 }
 
 final class NudgeOverlayInteractionView: NSVisualEffectView {
+    private static let scrollIdleReboundDelay: Duration = .milliseconds(180)
+
     private let onOpen: @MainActor () -> Void
     private let onInteractionBegan: @MainActor () -> Void
     private let onMotionChanged: @MainActor (NudgeOverlayMotionPresentation) -> Void
@@ -172,6 +193,7 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
     private var hasDismissed = false
     private var scrollAccumulatedDelta = CGSize.zero
     private var lastScrollEventTimestamp: TimeInterval?
+    private var scrollIdleReboundTask: Task<Void, Never>?
 
     init(
         onOpen: @escaping @MainActor () -> Void,
@@ -184,6 +206,10 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         self.onMotionChanged = onMotionChanged
         self.onRelease = onRelease
         super.init(frame: .zero)
+    }
+
+    deinit {
+        scrollIdleReboundTask?.cancel()
     }
 
     @available(*, unavailable)
@@ -268,7 +294,9 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             || event.momentumPhase.contains(.ended)
             || event.momentumPhase.contains(.cancelled) {
             finishGesture(.rebound)
+            return
         }
+        scheduleScrollIdleRebound()
     }
 
     override func swipe(with event: NSEvent) {
@@ -283,7 +311,19 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         if event.phase.contains(.began)
             || event.momentumPhase.contains(.began)
             || lastScrollEventTimestamp.map({ event.timestamp - $0 > 0.35 }) != false {
+            scrollIdleReboundTask?.cancel()
             scrollAccumulatedDelta = .zero
+        }
+    }
+
+    private func scheduleScrollIdleRebound() {
+        scrollIdleReboundTask?.cancel()
+        scrollIdleReboundTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.scrollIdleReboundDelay)
+            guard !Task.isCancelled, let self, !self.hasDismissed, self.lastScrollEventTimestamp != nil else {
+                return
+            }
+            self.finishGesture(.rebound)
         }
     }
 
@@ -313,6 +353,8 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
     }
 
     private func finishGesture(_ action: NudgeOverlayReleaseAction) {
+        scrollIdleReboundTask?.cancel()
+        scrollIdleReboundTask = nil
         if action == .dismiss {
             hasDismissed = true
         }
