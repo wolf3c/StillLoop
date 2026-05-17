@@ -121,6 +121,31 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(presentation.scale, 0.96, accuracy: 0.001)
     }
 
+    @MainActor
+    func testOverlayEntryAnimationSettlesOnVisibleRestingOrigin() async throws {
+        let app = NSApplication.shared
+        let presenter = NudgeOverlayPresenter()
+        let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
+
+        presenter.show(message: "先推进一步：写日记", intensity: .strong)
+        defer { presenter.closeAll() }
+
+        let panel = try XCTUnwrap(app.windows.first { window in
+            !existingWindows.contains(ObjectIdentifier(window)) && window is NSPanel
+        } as? NSPanel)
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let expectedOrigin = NSPoint(
+            x: screenFrame.midX - NudgeIntensity.strong.width / 2,
+            y: screenFrame.maxY - NudgeIntensity.strong.height - 10
+        )
+
+        try await Task.sleep(for: .milliseconds(380))
+
+        XCTAssertEqual(panel.frame.origin.x, expectedOrigin.x, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.origin.y, expectedOrigin.y, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(panel.frame.maxY, screenFrame.maxY)
+    }
+
     func testUpwardMotionPresentationFollowsAndSignalsDismiss() {
         let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 16, height: 44))
 

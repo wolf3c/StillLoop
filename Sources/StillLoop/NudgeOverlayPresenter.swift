@@ -583,7 +583,14 @@ final class NudgeOverlayPresenter {
             x: state.restingOrigin.x + presentation.offset.width,
             y: state.restingOrigin.y + presentation.offset.height
         )
-        let updates = {
+        let setFinalState = {
+            state.panel.setFrameOrigin(origin)
+            state.panel.alphaValue = presentation.alpha
+            state.panel.contentView?.layer?.setAffineTransform(
+                CGAffineTransform(scaleX: presentation.scale, y: presentation.scale)
+            )
+        }
+        let animatedUpdates = {
             if animated {
                 state.panel.animator().setFrameOrigin(origin)
                 state.panel.animator().alphaValue = presentation.alpha
@@ -596,13 +603,15 @@ final class NudgeOverlayPresenter {
             )
         }
         guard animated else {
-            updates()
+            setFinalState()
             return
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.allowsImplicitAnimation = true
-            updates()
+            animatedUpdates()
+        } completionHandler: {
+            setFinalState()
         }
     }
 
