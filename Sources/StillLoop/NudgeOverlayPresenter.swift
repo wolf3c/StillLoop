@@ -85,7 +85,6 @@ enum NudgeOverlayInteraction {
 
     private static let clickMovementTolerance: CGFloat = 8
     private static let dismissVelocityThreshold: CGFloat = 720
-    private static let nonDismissResistanceLimit: CGFloat = 82
 
     static func shouldDismiss(translation: CGSize) -> Bool {
         releaseAction(translation: translation) == .dismiss
@@ -123,25 +122,14 @@ enum NudgeOverlayInteraction {
     }
 
     static func motionPresentation(for offset: CGSize) -> NudgeOverlayMotionPresentation {
-        let visualOffset = CGSize(
-            width: resistedNonDismissOffset(offset.width),
-            height: offset.height >= 0 ? offset.height : resistedNonDismissOffset(offset.height)
-        )
-        let isDismissDirection = isUpwardDominant(offset)
-        let upwardProgress = isDismissDirection ? min(max(offset.height, 0) / dismissDragThreshold, 1) : 0
-        let nonDismissProgress = min(
-            max(abs(visualOffset.width), isDismissDirection ? 0 : abs(visualOffset.height)) / dismissDragThreshold,
-            1
-        )
-        let alpha = upwardProgress > 0
-            ? 1 - 0.36 * upwardProgress
-            : 1 - 0.08 * nonDismissProgress
-        let scale = upwardProgress > 0
-            ? 1 - 0.04 * upwardProgress
-            : 1 - 0.012 * nonDismissProgress
+        guard isUpwardDominant(offset) else { return visiblePresentation }
+
+        let upwardProgress = min(max(offset.height, 0) / dismissDragThreshold, 1)
+        let alpha = 1 - 0.36 * upwardProgress
+        let scale = 1 - 0.04 * upwardProgress
 
         return NudgeOverlayMotionPresentation(
-            offset: visualOffset,
+            offset: CGSize(width: 0, height: offset.height),
             alpha: alpha,
             scale: scale
         )
@@ -166,16 +154,6 @@ enum NudgeOverlayInteraction {
 
     private static func isUpwardDominant(_ vector: CGSize) -> Bool {
         vector.height > 0 && vector.height > abs(vector.width)
-    }
-
-    private static func resistedNonDismissOffset(_ value: CGFloat) -> CGFloat {
-        let magnitude = abs(value)
-        guard magnitude > dismissDragThreshold else { return value }
-        let resistedMagnitude = min(
-            dismissDragThreshold + (magnitude - dismissDragThreshold) * 0.18,
-            nonDismissResistanceLimit
-        )
-        return value < 0 ? -resistedMagnitude : resistedMagnitude
     }
 }
 

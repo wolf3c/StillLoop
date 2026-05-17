@@ -108,30 +108,28 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     func testUpwardMotionPresentationFollowsAndSignalsDismiss() {
-        let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 0, height: 44))
+        let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 16, height: 44))
 
+        XCTAssertEqual(presentation.offset.width, 0, accuracy: 0.1)
         XCTAssertEqual(presentation.offset.height, 44, accuracy: 0.1)
         XCTAssertLessThan(presentation.alpha, 0.78)
         XCTAssertLessThan(presentation.scale, 0.98)
     }
 
-    func testHorizontalAndDownwardMotionFollowWithoutStrongFade() {
+    func testHorizontalAndDownwardMotionStayAtRestAndRebound() {
         let horizontal = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 44, height: 0))
         let downward = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 0, height: -36))
 
-        XCTAssertEqual(horizontal.offset.width, 44, accuracy: 0.1)
-        XCTAssertEqual(downward.offset.height, -36, accuracy: 0.1)
-        XCTAssertGreaterThan(horizontal.alpha, 0.9)
-        XCTAssertGreaterThan(downward.alpha, 0.9)
+        XCTAssertEqual(horizontal, NudgeOverlayInteraction.visiblePresentation)
+        XCTAssertEqual(downward, NudgeOverlayInteraction.visiblePresentation)
         XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: horizontal.offset), .rebound)
         XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: downward.offset), .rebound)
     }
 
-    func testHorizontalMotionUsesResistancePastThreshold() {
+    func testHorizontalMotionPastThresholdStillStaysAtRest() {
         let presentation = NudgeOverlayInteraction.motionPresentation(for: CGSize(width: 220, height: 0))
 
-        XCTAssertGreaterThan(abs(presentation.offset.width), NudgeOverlayInteraction.dismissDragThreshold)
-        XCTAssertLessThan(abs(presentation.offset.width), 100)
+        XCTAssertEqual(presentation, NudgeOverlayInteraction.visiblePresentation)
         XCTAssertEqual(NudgeOverlayInteraction.releaseAction(translation: presentation.offset), .rebound)
     }
 
@@ -193,7 +191,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testPreciseHorizontalScrollReboundsAfterIdleWithoutEndedPhase() async throws {
+    func testPreciseHorizontalScrollStaysAtRestAndReboundsAfterIdleWithoutEndedPhase() async throws {
         var presentations: [NudgeOverlayMotionPresentation] = []
         var releaseActions: [NudgeOverlayReleaseAction] = []
         let view = NudgeOverlayInteractionView(
@@ -206,7 +204,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
 
         let presentation = try XCTUnwrap(presentations.first)
-        XCTAssertLessThan(abs(presentation.offset.width), 100)
+        XCTAssertEqual(presentation, NudgeOverlayInteraction.visiblePresentation)
         XCTAssertEqual(releaseActions, [.rebound])
     }
 
