@@ -39,6 +39,21 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertLessThan(launchRowRange.lowerBound, modelSettingsRange.lowerBound)
     }
 
+    func testSettingsLaunchAtLoginTopEntryUsesCardBackground() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let settingsStart = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
+        let rowStart = try XCTUnwrap(source.range(of: "private struct SettingsLaunchAtLoginRow: View"))
+        let settingsSnippet = String(source[settingsStart.lowerBound..<rowStart.lowerBound])
+        let launchRowRange = try XCTUnwrap(settingsSnippet.range(of: "SettingsLaunchAtLoginRow()"))
+        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "Text(\"模型设置\")"))
+        let launchEntrySnippet = String(settingsSnippet[launchRowRange.lowerBound..<modelSettingsRange.lowerBound])
+
+        XCTAssertTrue(launchEntrySnippet.contains(".padding(14)"))
+        XCTAssertTrue(launchEntrySnippet.contains(".frame(maxWidth: 520"))
+        XCTAssertTrue(launchEntrySnippet.contains(".background(.thinMaterial)"))
+        XCTAssertTrue(launchEntrySnippet.contains(".clipShape(RoundedRectangle(cornerRadius: 8))"))
+    }
+
     func testPrivacySectionDoesNotContainLaunchAtLoginRow() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
         let privacyStart = try XCTUnwrap(source.range(of: "private struct SettingsPrivacySection: View"))

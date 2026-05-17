@@ -1514,8 +1514,10 @@ private struct SettingsView: View {
                 Text("设置")
                     .font(.largeTitle.weight(.semibold))
                 SettingsLaunchAtLoginRow()
-                    .padding(.horizontal, 14)
+                    .padding(14)
                     .frame(maxWidth: 520, alignment: .leading)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 Button {
                     model.screen = .modelSetup
                 } label: {
