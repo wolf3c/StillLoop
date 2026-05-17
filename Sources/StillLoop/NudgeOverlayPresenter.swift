@@ -135,6 +135,10 @@ enum NudgeOverlayInteraction {
         )
     }
 
+    static func shouldTrackMotion(_ offset: CGSize) -> Bool {
+        isUpwardDominant(offset)
+    }
+
     static func entryOrigin(for restingOrigin: NSPoint) -> NSPoint {
         NSPoint(x: restingOrigin.x, y: restingOrigin.y + topTravelDistance)
     }
@@ -168,9 +172,11 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
     private var lastMouseScreenLocation: NSPoint?
     private var lastMouseEventTimestamp: TimeInterval?
     private var mouseVelocity = CGSize.zero
+    private var hasActiveMouseMotion = false
     private var hasDismissed = false
     private var scrollAccumulatedDelta = CGSize.zero
     private var lastScrollEventTimestamp: TimeInterval?
+    private var hasActiveScrollMotion = false
     private var scrollIdleReboundTask: Task<Void, Never>?
 
     init(
@@ -208,8 +214,8 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         lastMouseScreenLocation = NSEvent.mouseLocation
         lastMouseEventTimestamp = event.timestamp
         mouseVelocity = .zero
+        hasActiveMouseMotion = false
         hasDismissed = false
-        onInteractionBegan()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -219,7 +225,16 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             width: NSEvent.mouseLocation.x - mouseDownScreenLocation.x,
             height: NSEvent.mouseLocation.y - mouseDownScreenLocation.y
         )
-        onMotionChanged(NudgeOverlayInteraction.motionPresentation(for: translation))
+        if NudgeOverlayInteraction.shouldTrackMotion(translation) {
+            if !hasActiveMouseMotion {
+                onInteractionBegan()
+            }
+            hasActiveMouseMotion = true
+            onMotionChanged(NudgeOverlayInteraction.motionPresentation(for: translation))
+        } else if hasActiveMouseMotion {
+            hasActiveMouseMotion = false
+            onMotionChanged(NudgeOverlayInteraction.visiblePresentation)
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -235,14 +250,17 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             return
         }
         let action = NudgeOverlayInteraction.releaseAction(translation: translation, velocity: mouseVelocity)
-        finishGesture(action)
+        if action == .dismiss || hasActiveMouseMotion {
+            finishGesture(action)
+        } else {
+            resetMouseTracking()
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
         guard !hasDismissed else { return }
         guard event.hasPreciseScrollingDeltas else { return }
         resetScrollTrackingIfNeeded(for: event)
-        onInteractionBegan()
         let delta = CGSize(
             width: NudgeOverlayInteraction.deviceScrollDelta(
                 scrollingDelta: event.scrollingDeltaX,
@@ -253,8 +271,26 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
                 directionInvertedFromDevice: event.isDirectionInvertedFromDevice
             )
         )
-        scrollAccumulatedDelta.width += delta.width
-        scrollAccumulatedDelta.height += delta.height
+        let accumulatedDelta = CGSize(
+            width: scrollAccumulatedDelta.width + delta.width,
+            height: scrollAccumulatedDelta.height + delta.height
+        )
+
+        guard NudgeOverlayInteraction.shouldTrackMotion(accumulatedDelta) else {
+            if hasActiveScrollMotion {
+                finishGesture(.rebound)
+            } else {
+                scrollAccumulatedDelta = .zero
+                lastScrollEventTimestamp = nil
+            }
+            return
+        }
+
+        if !hasActiveScrollMotion {
+            onInteractionBegan()
+        }
+        hasActiveScrollMotion = true
+        scrollAccumulatedDelta = accumulatedDelta
         lastScrollEventTimestamp = event.timestamp
         let presentation = NudgeOverlayInteraction.motionPresentation(for: scrollAccumulatedDelta)
         onMotionChanged(presentation)
@@ -291,6 +327,7 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
             || lastScrollEventTimestamp.map({ event.timestamp - $0 > 0.35 }) != false {
             scrollIdleReboundTask?.cancel()
             scrollAccumulatedDelta = .zero
+            hasActiveScrollMotion = false
         }
     }
 
@@ -328,6 +365,7 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         lastMouseScreenLocation = nil
         lastMouseEventTimestamp = nil
         mouseVelocity = .zero
+        hasActiveMouseMotion = false
     }
 
     private func finishGesture(_ action: NudgeOverlayReleaseAction) {
@@ -339,6 +377,7 @@ final class NudgeOverlayInteractionView: NSVisualEffectView {
         resetMouseTracking()
         scrollAccumulatedDelta = .zero
         lastScrollEventTimestamp = nil
+        hasActiveScrollMotion = false
         onRelease(action)
     }
 }

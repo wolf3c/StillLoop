@@ -191,11 +191,13 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testPreciseHorizontalScrollStaysAtRestAndReboundsAfterIdleWithoutEndedPhase() async throws {
+    func testPreciseHorizontalScrollIsIgnoredWhenNoUpwardMotionIsActive() async throws {
+        var didBeginInteraction = false
         var presentations: [NudgeOverlayMotionPresentation] = []
         var releaseActions: [NudgeOverlayReleaseAction] = []
         let view = NudgeOverlayInteractionView(
             onOpen: {},
+            onInteractionBegan: { didBeginInteraction = true },
             onMotionChanged: { presentations.append($0) },
             onRelease: { releaseActions.append($0) }
         )
@@ -203,9 +205,29 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         view.scrollWheel(with: try scrollEvent(deltaX: 220, units: .pixel))
         try await Task.sleep(for: .milliseconds(300))
 
-        let presentation = try XCTUnwrap(presentations.first)
-        XCTAssertEqual(presentation, NudgeOverlayInteraction.visiblePresentation)
-        XCTAssertEqual(releaseActions, [.rebound])
+        XCTAssertFalse(didBeginInteraction)
+        XCTAssertTrue(presentations.isEmpty)
+        XCTAssertTrue(releaseActions.isEmpty)
+    }
+
+    @MainActor
+    func testPreciseDownwardScrollIsIgnoredWhenNoUpwardMotionIsActive() async throws {
+        var didBeginInteraction = false
+        var presentations: [NudgeOverlayMotionPresentation] = []
+        var releaseActions: [NudgeOverlayReleaseAction] = []
+        let view = NudgeOverlayInteractionView(
+            onOpen: {},
+            onInteractionBegan: { didBeginInteraction = true },
+            onMotionChanged: { presentations.append($0) },
+            onRelease: { releaseActions.append($0) }
+        )
+
+        view.scrollWheel(with: try scrollEvent(deltaY: -36, units: .pixel))
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertFalse(didBeginInteraction)
+        XCTAssertTrue(presentations.isEmpty)
+        XCTAssertTrue(releaseActions.isEmpty)
     }
 
     @MainActor
