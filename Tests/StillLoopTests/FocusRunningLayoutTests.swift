@@ -11,11 +11,30 @@ final class FocusRunningLayoutTests: XCTestCase {
 
     func testFocusScreenKeepsGrowingContentScrollableInsideItsRegion() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let detailsStart = try XCTUnwrap(source.range(of: "private var scrollingFocusDetails: some View"))
+        let titleStart = try XCTUnwrap(source.range(of: "private var focusTitle: some View"))
+        let snippet = String(source[detailsStart.lowerBound..<titleStart.lowerBound])
 
-        XCTAssertTrue(source.contains("private var mainColumn: some View"))
-        XCTAssertTrue(source.contains("ScrollView {"))
+        XCTAssertTrue(snippet.contains("ScrollView {"))
+        XCTAssertTrue(snippet.contains("analysisPanel"))
+        XCTAssertTrue(snippet.contains("footerText"))
+        XCTAssertTrue(snippet.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)"))
+        XCTAssertFalse(snippet.contains("focusTitle"))
+        XCTAssertFalse(snippet.contains("metrics"))
+        XCTAssertFalse(snippet.contains("actions"))
         XCTAssertTrue(source.contains(".frame(width: 260)"))
-        XCTAssertTrue(source.contains(".frame(maxHeight: .infinity)"))
+    }
+
+    func testFocusActionsStayOutsideScrollRegion() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let mainStart = try XCTUnwrap(source.range(of: "private var mainColumn: some View"))
+        let detailsStart = try XCTUnwrap(source.range(of: "private var scrollingFocusDetails: some View"))
+        let snippet = String(source[mainStart.lowerBound..<detailsStart.lowerBound])
+
+        XCTAssertTrue(snippet.contains("fixedFocusSummary"))
+        XCTAssertTrue(snippet.contains("scrollingFocusDetails"))
+        XCTAssertTrue(snippet.contains("actions"))
+        XCTAssertFalse(snippet.contains("ScrollView {"))
     }
 
     func testRecentContextLongTextCannotExpandFocusPanelIndefinitely() throws {

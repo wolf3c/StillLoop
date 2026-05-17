@@ -504,13 +504,27 @@ private struct FocusRunningView: View {
     }
 
     private var mainColumn: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            fixedFocusSummary
+            scrollingFocusDetails
+            actions
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var fixedFocusSummary: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            focusTitle
+            metrics
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var scrollingFocusDetails: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                focusTitle
-                metrics
                 analysisPanel
                 footerText
-                actions
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.bottom, 4)
