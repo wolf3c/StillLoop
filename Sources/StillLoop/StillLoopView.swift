@@ -515,7 +515,6 @@ private struct FocusRunningView: View {
     private var fixedFocusSummary: some View {
         VStack(alignment: .leading, spacing: 18) {
             focusTitle
-            metrics
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -523,6 +522,7 @@ private struct FocusRunningView: View {
     private var scrollingFocusDetails: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                metrics
                 analysisPanel
                 footerText
             }

@@ -16,11 +16,11 @@ final class FocusRunningLayoutTests: XCTestCase {
         let snippet = String(source[detailsStart.lowerBound..<titleStart.lowerBound])
 
         XCTAssertTrue(snippet.contains("ScrollView {"))
+        XCTAssertTrue(snippet.contains("metrics"))
         XCTAssertTrue(snippet.contains("analysisPanel"))
         XCTAssertTrue(snippet.contains("footerText"))
         XCTAssertTrue(snippet.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)"))
         XCTAssertFalse(snippet.contains("focusTitle"))
-        XCTAssertFalse(snippet.contains("metrics"))
         XCTAssertFalse(snippet.contains("actions"))
         XCTAssertTrue(source.contains(".frame(width: 260)"))
     }
@@ -34,6 +34,7 @@ final class FocusRunningLayoutTests: XCTestCase {
         XCTAssertTrue(snippet.contains("fixedFocusSummary"))
         XCTAssertTrue(snippet.contains("scrollingFocusDetails"))
         XCTAssertTrue(snippet.contains("actions"))
+        XCTAssertFalse(snippet.contains("metrics"))
         XCTAssertFalse(snippet.contains("ScrollView {"))
     }
 
