@@ -31,9 +31,9 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(NudgeIntensity.strong.displayDuration, 12)
     }
 
-    func testDistractedAndStuckOverlaysUseGlobalHudWindowLevel() {
-        XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .screenSaver)
-        XCTAssertEqual(NudgeIntensity.strong.windowLevel, .screenSaver)
+    func testDistractedAndStuckOverlaysUseStatusBarWindowLevel() {
+        XCTAssertEqual(NudgeIntensity.noticeable.windowLevel, .statusBar)
+        XCTAssertEqual(NudgeIntensity.strong.windowLevel, .statusBar)
     }
 
     func testShortOrDownwardDragsDoNotDismissOverlay() {
@@ -269,7 +269,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
-    func testOverlayUsesCardBoundaryWithoutWindowShadow() throws {
+    func testOverlayUsesStableHudMaterialWithoutCustomLayerShadow() throws {
         let app = NSApplication.shared
         let presenter = NudgeOverlayPresenter()
         let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
@@ -285,20 +285,18 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertFalse(panel.hasShadow)
         XCTAssertEqual(panel.frame.width, NudgeIntensity.noticeable.width, accuracy: 0.5)
         XCTAssertEqual(panel.frame.height, NudgeIntensity.noticeable.height, accuracy: 0.5)
-        XCTAssertTrue(contentView is NudgeOverlayInteractionView)
+        let interactionView = try XCTUnwrap(contentView as? NudgeOverlayInteractionView)
+        XCTAssertEqual(interactionView.material, .hudWindow)
+        XCTAssertEqual(interactionView.blendingMode, .behindWindow)
         let layer = try XCTUnwrap(contentView.layer)
-        XCTAssertFalse(layer.masksToBounds)
-        XCTAssertNotNil(layer.backgroundColor)
-        XCTAssertGreaterThanOrEqual(layer.borderWidth, 0.5)
-        XCTAssertGreaterThan(layer.shadowOpacity, 0)
-        XCTAssertLessThanOrEqual(layer.shadowOpacity, 0.22)
-        XCTAssertGreaterThan(layer.shadowRadius, 4)
-        XCTAssertLessThanOrEqual(layer.shadowRadius, 14)
-        XCTAssertNotNil(layer.shadowPath)
+        XCTAssertTrue(layer.masksToBounds)
+        XCTAssertNil(layer.shadowPath)
+        XCTAssertEqual(layer.shadowOpacity, 0)
+        XCTAssertEqual(layer.borderWidth, 0)
     }
 
     @MainActor
-    func testOverlayStaysVisibleAcrossSpacesWhenShownFromBackgroundApp() throws {
+    func testOverlayKeepsOriginalCrossSpaceBehavior() throws {
         let app = NSApplication.shared
         let presenter = NudgeOverlayPresenter()
         let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
@@ -312,7 +310,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
 
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
-        XCTAssertTrue(panel.collectionBehavior.contains(.stationary))
+        XCTAssertFalse(panel.collectionBehavior.contains(.stationary))
         XCTAssertFalse(panel.collectionBehavior.contains(.moveToActiveSpace))
     }
 

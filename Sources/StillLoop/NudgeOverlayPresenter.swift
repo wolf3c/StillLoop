@@ -20,9 +20,7 @@ enum NudgeIntensity: Equatable {
         switch self {
         case .gentle:
             return .floating
-        case .noticeable, .strong:
-            return .screenSaver
-        case .permission:
+        case .noticeable, .strong, .permission:
             return .statusBar
         }
     }
@@ -453,7 +451,7 @@ final class NudgeOverlayPresenter {
         panel.level = intensity.windowLevel
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -504,11 +502,12 @@ final class NudgeOverlayPresenter {
             onMotionChanged: onMotionChanged,
             onRelease: onRelease
         )
-        container.material = .popover
+        container.material = .hudWindow
         container.blendingMode = .behindWindow
         container.state = .active
         container.wantsLayer = true
-        configureOverlayLayer(container.layer, size: NSSize(width: intensity.width, height: intensity.height))
+        container.layer?.cornerRadius = Self.overlayCornerRadius
+        container.layer?.masksToBounds = true
 
         let accent = NSView()
         accent.wantsLayer = true
@@ -537,26 +536,6 @@ final class NudgeOverlayPresenter {
         ])
 
         return container
-    }
-
-    private func configureOverlayLayer(_ layer: CALayer?, size: NSSize) {
-        guard let layer else { return }
-        let bounds = CGRect(origin: .zero, size: size)
-        layer.cornerRadius = Self.overlayCornerRadius
-        layer.masksToBounds = false
-        layer.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.82).cgColor
-        layer.borderWidth = 1
-        layer.borderColor = NSColor.separatorColor.withAlphaComponent(0.38).cgColor
-        layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 10
-        layer.shadowOffset = CGSize(width: 0, height: -4)
-        layer.shadowPath = CGPath(
-            roundedRect: bounds,
-            cornerWidth: Self.overlayCornerRadius,
-            cornerHeight: Self.overlayCornerRadius,
-            transform: nil
-        )
     }
 
     private func origin(for intensity: NudgeIntensity) -> NSPoint {
