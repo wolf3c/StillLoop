@@ -65,4 +65,17 @@ final class ReviewScreenTests: XCTestCase {
         let newSessionSnippet = String(source[newSessionButton.lowerBound..<newSessionSnippetEnd])
         XCTAssertTrue(newSessionSnippet.contains(".buttonStyle(.borderedProminent)"))
     }
+
+    func testReviewTaskTitleCannotPushContinueButtonAway() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let summaryStart = try XCTUnwrap(source.range(of: "private struct ReviewTaskSummary: View"))
+        let nextSection = try XCTUnwrap(source.range(of: "private struct ReviewAppUsageCard: View"))
+        let snippet = String(source[summaryStart.lowerBound..<nextSection.lowerBound])
+
+        XCTAssertFalse(snippet.contains(".fixedSize(horizontal: true, vertical: false)"))
+        XCTAssertFalse(snippet.contains(".frame(width: 320, alignment: .leading)"))
+        XCTAssertTrue(snippet.contains(".frame(maxWidth: 380, alignment: .leading)"))
+        XCTAssertTrue(snippet.contains(".layoutPriority(1)"))
+        XCTAssertTrue(snippet.contains(".help(task)"))
+    }
 }

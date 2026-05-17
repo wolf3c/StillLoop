@@ -519,10 +519,13 @@ private struct FocusRunningView: View {
     }
 
     private var focusTitle: some View {
-        Text(model.currentSession?.task ?? "")
-            .font(.system(size: 28, weight: .semibold))
-            .lineLimit(2)
+        let task = model.currentSession?.task ?? ""
+        return Text(task)
+            .font(.system(size: 24, weight: .semibold))
+            .lineLimit(1)
             .truncationMode(.tail)
+            .frame(maxWidth: 680, alignment: .leading)
+            .help(task)
     }
 
     private var metrics: some View {
@@ -1183,17 +1186,10 @@ private struct ReviewTaskSummary: View {
             Text("本次任务")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    taskText
-                        .fixedSize(horizontal: true, vertical: false)
-                    continueButton
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    taskText
-                        .frame(width: 320, alignment: .leading)
-                    continueButton
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                taskText
+                    .frame(maxWidth: 380, alignment: .leading)
+                continueButton
             }
         }
         .frame(maxWidth: 640, alignment: .leading)
@@ -1204,12 +1200,14 @@ private struct ReviewTaskSummary: View {
             .font(.body.weight(.semibold))
             .lineLimit(1)
             .truncationMode(.tail)
+            .help(task)
     }
 
     private var continueButton: some View {
         Button("继续这个任务", action: continueAction)
             .buttonStyle(.bordered)
             .controlSize(.regular)
+            .layoutPriority(1)
     }
 }
 
