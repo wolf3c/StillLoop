@@ -1,6 +1,7 @@
 import XCTest
 @testable import StillLoop
 import StillLoopCore
+import TraceMind
 
 @MainActor
 final class StillLoopTelemetryTests: XCTestCase {
@@ -71,6 +72,54 @@ final class StillLoopTelemetryTests: XCTestCase {
         XCTAssertEqual(telemetry.screens, [.privacy])
     }
 
+    func testUserFeedbackDraftBuildsTraceMindFeedbackWithoutImplicitLocalContext() {
+        let draft = StillLoopUserFeedbackDraft(
+            kind: .issue,
+            body: "模型设置页打不开",
+            screen: "settings",
+            modelSource: .manual
+        )
+
+        let message = draft.traceMindMessage
+
+        XCTAssertEqual(message.kind, "issue")
+        XCTAssertEqual(message.body, "模型设置页打不开")
+        XCTAssertNil(message.contact.email)
+        XCTAssertFalse(message.contact.consent)
+        XCTAssertEqual(message.fields["screen"], TraceMindValue.string("settings"))
+        XCTAssertEqual(message.fields["modelSource"], TraceMindValue.string("manual"))
+
+        let serializedMessage = String(describing: message)
+        XCTAssertFalse(serializedMessage.contains("taskText"))
+        XCTAssertFalse(serializedMessage.contains("windowTitle"))
+        XCTAssertFalse(serializedMessage.contains("screenshot"))
+        XCTAssertFalse(serializedMessage.contains("apiKey"))
+    }
+
+    func testSubmittingUserFeedbackUsesFeedbackApiAndUpdatesStatus() async {
+        let telemetry = SpyStillLoopTelemetry()
+        let model = AppModel(
+            userDefaults: Self.makeIsolatedUserDefaults(),
+            supportDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true),
+            telemetry: telemetry
+        )
+        model.screen = .settings
+        model.userFeedbackKind = .idea
+        model.userFeedbackBody = "希望增加快捷反馈入口"
+
+        await model.submitUserFeedback()
+
+        XCTAssertEqual(model.userFeedbackSubmissionStatus, .sent)
+        XCTAssertEqual(model.userFeedbackBody, "")
+        XCTAssertEqual(telemetry.feedbackDrafts.count, 1)
+        XCTAssertEqual(telemetry.feedbackDrafts.first?.kind, .idea)
+        XCTAssertEqual(telemetry.feedbackDrafts.first?.body, "希望增加快捷反馈入口")
+        XCTAssertEqual(telemetry.feedbackDrafts.first?.screen, "settings")
+        XCTAssertEqual(telemetry.feedbackDrafts.first?.modelSource, .bundled)
+        XCTAssertTrue(telemetry.events.isEmpty)
+    }
+
     private static func makeIsolatedUserDefaults() -> UserDefaults {
         let suiteName = "StillLoopTelemetryTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -84,6 +133,7 @@ private final class SpyStillLoopTelemetry: StillLoopTelemetryRecording {
     var didStart = false
     var screens: [AppModel.Screen] = []
     var events: [StillLoopTelemetryEvent] = []
+    var feedbackDrafts: [StillLoopUserFeedbackDraft] = []
 
     func start() {
         didStart = true
@@ -95,5 +145,9 @@ private final class SpyStillLoopTelemetry: StillLoopTelemetryRecording {
 
     func record(_ event: StillLoopTelemetryEvent) {
         events.append(event)
+    }
+
+    func submitUserFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {
+        feedbackDrafts.append(draft)
     }
 }

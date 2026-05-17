@@ -192,11 +192,54 @@ struct StillLoopTelemetryEvent: Equatable, CustomStringConvertible {
     }
 }
 
+enum StillLoopUserFeedbackKind: String, CaseIterable, Equatable, Identifiable {
+    case issue
+    case idea
+    case question
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .issue:
+            return "问题"
+        case .idea:
+            return "建议"
+        case .question:
+            return "疑问"
+        case .other:
+            return "其他"
+        }
+    }
+}
+
+struct StillLoopUserFeedbackDraft: Equatable {
+    var kind: StillLoopUserFeedbackKind
+    var body: String
+    var screen: String
+    var modelSource: ModelSetupSelection.Source
+
+    var traceMindMessage: TraceMindFeedbackMessage {
+        TraceMindFeedbackMessage(
+            kind: kind.rawValue,
+            title: kind.title,
+            body: body.trimmingCharacters(in: .whitespacesAndNewlines),
+            fields: [
+                "screen": .string(screen),
+                "modelSource": .string(modelSource.rawValue)
+            ],
+            attachments: []
+        )
+    }
+}
+
 @MainActor
 protocol StillLoopTelemetryRecording {
     func start()
     func setScreen(_ screen: AppModel.Screen)
     func record(_ event: StillLoopTelemetryEvent)
+    func submitUserFeedback(_ draft: StillLoopUserFeedbackDraft) async throws
 }
 
 final class NoopStillLoopTelemetry: StillLoopTelemetryRecording {
@@ -205,6 +248,7 @@ final class NoopStillLoopTelemetry: StillLoopTelemetryRecording {
     func start() {}
     func setScreen(_ screen: AppModel.Screen) {}
     func record(_ event: StillLoopTelemetryEvent) {}
+    func submitUserFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {}
 }
 
 @MainActor
@@ -236,6 +280,10 @@ final class StillLoopTelemetry: StillLoopTelemetryRecording {
         client.capture(event)
     }
 
+    func submitUserFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {
+        try await client.submitFeedback(draft)
+    }
+
     static func screenName(for screen: AppModel.Screen) -> String {
         switch screen {
         case .welcome:
@@ -263,6 +311,7 @@ protocol TraceMindTelemetryClienting {
     func start(projectKey: String)
     func setScreen(_ screen: String)
     func capture(_ event: StillLoopTelemetryEvent)
+    func submitFeedback(_ draft: StillLoopUserFeedbackDraft) async throws
 }
 
 @MainActor
@@ -301,6 +350,24 @@ final class TraceMindTelemetryClient: TraceMindTelemetryClienting {
         Task {
             try? await manualClient.flush()
         }
+    }
+
+    func submitFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {
+        let message = draft.traceMindMessage
+        guard let manualClient else {
+            try await TraceMind.submitFeedback(
+                message: message,
+                path: draft.screen,
+                title: draft.kind.title
+            )
+            return
+        }
+
+        try await manualClient.submitFeedback(
+            message: message,
+            path: draft.screen,
+            title: draft.kind.title
+        )
     }
 }
 

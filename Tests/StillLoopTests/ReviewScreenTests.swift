@@ -36,37 +36,43 @@ final class ReviewScreenTests: XCTestCase {
 
     func testReviewViewShowsTaskAndRemovesFeedbackControls() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let reviewStart = try XCTUnwrap(source.range(of: "private struct ReviewView: View"))
+        let reviewEnd = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
+        let snippet = String(source[reviewStart.lowerBound..<reviewEnd.lowerBound])
 
-        XCTAssertTrue(source.contains("本次任务"))
-        XCTAssertTrue(source.contains("继续这个任务"))
-        XCTAssertFalse(source.contains("用户反馈"))
-        XCTAssertFalse(source.contains("ForEach(SessionFeedback.allCases"))
+        XCTAssertTrue(snippet.contains("本次任务"))
+        XCTAssertTrue(snippet.contains("继续这个任务"))
+        XCTAssertFalse(snippet.contains("用户反馈"))
+        XCTAssertFalse(snippet.contains("ForEach(SessionFeedback.allCases"))
     }
 
     func testReviewActionsUseCorrectPriorityAndPlacement() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let reviewStart = try XCTUnwrap(source.range(of: "private struct ReviewView: View"))
+        let reviewEnd = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
+        let snippet = String(source[reviewStart.lowerBound..<reviewEnd.lowerBound])
 
-        XCTAssertTrue(source.contains("ReviewTaskSummary(task: session.task)"))
-        XCTAssertTrue(source.contains("ReviewCommentCard(comment: reviewComment)"))
-        XCTAssertFalse(source.contains(".font(.title2.weight(.semibold))"))
+        XCTAssertTrue(snippet.contains("ReviewTaskSummary(task: session.task)"))
+        XCTAssertTrue(snippet.contains("ReviewCommentCard(comment: reviewComment)"))
+        XCTAssertFalse(snippet.contains(".font(.title2.weight(.semibold))"))
 
-        let taskSummary = try XCTUnwrap(source.range(of: "ReviewTaskSummary(task: session.task)"))
-        let commentCard = try XCTUnwrap(source.range(of: "ReviewCommentCard(comment: reviewComment)"))
-        let usageCard = try XCTUnwrap(source.range(of: "ReviewAppUsageCard(topApps: summary.topApps)"))
-        let newSessionButton = try XCTUnwrap(source.range(of: "Button(\"开始新的专注\""))
+        let taskSummary = try XCTUnwrap(snippet.range(of: "ReviewTaskSummary(task: session.task)"))
+        let commentCard = try XCTUnwrap(snippet.range(of: "ReviewCommentCard(comment: reviewComment)"))
+        let usageCard = try XCTUnwrap(snippet.range(of: "ReviewAppUsageCard(topApps: summary.topApps)"))
+        let newSessionButton = try XCTUnwrap(snippet.range(of: "Button(\"开始新的专注\""))
         XCTAssertLessThan(taskSummary.lowerBound, commentCard.lowerBound)
         XCTAssertLessThan(commentCard.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(taskSummary.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(usageCard.lowerBound, newSessionButton.lowerBound)
 
-        let continueButton = try XCTUnwrap(source.range(of: "Button(\"继续这个任务\""))
-        let continueSnippetEnd = source.index(continueButton.lowerBound, offsetBy: 260, limitedBy: source.endIndex) ?? source.endIndex
-        let continueSnippet = String(source[continueButton.lowerBound..<continueSnippetEnd])
+        let continueButton = try XCTUnwrap(snippet.range(of: "Button(\"继续这个任务\""))
+        let continueSnippetEnd = snippet.index(continueButton.lowerBound, offsetBy: 260, limitedBy: snippet.endIndex) ?? snippet.endIndex
+        let continueSnippet = String(snippet[continueButton.lowerBound..<continueSnippetEnd])
         XCTAssertTrue(continueSnippet.contains(".buttonStyle(.bordered)"))
         XCTAssertFalse(continueSnippet.contains(".buttonStyle(.borderedProminent)"))
 
-        let newSessionSnippetEnd = source.index(newSessionButton.lowerBound, offsetBy: 220, limitedBy: source.endIndex) ?? source.endIndex
-        let newSessionSnippet = String(source[newSessionButton.lowerBound..<newSessionSnippetEnd])
+        let newSessionSnippetEnd = snippet.index(newSessionButton.lowerBound, offsetBy: 220, limitedBy: snippet.endIndex) ?? snippet.endIndex
+        let newSessionSnippet = String(snippet[newSessionButton.lowerBound..<newSessionSnippetEnd])
         XCTAssertTrue(newSessionSnippet.contains(".buttonStyle(.borderedProminent)"))
     }
 

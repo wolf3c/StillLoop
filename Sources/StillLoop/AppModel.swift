@@ -24,6 +24,13 @@ final class AppModel: ObservableObject {
         case ended = "已结束"
     }
 
+    enum UserFeedbackSubmissionStatus: Equatable {
+        case idle
+        case submitting
+        case sent
+        case failed
+    }
+
     enum AnalysisPhase: Equatable {
         case idle
         case capturing
@@ -225,6 +232,11 @@ final class AppModel: ObservableObject {
     @Published var llmBaseURLText = ""
     @Published var llmModelText = ""
     @Published var onlineAPIKeyText = ""
+    @Published var isUserFeedbackPresented = false
+    @Published var userFeedbackKind: StillLoopUserFeedbackKind = .issue
+    @Published var userFeedbackBody = ""
+    @Published var userFeedbackSubmissionStatus: UserFeedbackSubmissionStatus = .idle
+    @Published var userFeedbackSubmissionMessage = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
     @Published var isModelConnectionUsable = false
@@ -595,6 +607,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var canSubmitUserFeedback: Bool {
+        !userFeedbackBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && userFeedbackSubmissionStatus != .submitting
+    }
+
     var setupIssueIndicators: [SetupIssueIndicator] {
         var indicators: [SetupIssueIndicator] = []
         if hasMissingPermissions {
@@ -609,6 +626,35 @@ final class AppModel: ObservableObject {
     func bypassInitialSetup() {
         hasBypassedInitialSetup = true
         userDefaults.set(true, forKey: DefaultsKey.hasCompletedInitialSetup)
+    }
+
+    func openUserFeedback() {
+        userFeedbackSubmissionStatus = .idle
+        userFeedbackSubmissionMessage = ""
+        isUserFeedbackPresented = true
+    }
+
+    func submitUserFeedback() async {
+        guard canSubmitUserFeedback else { return }
+
+        let draft = StillLoopUserFeedbackDraft(
+            kind: userFeedbackKind,
+            body: userFeedbackBody,
+            screen: StillLoopTelemetry.screenName(for: screen),
+            modelSource: modelSetupSelection.source
+        )
+        userFeedbackSubmissionStatus = .submitting
+        userFeedbackSubmissionMessage = "正在发送..."
+
+        do {
+            try await telemetry.submitUserFeedback(draft)
+            userFeedbackSubmissionStatus = .sent
+            userFeedbackSubmissionMessage = "已发送，感谢反馈。"
+            userFeedbackBody = ""
+        } catch {
+            userFeedbackSubmissionStatus = .failed
+            userFeedbackSubmissionMessage = "发送失败，请稍后重试。"
+        }
     }
 
     func continueFromWelcome() {

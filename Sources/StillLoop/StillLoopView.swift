@@ -1493,6 +1493,28 @@ private struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            Button {
+                model.openUserFeedback()
+            } label: {
+                HStack {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("反馈与建议")
+                            .font(.headline)
+                        Text("提交问题、建议或其他使用反馈。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: 520)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
             VStack(alignment: .leading, spacing: 10) {
                 Text("隐私")
                     .font(.headline)
@@ -1510,6 +1532,60 @@ private struct SettingsView: View {
             Spacer()
         }
         .padding(40)
+        .sheet(isPresented: $model.isUserFeedbackPresented) {
+            UserFeedbackSheet()
+                .environmentObject(model)
+        }
+    }
+}
+
+private struct UserFeedbackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("反馈与建议")
+                .font(.title2.weight(.semibold))
+
+            Picker("类型", selection: $model.userFeedbackKind) {
+                ForEach(StillLoopUserFeedbackKind.allCases) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            TextEditor(text: $model.userFeedbackBody)
+                .frame(minHeight: 140)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                )
+
+            if !model.userFeedbackSubmissionMessage.isEmpty {
+                Text(model.userFeedbackSubmissionMessage)
+                    .font(.caption)
+                    .foregroundStyle(model.userFeedbackSubmissionStatus == .failed ? Color.red : Color.secondary)
+            }
+
+            HStack {
+                Spacer()
+                Button(model.userFeedbackSubmissionStatus == .sent ? "关闭" : "取消") {
+                    dismiss()
+                }
+                Button(model.userFeedbackSubmissionStatus == .submitting ? "发送中..." : "发送") {
+                    Task { await model.submitUserFeedback() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!model.canSubmitUserFeedback)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
     }
 }
 
