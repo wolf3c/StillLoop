@@ -1164,6 +1164,18 @@ private struct ReviewView: View {
     }
 
     var body: some View {
+        GeometryReader { proxy in
+            VStack(alignment: .leading, spacing: 18) {
+                scrollingReviewContent
+                reviewActions
+            }
+            .padding(40)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var scrollingReviewContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("专注复盘")
@@ -1185,16 +1197,19 @@ private struct ReviewView: View {
                     }
                     ReviewAppUsageCard(topApps: summary.topApps)
                 }
-                Button("开始新的专注") {
-                    model.prepareNewSession()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(40)
+            .padding(.bottom, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var reviewActions: some View {
+        Button("开始新的专注") {
+            model.prepareNewSession()
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
     }
 }
 

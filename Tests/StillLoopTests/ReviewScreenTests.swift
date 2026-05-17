@@ -76,12 +76,18 @@ final class ReviewScreenTests: XCTestCase {
         let nextSection = try XCTUnwrap(source.range(of: "private struct ReviewCommentCard: View"))
         let snippet = String(source[reviewStart.lowerBound..<nextSection.lowerBound])
 
-        XCTAssertTrue(snippet.contains("ScrollView {"))
-        XCTAssertFalse(snippet.contains("Spacer()"))
+        XCTAssertTrue(snippet.contains("scrollingReviewContent"))
+        XCTAssertTrue(snippet.contains("reviewActions"))
 
-        let scrollView = try XCTUnwrap(snippet.range(of: "ScrollView {"))
-        let newSessionButton = try XCTUnwrap(snippet.range(of: "Button(\"开始新的专注\""))
-        XCTAssertLessThan(scrollView.lowerBound, newSessionButton.lowerBound)
+        let scrollingStart = try XCTUnwrap(snippet.range(of: "private var scrollingReviewContent: some View"))
+        let actionsStart = try XCTUnwrap(snippet.range(of: "private var reviewActions: some View"))
+        let scrollingSnippet = String(snippet[scrollingStart.lowerBound..<actionsStart.lowerBound])
+        let actionsSnippet = String(snippet[actionsStart.lowerBound..<snippet.endIndex])
+
+        XCTAssertTrue(scrollingSnippet.contains("ScrollView {"))
+        XCTAssertFalse(scrollingSnippet.contains("Button(\"开始新的专注\""))
+        XCTAssertTrue(actionsSnippet.contains("Button(\"开始新的专注\""))
+        XCTAssertFalse(snippet.contains("Spacer()"))
     }
 
     func testReviewTaskTitleCannotPushContinueButtonAway() throws {
