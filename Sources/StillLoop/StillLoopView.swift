@@ -979,6 +979,7 @@ private struct AnalysisStep: View {
 
 private struct TimelineView: View {
     var events: [FocusEvent]
+    @State private var selectedDebugEvent: FocusEvent?
     private let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
@@ -992,34 +993,145 @@ private struct TimelineView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(events) { event in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(event.state.displayName)
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text(formatter.string(from: event.timestamp))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(event.context)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
-                                .truncationMode(.tail)
-                            if let nudge = event.nudge {
-                                Text(nudge)
-                                    .font(.caption)
-                                    .lineLimit(2)
-                                    .truncationMode(.tail)
-                            }
+                        Button {
+                            selectedDebugEvent = event
+                        } label: {
+                            TimelineEventRow(event: event, timeText: formatter.string(from: event.timestamp))
                         }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .help("查看识别详情")
                         Divider()
                     }
                 }
                 .animation(.spring(response: 0.34, dampingFraction: 0.86), value: events.count)
             }
+            .popover(item: $selectedDebugEvent) { event in
+                TimelineEventDebugPopover(event: event)
+            }
         }
         .frame(width: 260)
         .frame(maxHeight: .infinity)
+    }
+}
+
+private struct TimelineEventRow: View {
+    var event: FocusEvent
+    var timeText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(event.state.displayName)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(timeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(event.context)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .truncationMode(.tail)
+            if let nudge = event.nudge {
+                Text(nudge)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+    }
+}
+
+private struct TimelineEventDebugPopover: View {
+    var event: FocusEvent
+    private let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("识别详情")
+                        .font(.headline)
+                    Spacer()
+                    Text(formatter.string(from: event.timestamp))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                TimelineDebugSection(title: "时间线摘要") {
+                    TimelineDebugText(event.context)
+                    if let nudge = event.nudge {
+                        TimelineDebugText("提醒：\(nudge)")
+                    }
+                }
+
+                if let detail = event.debugDetail {
+                    TimelineDebugSection(title: "采样上下文") {
+                        ForEach(Array(detail.capturedContext.enumerated()), id: \.offset) { _, context in
+                            TimelineDebugText(context)
+                        }
+                    }
+
+                    TimelineDebugSection(title: "运算返回结果") {
+                        TimelineDebugText("评估器：\(detail.evaluator)")
+                        TimelineDebugText("任务：\(detail.task)")
+                        TimelineDebugText("状态：\(detail.resultState.displayName) (\(detail.resultState.rawValue))")
+                        TimelineDebugText(String(format: "置信度：%.2f", detail.confidence))
+                        TimelineDebugText("原因：\(detail.reason)")
+                        TimelineDebugText("触发提醒：\(detail.shouldNudge ? "是" : "否")")
+                        if let nudge = detail.nudge {
+                            TimelineDebugText("返回提醒：\(nudge)")
+                        }
+                    }
+                } else {
+                    TimelineDebugSection(title: "运算返回结果") {
+                        TimelineDebugText("旧时间线记录没有保存本轮运算详情。")
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .frame(width: 420, height: 480)
+    }
+}
+
+private struct TimelineDebugSection<Content: View>: View {
+    var title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.58))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct TimelineDebugText: View {
+    var text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

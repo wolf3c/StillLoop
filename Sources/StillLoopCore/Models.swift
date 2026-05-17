@@ -135,6 +135,35 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         .joined(separator: " · ")
     }
 
+    public var diagnosticDisplayText: String {
+        [
+            activeAppName.trimmingCharacters(in: .whitespacesAndNewlines),
+            displayWindowTitle,
+            browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+            sanitizedBrowserURL
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .reduce(into: [String]()) { parts, part in
+            if !parts.contains(part) {
+                parts.append(part)
+            }
+        }
+        .joined(separator: " · ")
+    }
+
+    private var sanitizedBrowserURL: String? {
+        guard let browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !browserURL.isEmpty
+        else { return nil }
+        guard var components = URLComponents(string: browserURL) else {
+            return browserURL.components(separatedBy: "?").first?.components(separatedBy: "#").first
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string
+    }
+
     public var visualSummary: String {
         let screenshot = if let width = screenshotPixelWidth,
                             let height = screenshotPixelHeight,
@@ -162,19 +191,87 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
     public var state: FocusState
     public var context: String
     public var nudge: String?
+    public var debugDetail: FocusEventDebugDetail?
 
     public init(
         id: UUID = UUID(),
         timestamp: Date,
         state: FocusState,
         context: String,
-        nudge: String?
+        nudge: String?,
+        debugDetail: FocusEventDebugDetail? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
         self.state = state
         self.context = context
         self.nudge = nudge
+        self.debugDetail = debugDetail
+    }
+}
+
+public struct FocusEventDebugDetail: Codable, Equatable {
+    public var task: String
+    public var evaluator: String
+    public var capturedContext: [String]
+    public var resultState: FocusState
+    public var confidence: Double
+    public var reason: String
+    public var shouldNudge: Bool
+    public var nudge: String?
+
+    public init(
+        task: String,
+        evaluator: String,
+        capturedContext: [String],
+        resultState: FocusState,
+        confidence: Double,
+        reason: String,
+        shouldNudge: Bool,
+        nudge: String?
+    ) {
+        self.task = task
+        self.evaluator = evaluator
+        self.capturedContext = capturedContext
+        self.resultState = resultState
+        self.confidence = confidence
+        self.reason = reason
+        self.shouldNudge = shouldNudge
+        self.nudge = nudge
+    }
+
+    public static func make(
+        task: String,
+        evaluator: String,
+        snapshots: [ContextSnapshot],
+        result: LLMEvaluationResult
+    ) -> FocusEventDebugDetail {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let context = snapshots
+            .sorted { $0.timestamp < $1.timestamp }
+            .enumerated()
+            .map { index, snapshot in
+                [
+                    "capture[\(index + 1)] \(formatter.string(from: snapshot.timestamp))",
+                    snapshot.diagnosticDisplayText,
+                    snapshot.visualSummary
+                ]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            }
+
+        return FocusEventDebugDetail(
+            task: task,
+            evaluator: evaluator,
+            capturedContext: context,
+            resultState: result.state,
+            confidence: result.confidence,
+            reason: result.reason,
+            shouldNudge: result.shouldNudge,
+            nudge: result.nudge
+        )
     }
 }
 

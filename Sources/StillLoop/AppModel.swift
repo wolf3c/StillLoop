@@ -1492,13 +1492,19 @@ final class AppModel: ObservableObject {
             lastNudge = nudge
             sendNudge(nudge, state: result.state)
         }
-        let context = snapshots.map(\.appWindowDisplayText).joined(separator: " -> ")
+        let context = snapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
             FocusEvent(
                 timestamp: Date(),
                 state: result.state,
                 context: context,
-                nudge: nudge
+                nudge: nudge,
+                debugDetail: FocusEventDebugDetail.make(
+                    task: session.task,
+                    evaluator: result.evaluator,
+                    snapshots: snapshots,
+                    result: result
+                )
             ),
             at: 0
         )
@@ -1528,11 +1534,12 @@ final class AppModel: ObservableObject {
             if canUseBundledModel, let llmEvaluator {
                 do {
                     localLLMStatus = "当前评估：自带模型运算中"
-                    let result = try await llmEvaluator.evaluate(
+                    var result = try await llmEvaluator.evaluate(
                         task: task,
                         recentSnapshots: snapshots,
                         previousEvents: previousEvents
                     )
+                    result.evaluator = "自带模型"
                     localLLMStatus = "当前评估：自带模型已连接"
                     return result
                 } catch {
@@ -1544,11 +1551,12 @@ final class AppModel: ObservableObject {
         } else if useLocalLLM, let llmEvaluator {
             do {
                 localLLMStatus = "当前评估：手动模型运算中"
-                let result = try await llmEvaluator.evaluate(
+                var result = try await llmEvaluator.evaluate(
                     task: task,
                     recentSnapshots: snapshots,
                     previousEvents: previousEvents
                 )
+                result.evaluator = "手动模型"
                 localLLMStatus = "当前评估：手动模型已连接"
                 return result
             } catch {
@@ -1563,7 +1571,8 @@ final class AppModel: ObservableObject {
             confidence: result.confidence,
             reason: result.reason,
             shouldNudge: result.shouldNudge,
-            nudge: result.shouldNudge ? nudges.message(for: result.state, task: task) : nil
+            nudge: result.shouldNudge ? nudges.message(for: result.state, task: task) : nil,
+            evaluator: "基础规则"
         )
     }
 

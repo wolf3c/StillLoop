@@ -25,4 +25,12 @@ final class FocusRunningLayoutTests: XCTestCase {
         XCTAssertTrue(source.contains(".lineLimit(3)"))
         XCTAssertTrue(source.contains(".truncationMode(.tail)"))
     }
+
+    func testTimelineRowsOpenRecognitionDebugPopover() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("@State private var selectedDebugEvent: FocusEvent?"))
+        XCTAssertTrue(source.contains(".popover(item: $selectedDebugEvent)"))
+        XCTAssertTrue(source.contains("TimelineEventDebugPopover(event: event)"))
+    }
 }

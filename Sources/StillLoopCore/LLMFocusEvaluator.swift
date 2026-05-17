@@ -30,19 +30,22 @@ public struct LLMEvaluationResult: Equatable {
     public var reason: String
     public var shouldNudge: Bool
     public var nudge: String?
+    public var evaluator: String
 
     public init(
         state: FocusState,
         confidence: Double,
         reason: String,
         shouldNudge: Bool,
-        nudge: String?
+        nudge: String?,
+        evaluator: String = "模型"
     ) {
         self.state = state
         self.confidence = confidence
         self.reason = reason
         self.shouldNudge = shouldNudge
         self.nudge = nudge
+        self.evaluator = evaluator
     }
 }
 
