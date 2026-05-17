@@ -17,6 +17,10 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .resting), .gentle)
     }
 
+    func testUncertainStateUsesGentleOverlay() {
+        XCTAssertEqual(NudgeOverlayPresenter.intensity(for: .uncertain), .gentle)
+    }
+
     func testOverlayDurationsIncreaseWithIntensity() {
         XCTAssertLessThan(NudgeIntensity.gentle.displayDuration, NudgeIntensity.noticeable.displayDuration)
         XCTAssertLessThan(NudgeIntensity.noticeable.displayDuration, NudgeIntensity.strong.displayDuration)

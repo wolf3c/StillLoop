@@ -10,8 +10,12 @@ public struct NudgeGenerator {
         let clippedTask = shortTask.count > 24 ? String(shortTask.prefix(24)) : shortTask
         let target = clippedTask.isEmpty ? "当前任务" : clippedTask
         switch state {
-        case .distracted, .stuck, .uncertain:
+        case .uncertain:
             return "回到：\(target)"
+        case .distracted:
+            return "先回到：\(target)"
+        case .stuck:
+            return "先推进一步：\(target)"
         case .focused:
             return "保持现在的节奏。"
         case .resting:

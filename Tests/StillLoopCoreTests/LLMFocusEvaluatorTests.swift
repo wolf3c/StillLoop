@@ -26,7 +26,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.confidence, 0.91)
         XCTAssertEqual(result.reason, "Video site is unrelated")
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：写产品方案")
+        XCTAssertEqual(result.nudge, "先回到：写产品方案")
     }
 
     func testBuildsPromptWithRecentHistory() async throws {
@@ -177,7 +177,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(result.state, .distracted)
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：优化 stillloop")
+        XCTAssertEqual(result.nudge, "先回到：优化 stillloop")
     }
 
     func testStuckModelJudgementUsesDefaultNudgeWhenMissing() async throws {
@@ -193,7 +193,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(result.state, .stuck)
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：优化 stillloop")
+        XCTAssertEqual(result.nudge, "先推进一步：优化 stillloop")
     }
 
     func testPromptIncludesChronologicalCaptureTimeline() async throws {
