@@ -194,12 +194,13 @@ public struct LLMFocusEvaluator {
     ) async throws -> LLMEvaluationResult {
         let response = try await engine.complete(messages: messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents))
         let json = extractJSONObject(from: response)
-        let modelResponse: ModelResponse
+        var modelResponse: ModelResponse
         do {
             modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
+        applyFocusedMismatchGuard(to: &modelResponse, task: task, recentSnapshots: recentSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
             state: modelResponse.state,
@@ -245,6 +246,9 @@ public struct LLMFocusEvaluator {
         - resting: intentional short break; camera or context suggests rest (eyes closed, leaning away, or non-task pause) without distress signals.
         - away: user appears to have left the computer or is not physically present.
 
+        Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
+        Developer tools such as Codex, Xcode, Terminal, editors, and IDEs are off-task for diary, journaling, or personal review goals unless the visible content explicitly shows the diary/review work.
+        If app/window/browser metadata only names an unrelated tool and has no task-relevant evidence, do not choose focused.
         "uncertain" is the state that represents mild deviation.
         "focused" requires both engagement and task-content alignment.
 
@@ -279,7 +283,7 @@ public struct LLMFocusEvaluator {
         Current task:
         \(task)
 
-        Recent state log:
+        Recent state log (background only; current captures have priority and prior decisions may be wrong):
         \(history.isEmpty ? "none" : history)
         """)])
         ]
@@ -335,5 +339,30 @@ public struct LLMFocusEvaluator {
             return text
         }
         return String(text[start...end])
+    }
+
+    private func applyFocusedMismatchGuard(
+        to response: inout ModelResponse,
+        task: String,
+        recentSnapshots: [ContextSnapshot]
+    ) {
+        guard response.state == .focused,
+              FocusTaskAlignment.developerToolingDominatesWithoutTaskEvidence(
+                task: task,
+                snapshots: recentSnapshots
+              )
+        else {
+            return
+        }
+
+        response.state = .distracted
+        response.confidence = min(response.confidence, 0.78)
+        response.reason = "当前应用是开发工具，与写日记或复盘任务不匹配。"
+        response.nudge = nil
+        if var analysis = response.analysis {
+            analysis.taskAlignment = "当前上下文主要是开发工具，没有看到日记或复盘相关证据。"
+            analysis.decisionRationale = "用户可能在认真操作，但内容与当前任务不一致，因此不能判为专注。"
+            response.analysis = analysis
+        }
     }
 }

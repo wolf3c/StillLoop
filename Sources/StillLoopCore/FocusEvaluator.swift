@@ -28,6 +28,15 @@ public struct FocusEvaluator {
             return EvaluationResult(state: .distracted, confidence: 0.85, reason: "当前上下文与任务无关", shouldNudge: true)
         }
 
+        if FocusTaskAlignment.isDeveloperToolingMismatch(
+            task: task,
+            appName: appName,
+            context: context,
+            hasTaskTermMatch: !matchedTerms.isEmpty
+        ) {
+            return EvaluationResult(state: .distracted, confidence: 0.78, reason: "当前开发工具与写作任务不匹配", shouldNudge: true)
+        }
+
         if Double(matchedTerms.count) >= max(1, Double(taskTerms.count) * 0.75) {
             return EvaluationResult(state: .focused, confidence: 0.82, reason: "上下文与当前任务匹配", shouldNudge: false)
         }

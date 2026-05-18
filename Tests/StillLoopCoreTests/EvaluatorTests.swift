@@ -50,6 +50,54 @@ final class EvaluatorTests: XCTestCase {
         XCTAssertTrue(result.shouldNudge)
     }
 
+    func testEvaluateMarksDeveloperToolingDistractedForDiaryTask() {
+        let evaluator = FocusEvaluator()
+        let context = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 25),
+            activeAppName: "Codex",
+            windowTitle: "Codex",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+
+        let result = evaluator.evaluate(
+            task: "写日记，回顾过去一周",
+            recentSnapshots: [context],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 10), state: .focused, context: "Codex", nudge: nil)
+            ]
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+    }
+
+    func testEvaluateDoesNotTreatPRReviewAsDiaryTask() {
+        let evaluator = FocusEvaluator()
+        let context = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 26),
+            activeAppName: "Codex",
+            windowTitle: "Codex",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+
+        let result = evaluator.evaluate(
+            task: "review PR",
+            recentSnapshots: [context],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 10), state: .focused, context: "Codex", nudge: nil)
+            ]
+        )
+
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertFalse(result.shouldNudge)
+    }
+
     func testEvaluateUsesHistoryToAvoidOverreactingToAmbiguousContext() {
         let evaluator = FocusEvaluator()
         let previous = FocusEvent(

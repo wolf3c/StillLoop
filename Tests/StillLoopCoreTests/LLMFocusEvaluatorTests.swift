@@ -201,6 +201,44 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertNil(result.nudge)
     }
 
+    func testFocusedJudgementIsRejectedWhenDeveloperToolingConflictsWithDiaryTask() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {"state":"focused","confidence":0.95,"reason":"用户看起来在专注操作。","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记，回顾过去一周",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "Codex",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    activeAppName: "Codex",
+                    windowTitle: "Codex",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .focused, context: "Codex -> Codex", nudge: nil)
+            ]
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "先回到：写日记，回顾过去一周")
+        XCTAssertLessThan(result.confidence, 0.95)
+    }
+
     func testModelNudgeIsReducedToTaskReturnCue() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"uncertain","confidence":0.48,"reason":"Still related but drifting","nudge":"您正在与任务保持联系，但需要更专注地查看文档。"}
