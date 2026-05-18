@@ -20,7 +20,7 @@ public struct VisualCaptureConfiguration: Equatable {
     }
 
     public static let standard = VisualCaptureConfiguration(
-        screenshot: .init(maxDimension: 1024, jpegQuality: 0.60),
+        screenshot: .init(maxDimension: 1280, jpegQuality: 0.68),
         camera: .init(maxDimension: 512, jpegQuality: 0.50)
     )
 }

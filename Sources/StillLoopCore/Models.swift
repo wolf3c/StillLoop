@@ -219,6 +219,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var reason: String
     public var shouldNudge: Bool
     public var nudge: String?
+    public var analysis: LLMFocusAnalysis?
 
     public init(
         task: String,
@@ -228,7 +229,8 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         confidence: Double,
         reason: String,
         shouldNudge: Bool,
-        nudge: String?
+        nudge: String?,
+        analysis: LLMFocusAnalysis? = nil
     ) {
         self.task = task
         self.evaluator = evaluator
@@ -238,6 +240,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.reason = reason
         self.shouldNudge = shouldNudge
         self.nudge = nudge
+        self.analysis = analysis
     }
 
     public static func make(
@@ -270,7 +273,8 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             confidence: result.confidence,
             reason: result.reason,
             shouldNudge: result.shouldNudge,
-            nudge: result.nudge
+            nudge: result.nudge,
+            analysis: result.analysis
         )
     }
 }

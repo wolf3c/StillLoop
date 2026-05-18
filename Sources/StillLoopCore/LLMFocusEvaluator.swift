@@ -24,6 +24,37 @@ public struct LLMMessage: Equatable {
     }
 }
 
+public struct LLMFocusAnalysis: Codable, Equatable {
+    public var userEngagement: String
+    public var screenContent: String
+    public var observedActivity: String
+    public var taskAlignment: String
+    public var decisionRationale: String
+
+    public init(
+        userEngagement: String,
+        screenContent: String,
+        observedActivity: String,
+        taskAlignment: String,
+        decisionRationale: String
+    ) {
+        self.userEngagement = userEngagement
+        self.screenContent = screenContent
+        self.observedActivity = observedActivity
+        self.taskAlignment = taskAlignment
+        self.decisionRationale = decisionRationale
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userEngagement = (try? container.decode(String.self, forKey: .userEngagement)) ?? ""
+        screenContent = (try? container.decode(String.self, forKey: .screenContent)) ?? ""
+        observedActivity = (try? container.decode(String.self, forKey: .observedActivity)) ?? ""
+        taskAlignment = (try? container.decode(String.self, forKey: .taskAlignment)) ?? ""
+        decisionRationale = (try? container.decode(String.self, forKey: .decisionRationale)) ?? ""
+    }
+}
+
 public struct LLMEvaluationResult: Equatable {
     public var state: FocusState
     public var confidence: Double
@@ -31,6 +62,7 @@ public struct LLMEvaluationResult: Equatable {
     public var shouldNudge: Bool
     public var nudge: String?
     public var evaluator: String
+    public var analysis: LLMFocusAnalysis?
 
     public init(
         state: FocusState,
@@ -38,7 +70,8 @@ public struct LLMEvaluationResult: Equatable {
         reason: String,
         shouldNudge: Bool,
         nudge: String?,
-        evaluator: String = "模型"
+        evaluator: String = "模型",
+        analysis: LLMFocusAnalysis? = nil
     ) {
         self.state = state
         self.confidence = confidence
@@ -46,6 +79,7 @@ public struct LLMEvaluationResult: Equatable {
         self.shouldNudge = shouldNudge
         self.nudge = nudge
         self.evaluator = evaluator
+        self.analysis = analysis
     }
 }
 
@@ -69,10 +103,75 @@ public struct LLMFocusEvaluationError: Error, Equatable {
 
 public struct LLMFocusEvaluator {
     private struct ModelResponse: Decodable {
+        var analysis: LLMFocusAnalysis?
         var state: FocusState
         var confidence: Double
         var reason: String
         var nudge: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case analysis
+            case state
+            case confidence
+            case reason
+            case nudge
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            do {
+                analysis = try container.decodeIfPresent(LLMFocusAnalysis.self, forKey: .analysis)
+            } catch {
+                analysis = nil
+            }
+            let rawState = try container.decode(String.self, forKey: .state)
+            guard let decodedState = Self.decodeState(rawState) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .state,
+                    in: container,
+                    debugDescription: "Unknown focus state: \(rawState)"
+                )
+            }
+            state = decodedState
+            if let numericConfidence = try? container.decode(Double.self, forKey: .confidence) {
+                confidence = numericConfidence
+            } else if
+                let stringConfidence = try? container.decode(String.self, forKey: .confidence),
+                let parsedConfidence = Double(stringConfidence.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                confidence = parsedConfidence
+            } else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .confidence,
+                    in: container,
+                    debugDescription: "Confidence must be a number"
+                )
+            }
+            reason = (try? container.decode(String.self, forKey: .reason)) ?? ""
+            nudge = try? container.decodeIfPresent(String.self, forKey: .nudge)
+        }
+
+        private static func decodeState(_ rawValue: String) -> FocusState? {
+            let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let state = FocusState(rawValue: normalized) {
+                return state
+            }
+            switch normalized {
+            case "专注中", "专注", "正在专注":
+                return .focused
+            case "轻微跑偏", "不确定", "不明确", "unclear":
+                return .uncertain
+            case "明显偏离", "偏离", "跑偏", "分心":
+                return .distracted
+            case "进展停滞", "停滞", "卡住", "无进展":
+                return .stuck
+            case "休息中", "休息":
+                return .resting
+            case "人已离开", "离开", "不在电脑前":
+                return .away
+            default:
+                return nil
+            }
+        }
     }
 
     private let engine: LocalLLMEngine
@@ -107,7 +206,8 @@ public struct LLMFocusEvaluator {
             confidence: modelResponse.confidence,
             reason: modelResponse.reason,
             shouldNudge: nudge != nil,
-            nudge: nudge
+            nudge: nudge,
+            analysis: modelResponse.analysis
         )
     }
 
@@ -148,9 +248,19 @@ public struct LLMFocusEvaluator {
         "uncertain" is the state that represents mild deviation.
         "focused" requires both engagement and task-content alignment.
 
+        Before the final judgement, write brief observable analysis fields:
+        - userEngagement: whether the user is present and appears attentive.
+        - screenContent: high-level summary of visible page/app content.
+        - observedActivity: visible operation or progress signals across captures.
+        - taskAlignment: whether visible content matches the current task.
+        - decisionRationale: why the final state follows from the observations.
+
+        Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
+        The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge.
+        Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"state":"focused|uncertain|distracted|stuck|resting|away","confidence":0.0,"reason":"short reason","nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale"},"state":"focused|uncertain|distracted|stuck|resting|away","confidence":0.0,"reason":"short reason","nudge":"short Chinese nudge or null"}
         """
     }
 

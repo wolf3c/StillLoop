@@ -24,7 +24,14 @@ final class FocusEventDebugDetailTests: XCTestCase {
             reason: "Context is task-adjacent but attention is split",
             shouldNudge: true,
             nudge: "回到：调优识别能力",
-            evaluator: "自带模型"
+            evaluator: "自带模型",
+            analysis: LLMFocusAnalysis(
+                userEngagement: "用户在场，姿态稳定。",
+                screenContent: "屏幕显示 StillLoop 相关代码。",
+                observedActivity: "采样期间上下文保持在同一工程。",
+                taskAlignment: "内容与调优识别能力相关。",
+                decisionRationale: "任务相关但缺少明确推进信号。"
+            )
         )
 
         let detail = FocusEventDebugDetail.make(
@@ -41,10 +48,32 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.reason, "Context is task-adjacent but attention is split")
         XCTAssertTrue(detail.shouldNudge)
         XCTAssertEqual(detail.nudge, "回到：调优识别能力")
+        XCTAssertEqual(detail.analysis?.taskAlignment, "内容与调优识别能力相关。")
+        XCTAssertEqual(detail.analysis?.decisionRationale, "任务相关但缺少明确推进信号。")
         XCTAssertEqual(detail.capturedContext.count, 1)
         XCTAssertTrue(detail.capturedContext[0].contains("capture[1] 1970-01-01T00:00:01Z"))
         XCTAssertTrue(detail.capturedContext[0].contains("Codex · StillLoop"))
         XCTAssertTrue(detail.capturedContext[0].contains("screenshot=1024x665,48843B; camera=512x288,3252B"))
+    }
+
+    func testDecodesLegacyDebugDetailWithoutAnalysis() throws {
+        let data = Data("""
+        {
+          "task": "写日记",
+          "evaluator": "自带模型",
+          "capturedContext": ["WorkFlowy"],
+          "resultState": "focused",
+          "confidence": 0.7,
+          "reason": "Task matches",
+          "shouldNudge": false,
+          "nudge": null
+        }
+        """.utf8)
+
+        let detail = try JSONDecoder().decode(FocusEventDebugDetail.self, from: data)
+
+        XCTAssertNil(detail.analysis)
+        XCTAssertEqual(detail.resultState, .focused)
     }
 
     func testDecodesLegacyFocusEventWithoutDebugDetail() throws {

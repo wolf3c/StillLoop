@@ -1148,6 +1148,16 @@ private struct TimelineEventDebugPopover: View {
                             TimelineDebugText("返回提醒：\(nudge)")
                         }
                     }
+
+                    if let analysis = detail.analysis {
+                        TimelineDebugSection(title: "模型分析") {
+                            TimelineDebugText("用户状态：\(analysis.userEngagement)")
+                            TimelineDebugText("页面内容：\(analysis.screenContent)")
+                            TimelineDebugText("可见操作：\(analysis.observedActivity)")
+                            TimelineDebugText("任务匹配：\(analysis.taskAlignment)")
+                            TimelineDebugText("判断依据：\(analysis.decisionRationale)")
+                        }
+                    }
                 } else {
                     TimelineDebugSection(title: "运算返回结果") {
                         TimelineDebugText("旧时间线记录没有保存本轮运算详情。")

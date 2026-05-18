@@ -27,6 +27,66 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.reason, "Video site is unrelated")
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "先回到：写产品方案")
+        XCTAssertNil(result.analysis)
+    }
+
+    func testParsesObservableAnalysisWhenModelReturnsIt() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngagement": "用户在场，视线和姿态稳定。",
+            "screenContent": "WorkFlowy 中打开当天日记页面，内容围绕一周复盘。",
+            "observedActivity": "最近截图显示页面持续新增多条项目符号。",
+            "taskAlignment": "页面内容与写日记、回顾过去一周直接匹配。",
+            "decisionRationale": "有明确写作进展，且应用和内容都符合任务。"
+          },
+          "state": "focused",
+          "confidence": 0.86,
+          "reason": "WorkFlowy journaling matches the task.",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记，回顾过去一周",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertEqual(result.analysis?.userEngagement, "用户在场，视线和姿态稳定。")
+        XCTAssertEqual(result.analysis?.screenContent, "WorkFlowy 中打开当天日记页面，内容围绕一周复盘。")
+        XCTAssertEqual(result.analysis?.observedActivity, "最近截图显示页面持续新增多条项目符号。")
+        XCTAssertEqual(result.analysis?.taskAlignment, "页面内容与写日记、回顾过去一周直接匹配。")
+        XCTAssertEqual(result.analysis?.decisionRationale, "有明确写作进展，且应用和内容都符合任务。")
+    }
+
+    func testParsesLocalizedStateAndStringConfidenceFromSmallModelResponse() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngagement": "用户在场。",
+            "screenContent": "页面是写作工具。",
+            "taskAlignment": "与写日记相关。"
+          },
+          "state": "专注中",
+          "confidence": "0.84",
+          "reason": "页面内容与任务一致。",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写日记，回顾过去一周",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertEqual(result.confidence, 0.84)
+        XCTAssertEqual(result.reason, "页面内容与任务一致。")
+        XCTAssertEqual(result.analysis?.userEngagement, "用户在场。")
+        XCTAssertEqual(result.analysis?.observedActivity, "")
     }
 
     func testBuildsPromptWithRecentHistory() async throws {
@@ -82,6 +142,14 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         let prompt = engine.flattenedPrompt
         XCTAssertTrue(prompt.contains("Decision rule:"))
+        XCTAssertTrue(prompt.contains("Before the final judgement, write brief observable analysis fields"))
+        XCTAssertTrue(prompt.contains("Do not quote or transcribe private page text verbatim"))
+        XCTAssertTrue(prompt.contains("\"analysis\""))
+        XCTAssertTrue(prompt.contains("\"userEngagement\""))
+        XCTAssertTrue(prompt.contains("\"screenContent\""))
+        XCTAssertTrue(prompt.contains("\"observedActivity\""))
+        XCTAssertTrue(prompt.contains("\"taskAlignment\""))
+        XCTAssertTrue(prompt.contains("\"decisionRationale\""))
         XCTAssertTrue(prompt.contains("infer user engagement from camera snapshots"))
         XCTAssertTrue(prompt.contains("infer task match from screenshot/app/window/browser context"))
         XCTAssertTrue(prompt.contains("- focused: camera and context are both consistent with attention to the current task"))
