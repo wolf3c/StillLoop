@@ -199,6 +199,14 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     func startIfNeeded() async throws {
         await restartForMemoryPressureIfNeeded()
 
+        if let process, process.isRunning {
+            if isPortInUse(activePort) {
+                state = .running
+                return
+            }
+            await stopOwnedProcess()
+        }
+
         if process?.isRunning == true {
             state = .running
             return
@@ -311,6 +319,17 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             self.process = nil
             state = .stopped
         }
+    }
+
+    private func stopOwnedProcess() async {
+        guard let process else { return }
+        process.terminate()
+        for _ in 0..<max(0, processExitMaxAttempts) {
+            guard process.isRunning else { break }
+            try? await Task.sleep(nanoseconds: processExitRetryDelayNanoseconds)
+        }
+        self.process = nil
+        state = .stopped
     }
 
     func stop() {
@@ -498,14 +517,20 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
 struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
     func launch(executableURL: URL, arguments: [String]) throws -> BundledModelProcessManaging {
         let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        let outputDrain = BoundedProcessPipeDrain(pipe: outputPipe)
+        let errorDrain = BoundedProcessPipeDrain(pipe: errorPipe)
         process.executableURL = executableURL
         process.arguments = arguments
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
         do {
             try process.run()
-            return FoundationBundledModelProcess(process: process)
+            return FoundationBundledModelProcess(process: process, drains: [outputDrain, errorDrain])
         } catch {
+            outputDrain.close()
+            errorDrain.close()
             throw BundledModelRuntime.RuntimeError.launchFailed(String(describing: error))
         }
     }
@@ -513,9 +538,14 @@ struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
 
 private final class FoundationBundledModelProcess: BundledModelProcessManaging {
     private let process: Process
+    private let drains: [BoundedProcessPipeDrain]
 
-    init(process: Process) {
+    init(process: Process, drains: [BoundedProcessPipeDrain]) {
         self.process = process
+        self.drains = drains
+        process.terminationHandler = { _ in
+            drains.forEach { $0.close() }
+        }
     }
 
     var isRunning: Bool {
@@ -529,6 +559,49 @@ private final class FoundationBundledModelProcess: BundledModelProcessManaging {
     func terminate() {
         guard process.isRunning else { return }
         process.terminate()
+    }
+
+    deinit {
+        drains.forEach { $0.close() }
+    }
+}
+
+private final class BoundedProcessPipeDrain {
+    private let fileHandle: FileHandle
+    private let maxTailBytes: Int
+    private let lock = NSLock()
+    private var tail = Data()
+
+    init(pipe: Pipe, maxTailBytes: Int = 8_192) {
+        self.fileHandle = pipe.fileHandleForReading
+        self.maxTailBytes = maxTailBytes
+        fileHandle.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                self?.close()
+                return
+            }
+            self?.append(data)
+        }
+    }
+
+    func close() {
+        fileHandle.readabilityHandler = nil
+    }
+
+    private func append(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        tail.append(data)
+        if tail.count > maxTailBytes {
+            tail.removeFirst(tail.count - maxTailBytes)
+        }
+    }
+
+    var diagnosticTail: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(decoding: tail, as: UTF8.self)
     }
 }
 

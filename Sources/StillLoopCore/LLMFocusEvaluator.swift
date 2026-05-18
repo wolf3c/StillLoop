@@ -49,6 +49,24 @@ public struct LLMEvaluationResult: Equatable {
     }
 }
 
+public enum LLMFocusFailureKind: String, Equatable {
+    case timeout
+    case connectionRefused
+    case badStatus
+    case emptyResponse
+    case jsonParse
+    case cancelled
+    case unknown
+}
+
+public struct LLMFocusEvaluationError: Error, Equatable {
+    public var kind: LLMFocusFailureKind
+
+    public init(kind: LLMFocusFailureKind) {
+        self.kind = kind
+    }
+}
+
 public struct LLMFocusEvaluator {
     private struct ModelResponse: Decodable {
         var state: FocusState
@@ -77,7 +95,12 @@ public struct LLMFocusEvaluator {
     ) async throws -> LLMEvaluationResult {
         let response = try await engine.complete(messages: messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents))
         let json = extractJSONObject(from: response)
-        let modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
+        let modelResponse: ModelResponse
+        do {
+            modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
+        } catch {
+            throw LLMFocusEvaluationError(kind: .jsonParse)
+        }
         let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
             state: modelResponse.state,

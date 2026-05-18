@@ -148,6 +148,23 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.nudge, "回到：写日记和今日计划")
     }
 
+    func testInvalidModelJSONThrowsClassifiedParseFailure() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        The state is focused, but here is not JSON.
+        """))
+
+        do {
+            _ = try await evaluator.evaluate(
+                task: "写日记",
+                recentSnapshots: [],
+                previousEvents: []
+            )
+            XCTFail("Expected invalid model JSON to throw a classified parse failure")
+        } catch let error as LLMFocusEvaluationError {
+            XCTAssertEqual(error.kind, .jsonParse)
+        }
+    }
+
     func testUncertainModelJudgementUsesDefaultGentleNudgeWhenMissing() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"uncertain","confidence":0.48,"reason":"Activity is ambiguous","nudge":null}

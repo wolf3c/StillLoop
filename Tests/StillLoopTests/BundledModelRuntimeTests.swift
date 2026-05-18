@@ -430,6 +430,59 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state, .running)
     }
 
+    func testStartRestartsRunningProcessWhenActivePortIsUnavailable() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let activePortIsInUse = false
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { _ in activePortIsInUse },
+            readinessProbe: { _, _ in .ready },
+            processExitRetryDelayNanoseconds: 0
+        )
+
+        try await runtime.startIfNeeded()
+        let firstProcess = try XCTUnwrap(launcher.launchedProcesses.first)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(firstProcess.terminateCount, 1)
+        XCTAssertFalse(firstProcess.isRunning)
+        XCTAssertEqual(launcher.launchCount, 2)
+        XCTAssertEqual(runtime.state, .running)
+    }
+
+    func testFoundationLauncherDrainsHelperOutputPipes() async throws {
+        let executableURL = temporaryDirectory.appendingPathComponent("chatty-helper")
+        try """
+        #!/bin/sh
+        i=0
+        while [ "$i" -lt 1500 ]; do
+          printf 'stdout line %04d abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\\n' "$i"
+          printf 'stderr line %04d abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\\n' "$i" >&2
+          i=$((i + 1))
+        done
+        """.write(to: executableURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+
+        let process = try FoundationBundledModelProcessLauncher().launch(executableURL: executableURL, arguments: [])
+        for _ in 0..<30 where process.isRunning {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let isStillRunning = process.isRunning
+        if isStillRunning {
+            process.terminate()
+        }
+
+        XCTAssertFalse(isStillRunning, "A helper that writes lots of logs should be drained instead of blocking on a full pipe")
+    }
+
     func testImageReadinessFailureStopsLaunchedProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()

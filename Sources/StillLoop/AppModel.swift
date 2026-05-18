@@ -264,6 +264,7 @@ final class AppModel: ObservableObject {
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
     private let bundledModelRuntime: BundledModelRuntimeManaging
+    private let bundledLLMEngineFactory: (URL, String) -> LocalLLMEngine
     private let launchAtLoginManager: LaunchAtLoginManaging
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
@@ -523,10 +524,14 @@ final class AppModel: ObservableObject {
         supportDirectory overrideSupportDirectory: URL? = nil,
         reviewCommentGenerator: SessionReviewCommentGenerating? = nil,
         telemetry: StillLoopTelemetryRecording? = nil,
-        launchAtLoginManager: LaunchAtLoginManaging? = nil
+        launchAtLoginManager: LaunchAtLoginManaging? = nil,
+        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
+        self.bundledLLMEngineFactory = bundledLLMEngineFactory ?? { baseURL, modelID in
+            OpenAICompatibleLLMEngine(baseURL: baseURL, model: modelID)
+        }
         let resolvedLaunchAtLoginManager = launchAtLoginManager ?? LaunchAtLoginManagerFactory.defaultManager()
         self.launchAtLoginManager = resolvedLaunchAtLoginManager
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
@@ -1586,7 +1591,7 @@ final class AppModel: ObservableObject {
         localLLMStatus = "当前评估：自带模型启动中"
         do {
             try await bundledModelRuntime.startIfNeeded()
-            let engine = OpenAICompatibleLLMEngine(baseURL: bundledModelRuntime.baseURL, model: bundledModelRuntime.modelID)
+            let engine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
             llmEngine = engine
             llmEvaluator = LLMFocusEvaluator(engine: engine)
             bundledModelRuntimeStatus = "自带模型：已启动"
@@ -1820,7 +1825,7 @@ final class AppModel: ObservableObject {
         contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 \(unanalyzedSnapshots.count) 条"
     }
 
-    private func evaluateFocus(
+    func evaluateFocus(
         task: String,
         snapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
@@ -1830,25 +1835,41 @@ final class AppModel: ObservableObject {
             if canUseBundledModel, let llmEvaluator {
                 do {
                     localLLMStatus = "当前评估：自带模型运算中"
-                    var result = try await llmEvaluator.evaluate(
+                    return try await evaluateWithBundledModel(
+                        llmEvaluator,
                         task: task,
-                        recentSnapshots: snapshots,
+                        snapshots: snapshots,
                         previousEvents: previousEvents
                     )
-                    result.evaluator = "自带模型"
-                    localLLMStatus = "当前评估：自带模型已连接"
-                    return result
                 } catch {
-                    localLLMStatus = "当前评估：基础规则（自带模型推理失败）"
-                    bundledModelRuntimeStatus = "自带模型：推理失败"
+                    let retryResult = await retryBundledEvaluationAfterFailure(
+                        task: task,
+                        snapshots: snapshots,
+                        previousEvents: previousEvents
+                    )
+                    if case .success(let result) = retryResult {
+                        return result
+                    }
+                    guard case .failure(let finalError) = retryResult else {
+                        return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
+                    }
+                    let failure = Self.modelInferenceFailurePresentation(for: finalError)
+                    localLLMStatus = "当前评估：基础规则（自带模型：\(failure.statusText)）"
+                    bundledModelRuntimeStatus = "自带模型：推理失败（\(failure.debugText)）"
                     telemetry.record(
                         .modelIssueDetected(
                             modelSource: .bundled,
-                            issueType: "bundledModelInferenceFailed",
+                            issueType: "bundledModelInference\(failure.issueTypeSuffix)",
                             screen: "focus"
                         )
                     )
                     routeToModelSetupForModelIssue()
+                    return ruleBasedEvaluation(
+                        task: task,
+                        snapshots: snapshots,
+                        previousEvents: previousEvents,
+                        evaluatorName: "基础规则（自带模型失败：\(failure.debugText)）"
+                    )
                 }
             }
         } else if useLocalLLM, let llmEvaluator {
@@ -1863,18 +1884,75 @@ final class AppModel: ObservableObject {
                 localLLMStatus = "当前评估：手动模型已连接"
                 return result
             } catch {
-                localLLMStatus = "当前评估：基础规则（手动模型连接失败）"
+                let failure = Self.modelInferenceFailurePresentation(for: error)
+                localLLMStatus = "当前评估：基础规则（手动模型：\(failure.statusText)）"
                 telemetry.record(
                     .modelIssueDetected(
                         modelSource: .manual,
-                        issueType: "manualModelInferenceFailed",
+                        issueType: "manualModelInference\(failure.issueTypeSuffix)",
                         screen: "focus"
                     )
                 )
                 routeToModelSetupForModelIssue()
+                return ruleBasedEvaluation(
+                    task: task,
+                    snapshots: snapshots,
+                    previousEvents: previousEvents,
+                    evaluatorName: "基础规则（手动模型失败：\(failure.debugText)）"
+                )
             }
         }
 
+        return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
+    }
+
+    private func evaluateWithBundledModel(
+        _ llmEvaluator: LLMFocusEvaluator,
+        task: String,
+        snapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent]
+    ) async throws -> LLMEvaluationResult {
+        var result = try await llmEvaluator.evaluate(
+            task: task,
+            recentSnapshots: snapshots,
+            previousEvents: previousEvents
+        )
+        result.evaluator = "自带模型"
+        localLLMStatus = "当前评估：自带模型已连接"
+        return result
+    }
+
+    private func retryBundledEvaluationAfterFailure(
+        task: String,
+        snapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent]
+    ) async -> Result<LLMEvaluationResult, Error> {
+        bundledModelRuntime.stop()
+        llmEngine = nil
+        llmEvaluator = nil
+        guard await prepareBundledModelForEvaluation(), let llmEvaluator else {
+            return .failure(BundledModelRuntime.RuntimeError.readinessFailed("restart failed"))
+        }
+        do {
+            localLLMStatus = "当前评估：自带模型重试中"
+            let result = try await evaluateWithBundledModel(
+                llmEvaluator,
+                task: task,
+                snapshots: snapshots,
+                previousEvents: previousEvents
+            )
+            return .success(result)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func ruleBasedEvaluation(
+        task: String,
+        snapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        evaluatorName: String = "基础规则"
+    ) -> LLMEvaluationResult {
         let result = evaluator.evaluate(task: task, recentSnapshots: snapshots, previousEvents: previousEvents)
         return LLMEvaluationResult(
             state: result.state,
@@ -1882,8 +1960,53 @@ final class AppModel: ObservableObject {
             reason: result.reason,
             shouldNudge: result.shouldNudge,
             nudge: result.shouldNudge ? nudges.message(for: result.state, task: task) : nil,
-            evaluator: "基础规则"
+            evaluator: evaluatorName
         )
+    }
+
+    private static func modelInferenceFailurePresentation(for error: Error) -> (debugText: String, statusText: String, issueTypeSuffix: String) {
+        switch modelInferenceFailureKind(for: error) {
+        case .timeout:
+            return ("请求超时", "请求超时", "Timeout")
+        case .connectionRefused:
+            return ("连接失败", "连接失败", "ConnectionFailed")
+        case .badStatus:
+            return ("HTTP 状态异常", "HTTP 状态异常", "BadStatus")
+        case .emptyResponse:
+            return ("返回为空", "返回为空", "EmptyResponse")
+        case .jsonParse:
+            return ("JSON 解析失败", "JSON 解析失败", "JSONParseFailed")
+        case .cancelled:
+            return ("请求已取消", "请求已取消", "Cancelled")
+        case .unknown:
+            return ("未知错误", "推理失败", "Unknown")
+        }
+    }
+
+    private static func modelInferenceFailureKind(for error: Error) -> LLMFocusFailureKind {
+        if let llmError = error as? LLMFocusEvaluationError {
+            return llmError.kind
+        }
+        if error is DecodingError {
+            return .emptyResponse
+        }
+        guard let urlError = error as? URLError else {
+            return .unknown
+        }
+        switch urlError.code {
+        case .timedOut:
+            return .timeout
+        case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet:
+            return .connectionRefused
+        case .badServerResponse:
+            return .badStatus
+        case .cannotParseResponse, .dataNotAllowed, .zeroByteResource:
+            return .emptyResponse
+        case .cancelled:
+            return .cancelled
+        default:
+            return .unknown
+        }
     }
 
     private func sendNudge(_ message: String, state: FocusState) {

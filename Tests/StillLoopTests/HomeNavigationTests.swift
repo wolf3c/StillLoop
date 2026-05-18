@@ -24,7 +24,8 @@ final class HomeNavigationTests: XCTestCase {
     private func makeModel(
         userDefaults: UserDefaults? = nil,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
-        withBundledModelFiles: Bool = false
+        withBundledModelFiles: Bool = false,
+        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil
     ) -> AppModel {
         let supportDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("StillLoopHomeTests-\(UUID().uuidString)", isDirectory: true)
@@ -45,7 +46,8 @@ final class HomeNavigationTests: XCTestCase {
         return AppModel(
             userDefaults: userDefaults ?? isolatedDefaults,
             bundledModelRuntime: bundledModelRuntime,
-            supportDirectory: supportDirectory
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: bundledLLMEngineFactory
         )
     }
 
@@ -495,6 +497,79 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
     }
 
+    func testBundledInferenceFailureRestartsRuntimeAndRetriesOnce() async {
+        let runtime = FakeBundledRuntime()
+        let engine = SequencedLLMEngine(outcomes: [
+            .failure(URLError(.timedOut)),
+            .success("""
+            {"state":"focused","confidence":0.86,"reason":"Diary writing is visible","nudge":null}
+            """)
+        ])
+        let model = makeModel(
+            bundledModelRuntime: runtime,
+            withBundledModelFiles: true,
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "写日记",
+            snapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "WorkFlowy",
+                    windowTitle: "Today",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.evaluator, "自带模型")
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertEqual(runtime.startCount, 2)
+        XCTAssertEqual(runtime.stopCount, 1)
+        XCTAssertEqual(engine.callCount, 2)
+    }
+
+    func testBundledInferenceFallbackRecordsFailureReasonInEvaluator() async {
+        let runtime = FakeBundledRuntime()
+        let engine = SequencedLLMEngine(outcomes: [
+            .success("not json"),
+            .success("still not json")
+        ])
+        let model = makeModel(
+            bundledModelRuntime: runtime,
+            withBundledModelFiles: true,
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "写日记，回顾过去一周",
+            snapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "WorkFlowy",
+                    windowTitle: "WorkFlowy",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：JSON 解析失败）")
+        XCTAssertEqual(runtime.startCount, 2)
+        XCTAssertEqual(runtime.stopCount, 1)
+        XCTAssertEqual(engine.callCount, 2)
+    }
+
     func testBundledRuntimeStaysWarmWhenPausingOrEndingSession() {
         let runtime = FakeBundledRuntime()
         let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
@@ -579,5 +654,33 @@ private final class FakeBundledRuntime: BundledModelRuntimeManaging {
     func stop() {
         stopCount += 1
         state = .stopped
+    }
+}
+
+private final class SequencedLLMEngine: LocalLLMEngine {
+    enum Outcome {
+        case success(String)
+        case failure(Error)
+    }
+
+    private var outcomes: [Outcome]
+    private(set) var callCount = 0
+
+    init(outcomes: [Outcome]) {
+        self.outcomes = outcomes
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        callCount += 1
+        guard !outcomes.isEmpty else {
+            throw URLError(.cannotParseResponse)
+        }
+        let outcome = outcomes.removeFirst()
+        switch outcome {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
     }
 }
