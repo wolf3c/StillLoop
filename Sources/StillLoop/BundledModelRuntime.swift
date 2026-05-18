@@ -88,6 +88,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     private let processLauncher: BundledModelProcessLaunching
     private let isPortInUse: (Int) -> Bool
     private let portOccupant: (Int) -> BundledModelPortOccupant?
+    private let helperProcesses: () -> [BundledModelPortOccupant]
     private let terminatePortOccupant: (BundledModelPortOccupant) -> Void
     private let readinessProbe: (URL, String) async throws -> Readiness
     private let candidatePorts: ClosedRange<Int>
@@ -108,6 +109,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         processLauncher: BundledModelProcessLaunching = FoundationBundledModelProcessLauncher(),
         isPortInUse: @escaping (Int) -> Bool = BundledModelRuntime.isTCPPortInUse,
         portOccupant: @escaping (Int) -> BundledModelPortOccupant? = BundledModelRuntime.defaultPortOccupant,
+        helperProcesses: @escaping () -> [BundledModelPortOccupant] = BundledModelRuntime.runningProcesses,
         terminatePortOccupant: @escaping (BundledModelPortOccupant) -> Void = BundledModelRuntime.defaultTerminatePortOccupant,
         readinessProbe: @escaping (URL, String) async throws -> Readiness = BundledModelRuntime.defaultReadinessProbe,
         candidatePorts: ClosedRange<Int>? = nil,
@@ -126,6 +128,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         self.processLauncher = processLauncher
         self.isPortInUse = isPortInUse
         self.portOccupant = portOccupant
+        self.helperProcesses = helperProcesses
         self.terminatePortOccupant = terminatePortOccupant
         self.readinessProbe = readinessProbe
         self.candidatePorts = candidatePorts ?? spec.localServerPort...(spec.localServerPort + 9)
@@ -200,7 +203,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         await restartForMemoryPressureIfNeeded()
 
         if let process, process.isRunning {
-            if isPortInUse(activePort) {
+            if isPortInUse(activePort), await canReuseExistingService(baseURL: baseURL) {
                 state = .running
                 return
             }
@@ -227,20 +230,42 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             throw RuntimeError.missingExecutable(executableURL)
         }
 
+        let discoveredHelpers = verifiedStillLoopHelpers()
+        for helper in discoveredHelpers {
+            let candidateBaseURL = spec.localServerBaseURL(port: helper.port)
+            if await canReuseExistingService(baseURL: candidateBaseURL) {
+                adoptRunningService(port: helper.port, baseURL: candidateBaseURL)
+                return
+            }
+        }
+
+        for helper in discoveredHelpers {
+            terminatePortOccupant(helper.occupant)
+            await waitForPortRelease(helper.port)
+            if !isPortInUse(helper.port) {
+                try await launchRuntime(
+                    port: helper.port,
+                    baseURL: spec.localServerBaseURL(port: helper.port)
+                )
+                return
+            }
+        }
+
         for port in candidatePorts {
             let candidateBaseURL = spec.localServerBaseURL(port: port)
             if isPortInUse(port) {
+                guard let occupant = portOccupant(port), isStillLoopHelper(occupant, port: port) else {
+                    continue
+                }
                 if await canReuseExistingService(baseURL: candidateBaseURL) {
                     adoptRunningService(port: port, baseURL: candidateBaseURL)
                     return
                 }
-                if let occupant = portOccupant(port), isStillLoopHelper(occupant, port: port) {
-                    terminatePortOccupant(occupant)
-                    await waitForPortRelease(port)
-                    if !isPortInUse(port) {
-                        try await launchRuntime(port: port, baseURL: candidateBaseURL)
-                        return
-                    }
+                terminatePortOccupant(occupant)
+                await waitForPortRelease(port)
+                if !isPortInUse(port) {
+                    try await launchRuntime(port: port, baseURL: candidateBaseURL)
+                    return
                 }
                 continue
             }
@@ -396,17 +421,59 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         return result == 0
     }
 
-    private func isStillLoopHelper(_ occupant: BundledModelPortOccupant, port: Int) -> Bool {
+    private struct VerifiedStillLoopHelper {
+        var occupant: BundledModelPortOccupant
+        var port: Int
+    }
+
+    private func verifiedStillLoopHelpers() -> [VerifiedStillLoopHelper] {
+        helperProcesses()
+            .compactMap { occupant -> VerifiedStillLoopHelper? in
+                guard let port = verifiedStillLoopHelperPort(for: occupant) else { return nil }
+                return VerifiedStillLoopHelper(occupant: occupant, port: port)
+            }
+            .sorted { lhs, rhs in
+                portPriority(lhs.port) < portPriority(rhs.port)
+            }
+    }
+
+    private func portPriority(_ port: Int) -> Int {
+        if port == activePort {
+            return 0
+        }
+        if port == spec.localServerPort {
+            return 1
+        }
+        return 2 + max(0, port - candidatePorts.lowerBound)
+    }
+
+    private func verifiedStillLoopHelperPort(for occupant: BundledModelPortOccupant) -> Int? {
         let occupantURL = URL(fileURLWithPath: occupant.executablePath).standardizedFileURL
         let expectedURL = executableURL.standardizedFileURL
-        guard isCurrentOrLegacyHelperExecutable(occupantURL, expectedURL: expectedURL) else { return false }
-        guard arguments(occupant.arguments, containFlag: "--host", value: "127.0.0.1") else { return false }
-        guard arguments(occupant.arguments, containFlag: "--port", value: String(port)) else { return false }
-        guard occupant.arguments.contains(modelURL.path) else { return false }
-        if let mmprojURL, !occupant.arguments.contains(mmprojURL.path) {
-            return false
+        guard isCurrentOrLegacyHelperExecutable(occupantURL, expectedURL: expectedURL) else { return nil }
+        guard argumentValue(in: occupant.arguments, flag: "--host") == "127.0.0.1" else { return nil }
+        guard
+            let portText = argumentValue(in: occupant.arguments, flag: "--port"),
+            let port = Int(portText),
+            candidatePorts.contains(port)
+        else {
+            return nil
         }
-        return true
+        guard argumentValue(in: occupant.arguments, flag: "-m") == modelURL.path
+            || argumentValue(in: occupant.arguments, flag: "--model") == modelURL.path
+        else {
+            return nil
+        }
+        if let mmprojURL {
+            guard argumentValue(in: occupant.arguments, flag: "--mmproj") == mmprojURL.path else {
+                return nil
+            }
+        }
+        return port
+    }
+
+    private func isStillLoopHelper(_ occupant: BundledModelPortOccupant, port: Int) -> Bool {
+        verifiedStillLoopHelperPort(for: occupant) == port
     }
 
     private func isCurrentOrLegacyHelperExecutable(_ occupantURL: URL, expectedURL: URL) -> Bool {
@@ -417,12 +484,17 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             && occupantURL.deletingLastPathComponent().path == expectedURL.deletingLastPathComponent().path
     }
 
-    private func arguments(_ arguments: [String], containFlag flag: String, value: String) -> Bool {
-        arguments.indices.contains { index in
-            arguments[index] == flag
-                && arguments.indices.contains(index + 1)
-                && arguments[index + 1] == value
+    private func argumentValue(in arguments: [String], flag: String) -> String? {
+        for index in arguments.indices {
+            if arguments[index] == flag, arguments.indices.contains(index + 1) {
+                return arguments[index + 1]
+            }
+            let prefix = "\(flag)="
+            if arguments[index].hasPrefix(prefix) {
+                return String(arguments[index].dropFirst(prefix.count))
+            }
         }
+        return nil
     }
 
     private static func defaultPortOccupant(port: Int) -> BundledModelPortOccupant? {

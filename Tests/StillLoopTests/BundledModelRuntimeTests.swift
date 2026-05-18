@@ -103,12 +103,18 @@ final class BundledModelRuntimeTests: XCTestCase {
         }
     }
 
-    func testStartReusesHealthyCompatibleServiceOnDefaultPort() async throws {
+    func testStartReusesHealthyStillLoopHelperOnDefaultPort() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
         let mmprojURL = try makeProjectorFile()
         let launcher = FakeBundledModelProcessLauncher()
         var probedBaseURLs: [URL] = []
+        let helper = makeHelperOccupant(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            port: ModelDownloadSpec.builtIn.localServerPort
+        )
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
@@ -120,6 +126,7 @@ final class BundledModelRuntimeTests: XCTestCase {
                 XCTFail("Healthy service reuse should not need process ownership checks")
                 return nil
             },
+            helperProcesses: { [helper] },
             readinessProbe: { baseURL, _ in
                 probedBaseURLs.append(baseURL)
                 return .ready
@@ -132,6 +139,226 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(probedBaseURLs, [ModelDownloadSpec.builtIn.localServerBaseURL])
         XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL)
         XCTAssertEqual(runtime.state, .running)
+    }
+
+    func testStartReusesHealthyStillLoopHelperOnBackupPortBeforeLaunchingDefaultPort() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let helper = makeHelperOccupant(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            port: 17_632
+        )
+        var probedBaseURLs: [URL] = []
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { $0 == 17_632 },
+            portOccupant: { _ in nil },
+            helperProcesses: { [helper] },
+            readinessProbe: { baseURL, _ in
+                probedBaseURLs.append(baseURL)
+                return .ready
+            }
+        )
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(launcher.launchCount, 0)
+        XCTAssertEqual(probedBaseURLs, [ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632)])
+        XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
+        XCTAssertEqual(runtime.state, .running)
+    }
+
+    func testStartReusesBackupHelperWhenDefaultPortBelongsToAnotherProcess() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let helper = makeHelperOccupant(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            port: 17_632
+        )
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { $0 == 17_631 || $0 == 17_632 },
+            portOccupant: { port in
+                BundledModelPortOccupant(
+                    pid: Int32(port),
+                    executablePath: "/usr/bin/other-server",
+                    arguments: ["/usr/bin/other-server", "--port", "\(port)"]
+                )
+            },
+            helperProcesses: { [helper] },
+            terminatePortOccupant: { occupant in
+                XCTFail("Other processes must not be terminated: \(occupant)")
+            },
+            readinessProbe: { baseURL, _ in
+                XCTAssertEqual(baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
+                return .ready
+            }
+        )
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(launcher.launchCount, 0)
+        XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
+        XCTAssertEqual(runtime.state, .running)
+    }
+
+    func testStartTerminatesStaleStillLoopHelperOnBackupPortThenRestarts() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let staleHelper = makeHelperOccupant(
+            pid: 44,
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            port: 17_632
+        )
+        var occupiedPorts: Set<Int> = [17_632]
+        var terminatedOccupants: [BundledModelPortOccupant] = []
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { occupiedPorts.contains($0) },
+            portOccupant: { _ in nil },
+            helperProcesses: { [staleHelper] },
+            terminatePortOccupant: { occupant in
+                terminatedOccupants.append(occupant)
+                occupiedPorts.remove(17_632)
+            },
+            readinessProbe: { baseURL, _ in
+                if baseURL == ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632),
+                   occupiedPorts.contains(17_632) {
+                    throw URLError(.cannotConnectToHost)
+                }
+                return .ready
+            }
+        )
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(terminatedOccupants, [staleHelper])
+        XCTAssertEqual(launcher.launchCount, 1)
+        XCTAssertEqual(
+            launcher.lastArguments,
+            BundledModelRuntime.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: .builtIn, port: 17_632)
+        )
+        XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
+    }
+
+    func testStartDoesNotReuseOrTerminateHelpersWithMismatchedIdentityArguments() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let matchingNameWrongPath = BundledModelPortOccupant(
+            pid: 45,
+            executablePath: temporaryDirectory
+                .appendingPathComponent("OtherHelpers", isDirectory: true)
+                .appendingPathComponent("stillloop-llama-server")
+                .path,
+            arguments: BundledModelRuntime.launchArguments(
+                modelURL: modelURL,
+                mmprojURL: mmprojURL,
+                spec: .builtIn,
+                port: 17_632
+            )
+        )
+        let wrongHost = BundledModelPortOccupant(
+            pid: 46,
+            executablePath: executableURL.path,
+            arguments: [
+                executableURL.path,
+                "-m", modelURL.path,
+                "--mmproj", mmprojURL.path,
+                "--host", "0.0.0.0",
+                "--port", "17632"
+            ]
+        )
+        let outOfRangePort = BundledModelPortOccupant(
+            pid: 47,
+            executablePath: executableURL.path,
+            arguments: [
+                executableURL.path,
+                "-m", modelURL.path,
+                "--mmproj", mmprojURL.path,
+                "--host", "127.0.0.1",
+                "--port", "17641"
+            ]
+        )
+        let wrongModel = BundledModelPortOccupant(
+            pid: 48,
+            executablePath: executableURL.path,
+            arguments: [
+                executableURL.path,
+                "-m", temporaryDirectory.appendingPathComponent("other-model.gguf").path,
+                "--mmproj", mmprojURL.path,
+                "--host", "127.0.0.1",
+                "--port", "17632"
+            ]
+        )
+        let wrongProjector = BundledModelPortOccupant(
+            pid: 49,
+            executablePath: executableURL.path,
+            arguments: [
+                executableURL.path,
+                "-m", modelURL.path,
+                "--mmproj", temporaryDirectory.appendingPathComponent("other-mmproj.gguf").path,
+                "--host", "127.0.0.1",
+                "--port", "17632"
+            ]
+        )
+        var terminatedOccupants: [BundledModelPortOccupant] = []
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { $0 == 17_632 },
+            portOccupant: { _ in nil },
+            helperProcesses: { [
+                matchingNameWrongPath,
+                wrongHost,
+                outOfRangePort,
+                wrongModel,
+                wrongProjector
+            ] },
+            terminatePortOccupant: { terminatedOccupants.append($0) },
+            readinessProbe: { baseURL, _ in
+                XCTAssertEqual(baseURL, ModelDownloadSpec.builtIn.localServerBaseURL)
+                return .ready
+            }
+        )
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(terminatedOccupants, [])
+        XCTAssertEqual(launcher.launchCount, 1)
+        XCTAssertEqual(
+            launcher.lastArguments,
+            BundledModelRuntime.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: .builtIn)
+        )
+        XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL)
     }
 
     func testStartTerminatesStaleStillLoopHelperOnDefaultPortThenRestarts() async throws {
@@ -261,6 +488,41 @@ final class BundledModelRuntimeTests: XCTestCase {
                 }
                 return .ready
             }
+        )
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(launcher.launchCount, 1)
+        XCTAssertEqual(
+            launcher.lastArguments,
+            BundledModelRuntime.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: .builtIn, port: 17_632)
+        )
+        XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
+    }
+
+    func testStartDoesNotReuseHealthyServiceOwnedByAnotherProcess() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { $0 == ModelDownloadSpec.builtIn.localServerPort },
+            portOccupant: { port in
+                BundledModelPortOccupant(
+                    pid: Int32(port),
+                    executablePath: "/usr/bin/other-openai-compatible-server",
+                    arguments: ["/usr/bin/other-openai-compatible-server", "--host", "127.0.0.1", "--port", "\(port)"]
+                )
+            },
+            terminatePortOccupant: { _ in
+                XCTFail("Other healthy services must not be terminated")
+            },
+            readinessProbe: { _, _ in .ready }
         )
 
         try await runtime.startIfNeeded()
@@ -458,6 +720,43 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state, .running)
     }
 
+    func testStartStopsRunningOwnedProcessWhenActivePortReadinessFails() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let launcher = FakeBundledModelProcessLauncher()
+        var probeCount = 0
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            processLauncher: launcher,
+            isPortInUse: { _ in
+                launcher.launchedProcesses.first?.isRunning == true && launcher.launchCount == 1
+            },
+            readinessProbe: { _, _ in
+                probeCount += 1
+                if probeCount == 2 {
+                    throw URLError(.cannotConnectToHost)
+                }
+                return .ready
+            },
+            readinessMaxAttempts: 1,
+            processExitRetryDelayNanoseconds: 0
+        )
+
+        try await runtime.startIfNeeded()
+        let firstProcess = try XCTUnwrap(launcher.launchedProcesses.first)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(firstProcess.terminateCount, 1)
+        XCTAssertFalse(firstProcess.isRunning)
+        XCTAssertEqual(launcher.launchCount, 2)
+        XCTAssertEqual(runtime.state, .running)
+    }
+
     func testFoundationLauncherDrainsHelperOutputPipes() async throws {
         let executableURL = temporaryDirectory.appendingPathComponent("chatty-helper")
         try """
@@ -529,6 +828,25 @@ final class BundledModelRuntimeTests: XCTestCase {
         let url = temporaryDirectory.appendingPathComponent("mmproj.gguf")
         FileManager.default.createFile(atPath: url.path, contents: Data("mmproj".utf8))
         return url
+    }
+
+    private func makeHelperOccupant(
+        pid: Int32 = 42,
+        executableURL: URL,
+        modelURL: URL,
+        mmprojURL: URL,
+        port: Int
+    ) -> BundledModelPortOccupant {
+        BundledModelPortOccupant(
+            pid: pid,
+            executablePath: executableURL.path,
+            arguments: BundledModelRuntime.launchArguments(
+                modelURL: modelURL,
+                mmprojURL: mmprojURL,
+                spec: .builtIn,
+                port: port
+            )
+        )
     }
 }
 

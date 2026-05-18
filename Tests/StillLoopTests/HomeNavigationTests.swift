@@ -483,18 +483,65 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
     }
 
-    func testBundledRuntimeFailureDoesNotRestartOnEveryEvaluationAttempt() async {
+    func testTransientBundledRuntimeFailureRetriesOnNextEvaluationAttempt() async {
         let runtime = FakeBundledRuntime()
-        runtime.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
+        runtime.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
         let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
         model.selectModelSource(.bundled)
 
-        _ = await model.prepareBundledModelForEvaluation()
-        _ = await model.prepareBundledModelForEvaluation()
+        let firstPrepared = await model.prepareBundledModelForEvaluation()
+        runtime.startError = nil
+        let secondPrepared = await model.prepareBundledModelForEvaluation()
 
+        XCTAssertFalse(firstPrepared)
+        XCTAssertTrue(secondPrepared)
+        XCTAssertEqual(runtime.startCount, 2)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+        XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
+    }
+
+    func testPermanentBundledRuntimeFailureDoesNotRestartOnEveryEvaluationAttempt() async {
+        let runtime = FakeBundledRuntime()
+        let missingModelURL = URL(fileURLWithPath: "/tmp/missing-model.gguf")
+        runtime.startError = BundledModelRuntime.RuntimeError.missingModel(missingModelURL)
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.selectModelSource(.bundled)
+
+        let firstPrepared = await model.prepareBundledModelForEvaluation()
+        runtime.startError = nil
+        let secondPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertFalse(firstPrepared)
+        XCTAssertFalse(secondPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：不支持图片输入")
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：缺少模型文件")
         XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
+    }
+
+    func testBundledPreparationFallbackRecordsRuntimeFailureReasonInEvaluator() async {
+        let runtime = FakeBundledRuntime()
+        runtime.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "写日记，回顾过去一周",
+            snapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "WorkFlowy",
+                    windowTitle: "WorkFlowy",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：探测失败）")
+        XCTAssertEqual(runtime.startCount, 1)
     }
 
     func testBundledInferenceFailureRestartsRuntimeAndRetriesOnce() async {

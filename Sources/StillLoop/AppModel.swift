@@ -279,6 +279,7 @@ final class AppModel: ObservableObject {
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
     private var bundledModelRuntimeFailureStatus: String?
+    private var bundledModelRuntimeUnavailableStatus: String?
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
     var startPermissionDecisionOverride: StartPermissionDecision?
@@ -1309,6 +1310,7 @@ final class AppModel: ObservableObject {
         switch source {
         case .bundled:
             bundledModelRuntimeFailureStatus = nil
+            bundledModelRuntimeUnavailableStatus = nil
             modelConnectionCheckTask?.cancel()
             modelConnectionCheckTask = nil
             useLocalLLM = false
@@ -1320,6 +1322,7 @@ final class AppModel: ObservableObject {
             configureBundledModelSelectionStatus()
         case .manual:
             bundledModelRuntimeFailureStatus = nil
+            bundledModelRuntimeUnavailableStatus = nil
             bundledModelRuntime.stop()
             bundledModelRuntimeStatus = "自带模型：已停止"
             modelConfigurationChanged()
@@ -1573,14 +1576,18 @@ final class AppModel: ObservableObject {
         guard modelSetupSelection.source == .bundled else {
             return false
         }
+        bundledModelRuntimeUnavailableStatus = nil
         if let bundledModelRuntimeFailureStatus {
+            bundledModelRuntimeUnavailableStatus = bundledModelRuntimeFailureStatus
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
             llmEngine = nil
             llmEvaluator = nil
             return false
         }
         guard modelDownloader.isDownloaded() else {
-            bundledModelRuntimeStatus = "自带模型：等待模型文件"
+            let status = "自带模型：等待模型文件"
+            bundledModelRuntimeUnavailableStatus = status
+            bundledModelRuntimeStatus = status
             localLLMStatus = "当前评估：基础规则（等待自带模型文件）"
             llmEngine = nil
             llmEvaluator = nil
@@ -1597,10 +1604,12 @@ final class AppModel: ObservableObject {
             bundledModelRuntimeStatus = "自带模型：已启动"
             localLLMStatus = "当前评估：自带模型已连接"
             bundledModelRuntimeFailureStatus = nil
+            bundledModelRuntimeUnavailableStatus = nil
             return true
         } catch {
             let status = Self.bundledRuntimeStatusText(for: error)
-            bundledModelRuntimeFailureStatus = status
+            bundledModelRuntimeUnavailableStatus = status
+            bundledModelRuntimeFailureStatus = Self.shouldCacheBundledRuntimeFailure(error) ? status : nil
             applyBundledRuntimeFailureStatus(status)
             llmEngine = nil
             llmEvaluator = nil
@@ -1617,7 +1626,23 @@ final class AppModel: ObservableObject {
 
     private func applyBundledRuntimeFailureStatus(_ status: String) {
         bundledModelRuntimeStatus = status
-        localLLMStatus = "当前评估：基础规则（\(status.replacingOccurrences(of: "自带模型：", with: ""))）"
+        localLLMStatus = "当前评估：基础规则（\(Self.bundledRuntimeFallbackReason(from: status))）"
+    }
+
+    private static func shouldCacheBundledRuntimeFailure(_ error: Error) -> Bool {
+        guard let runtimeError = error as? BundledModelRuntime.RuntimeError else {
+            return false
+        }
+        switch runtimeError {
+        case .missingExecutable, .missingModel, .missingProjector:
+            return true
+        case .portInUse, .noAvailablePort, .launchFailed, .imageInputUnavailable, .readinessFailed:
+            return false
+        }
+    }
+
+    private static func bundledRuntimeFallbackReason(from status: String) -> String {
+        status.replacingOccurrences(of: "自带模型：", with: "")
     }
 
     private static func bundledRuntimeStatusText(for error: Error) -> String {
@@ -1871,6 +1896,15 @@ final class AppModel: ObservableObject {
                         evaluatorName: "基础规则（自带模型失败：\(failure.debugText)）"
                     )
                 }
+            }
+            if let status = bundledModelRuntimeUnavailableStatus ?? bundledModelRuntimeFailureStatus {
+                let reason = Self.bundledRuntimeFallbackReason(from: status)
+                return ruleBasedEvaluation(
+                    task: task,
+                    snapshots: snapshots,
+                    previousEvents: previousEvents,
+                    evaluatorName: "基础规则（自带模型失败：\(reason)）"
+                )
             }
         } else if useLocalLLM, let llmEvaluator {
             do {
