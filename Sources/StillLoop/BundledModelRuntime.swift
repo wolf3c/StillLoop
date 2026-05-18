@@ -21,6 +21,12 @@ protocol BundledModelProcessLaunching {
     func launch(executableURL: URL, arguments: [String]) throws -> BundledModelProcessManaging
 }
 
+struct BundledModelPortOccupant: Equatable {
+    var pid: Int32
+    var executablePath: String
+    var arguments: [String]
+}
+
 final class BundledModelRuntime: BundledModelRuntimeManaging {
     enum State: Equatable {
         case notStarted
@@ -35,6 +41,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         case missingModel(URL)
         case missingProjector(URL)
         case portInUse(Int)
+        case noAvailablePort(ClosedRange<Int>)
         case launchFailed(String)
         case imageInputUnavailable
         case readinessFailed(String)
@@ -45,13 +52,15 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             }
             switch runtimeError {
             case .missingExecutable:
-                return "缺少 llama-server"
+                return "缺少 stillloop-llama-server"
             case .missingModel:
                 return "缺少模型文件"
             case .missingProjector:
                 return "缺少视觉投影文件"
             case .portInUse:
                 return "端口被占用"
+            case .noAvailablePort:
+                return "可用端口不足"
             case .launchFailed:
                 return "启动失败"
             case .imageInputUnavailable:
@@ -66,8 +75,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         case ready
     }
 
-    let baseURL: URL
     let modelID: String
+    private(set) var activePort: Int
+    private(set) var baseURL: URL
     private(set) var state: State = .notStarted
 
     private let executableURL: URL
@@ -77,7 +87,10 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     private let fileManager: FileManager
     private let processLauncher: BundledModelProcessLaunching
     private let isPortInUse: (Int) -> Bool
+    private let portOccupant: (Int) -> BundledModelPortOccupant?
+    private let terminatePortOccupant: (BundledModelPortOccupant) -> Void
     private let readinessProbe: (URL, String) async throws -> Readiness
+    private let candidatePorts: ClosedRange<Int>
     private let readinessMaxAttempts: Int
     private let readinessRetryDelayNanoseconds: UInt64
     private let maximumResidentMemoryBytes: UInt64
@@ -94,7 +107,10 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         fileManager: FileManager = .default,
         processLauncher: BundledModelProcessLaunching = FoundationBundledModelProcessLauncher(),
         isPortInUse: @escaping (Int) -> Bool = BundledModelRuntime.isTCPPortInUse,
+        portOccupant: @escaping (Int) -> BundledModelPortOccupant? = BundledModelRuntime.defaultPortOccupant,
+        terminatePortOccupant: @escaping (BundledModelPortOccupant) -> Void = BundledModelRuntime.defaultTerminatePortOccupant,
         readinessProbe: @escaping (URL, String) async throws -> Readiness = BundledModelRuntime.defaultReadinessProbe,
+        candidatePorts: ClosedRange<Int>? = nil,
         readinessMaxAttempts: Int = 60,
         readinessRetryDelayNanoseconds: UInt64 = 500_000_000,
         maximumResidentMemoryBytes: UInt64 = BundledModelRuntime.defaultMaximumResidentMemoryBytes,
@@ -109,13 +125,17 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         self.fileManager = fileManager
         self.processLauncher = processLauncher
         self.isPortInUse = isPortInUse
+        self.portOccupant = portOccupant
+        self.terminatePortOccupant = terminatePortOccupant
         self.readinessProbe = readinessProbe
+        self.candidatePorts = candidatePorts ?? spec.localServerPort...(spec.localServerPort + 9)
         self.readinessMaxAttempts = readinessMaxAttempts
         self.readinessRetryDelayNanoseconds = readinessRetryDelayNanoseconds
         self.maximumResidentMemoryBytes = maximumResidentMemoryBytes
         self.residentMemoryBytes = residentMemoryBytes
         self.processExitMaxAttempts = processExitMaxAttempts
         self.processExitRetryDelayNanoseconds = processExitRetryDelayNanoseconds
+        activePort = spec.localServerPort
         baseURL = spec.localServerBaseURL
         modelID = spec.localServerModelID
     }
@@ -139,7 +159,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             return bundle.bundleURL
                 .appendingPathComponent("Contents", isDirectory: true)
                 .appendingPathComponent("Helpers", isDirectory: true)
-                .appendingPathComponent("llama-server")
+                .appendingPathComponent(Self.helperExecutableName)
         }
         if let resourceURL = bundle.resourceURL {
             return resourceURL
@@ -151,11 +171,17 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             .appendingPathComponent("llama-server")
     }
 
-    static func launchArguments(modelURL: URL, mmprojURL: URL? = nil, spec: ModelDownloadSpec) -> [String] {
+    static func launchArguments(
+        modelURL: URL,
+        mmprojURL: URL? = nil,
+        spec: ModelDownloadSpec,
+        port: Int? = nil
+    ) -> [String] {
+        let selectedPort = port ?? spec.localServerPort
         var arguments = [
             "-m", modelURL.path,
             "--host", "127.0.0.1",
-            "--port", String(spec.localServerPort),
+            "--port", String(selectedPort),
             "--ctx-size", String(spec.recommendedContextSize),
             "--parallel", "1",
             "--n-gpu-layers", "99",
@@ -192,19 +218,60 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             state = .failed(RuntimeError.statusMessage(for: RuntimeError.missingExecutable(executableURL)))
             throw RuntimeError.missingExecutable(executableURL)
         }
-        guard !isPortInUse(spec.localServerPort) else {
-            state = .failed(RuntimeError.statusMessage(for: RuntimeError.portInUse(spec.localServerPort)))
-            throw RuntimeError.portInUse(spec.localServerPort)
+
+        for port in candidatePorts {
+            let candidateBaseURL = spec.localServerBaseURL(port: port)
+            if isPortInUse(port) {
+                if await canReuseExistingService(baseURL: candidateBaseURL) {
+                    adoptRunningService(port: port, baseURL: candidateBaseURL)
+                    return
+                }
+                if let occupant = portOccupant(port), isStillLoopHelper(occupant, port: port) {
+                    terminatePortOccupant(occupant)
+                    await waitForPortRelease(port)
+                    if !isPortInUse(port) {
+                        try await launchRuntime(port: port, baseURL: candidateBaseURL)
+                        return
+                    }
+                }
+                continue
+            }
+
+            try await launchRuntime(port: port, baseURL: candidateBaseURL)
+            return
         }
 
+        state = .failed(RuntimeError.statusMessage(for: RuntimeError.noAvailablePort(candidatePorts)))
+        throw RuntimeError.noAvailablePort(candidatePorts)
+    }
+
+    private func canReuseExistingService(baseURL: URL) async -> Bool {
+        do {
+            _ = try await readinessProbe(baseURL, spec.localServerModelID)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func adoptRunningService(port: Int, baseURL: URL) {
+        process = nil
+        activePort = port
+        self.baseURL = baseURL
+        state = .running
+    }
+
+    private func launchRuntime(port: Int, baseURL: URL) async throws {
         state = .starting
+        activePort = port
+        self.baseURL = baseURL
         do {
             let launchedProcess = try processLauncher.launch(
                 executableURL: executableURL,
-                arguments: Self.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: spec)
+                arguments: Self.launchArguments(modelURL: modelURL, mmprojURL: mmprojURL, spec: spec, port: port)
             )
             process = launchedProcess
-            _ = try await waitUntilReady()
+            _ = try await waitUntilReady(baseURL: baseURL)
             state = .running
         } catch {
             process?.terminate()
@@ -215,6 +282,13 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
                 throw runtimeError
             }
             throw RuntimeError.readinessFailed(String(describing: error))
+        }
+    }
+
+    private func waitForPortRelease(_ port: Int) async {
+        for _ in 0..<max(1, processExitMaxAttempts) {
+            guard isPortInUse(port) else { return }
+            try? await Task.sleep(nanoseconds: processExitRetryDelayNanoseconds)
         }
     }
 
@@ -249,13 +323,13 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         stop()
     }
 
-    private func waitUntilReady() async throws -> Readiness {
+    private func waitUntilReady(baseURL: URL) async throws -> Readiness {
         let attempts = max(1, readinessMaxAttempts)
         var lastError: Error?
 
         for attempt in 1...attempts {
             do {
-                return try await readinessProbe(spec.localServerBaseURL, spec.localServerModelID)
+                return try await readinessProbe(baseURL, spec.localServerModelID)
             } catch RuntimeError.imageInputUnavailable {
                 throw RuntimeError.imageInputUnavailable
             } catch {
@@ -303,7 +377,112 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         return result == 0
     }
 
+    private func isStillLoopHelper(_ occupant: BundledModelPortOccupant, port: Int) -> Bool {
+        let occupantURL = URL(fileURLWithPath: occupant.executablePath).standardizedFileURL
+        let expectedURL = executableURL.standardizedFileURL
+        guard isCurrentOrLegacyHelperExecutable(occupantURL, expectedURL: expectedURL) else { return false }
+        guard arguments(occupant.arguments, containFlag: "--host", value: "127.0.0.1") else { return false }
+        guard arguments(occupant.arguments, containFlag: "--port", value: String(port)) else { return false }
+        guard occupant.arguments.contains(modelURL.path) else { return false }
+        if let mmprojURL, !occupant.arguments.contains(mmprojURL.path) {
+            return false
+        }
+        return true
+    }
+
+    private func isCurrentOrLegacyHelperExecutable(_ occupantURL: URL, expectedURL: URL) -> Bool {
+        if occupantURL.path == expectedURL.path, occupantURL.lastPathComponent == Self.helperExecutableName {
+            return true
+        }
+        return occupantURL.lastPathComponent == Self.legacyHelperExecutableName
+            && occupantURL.deletingLastPathComponent().path == expectedURL.deletingLastPathComponent().path
+    }
+
+    private func arguments(_ arguments: [String], containFlag flag: String, value: String) -> Bool {
+        arguments.indices.contains { index in
+            arguments[index] == flag
+                && arguments.indices.contains(index + 1)
+                && arguments[index + 1] == value
+        }
+    }
+
+    private static func defaultPortOccupant(port: Int) -> BundledModelPortOccupant? {
+        runningProcesses().first { process in
+            Self.helperExecutableNames.contains(URL(fileURLWithPath: process.executablePath).lastPathComponent)
+                && process.argumentsContain(flag: "--host", value: "127.0.0.1")
+                && process.argumentsContain(flag: "--port", value: String(port))
+        }
+    }
+
+    private static func runningProcesses() -> [BundledModelPortOccupant] {
+        let bytes = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        guard bytes > 0 else { return [] }
+        let count = Int(bytes) / MemoryLayout<pid_t>.size
+        var pids = [pid_t](repeating: 0, count: count)
+        let writtenBytes = pids.withUnsafeMutableBytes { buffer in
+            proc_listpids(UInt32(PROC_ALL_PIDS), 0, buffer.baseAddress, bytes)
+        }
+        guard writtenBytes > 0 else { return [] }
+        return pids.compactMap { pid in
+            guard pid > 0,
+                  let executablePath = processPath(pid: pid),
+                  let arguments = processArguments(pid: pid)
+            else {
+                return nil
+            }
+            return BundledModelPortOccupant(pid: pid, executablePath: executablePath, arguments: arguments)
+        }
+    }
+
+    private static func processPath(pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let result = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard result > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    private static func processArguments(pid: pid_t) -> [String]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else {
+            return nil
+        }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0 else {
+            return nil
+        }
+        let argc = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        var index = MemoryLayout<Int32>.size
+        while index < size, buffer[index] != 0 {
+            index += 1
+        }
+        while index < size, buffer[index] == 0 {
+            index += 1
+        }
+        var arguments: [String] = []
+        for _ in 0..<argc {
+            let start = index
+            while index < size, buffer[index] != 0 {
+                index += 1
+            }
+            if index > start, let argument = String(bytes: buffer[start..<index], encoding: .utf8) {
+                arguments.append(argument)
+            }
+            while index < size, buffer[index] == 0 {
+                index += 1
+            }
+        }
+        return arguments
+    }
+
+    private static func defaultTerminatePortOccupant(_ occupant: BundledModelPortOccupant) {
+        kill(occupant.pid, SIGTERM)
+    }
+
     private static let defaultMaximumResidentMemoryBytes: UInt64 = 2_500 * 1024 * 1024
+    private static let helperExecutableName = "stillloop-llama-server"
+    private static let legacyHelperExecutableName = "llama-server"
+    private static let helperExecutableNames: Set<String> = [helperExecutableName, legacyHelperExecutableName]
 
     private static func residentMemoryBytes(for processIdentifier: Int32) -> UInt64? {
         var taskInfo = proc_taskinfo()
@@ -350,5 +529,15 @@ private final class FoundationBundledModelProcess: BundledModelProcessManaging {
     func terminate() {
         guard process.isRunning else { return }
         process.terminate()
+    }
+}
+
+private extension BundledModelPortOccupant {
+    func argumentsContain(flag: String, value: String) -> Bool {
+        arguments.indices.contains { index in
+            arguments[index] == flag
+                && arguments.indices.contains(index + 1)
+                && arguments[index + 1] == value
+        }
     }
 }

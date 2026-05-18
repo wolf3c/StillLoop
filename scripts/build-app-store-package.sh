@@ -10,6 +10,7 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 HELPERS_DIR="$CONTENTS_DIR/Helpers"
 RUNTIME_SOURCE_DIR="$ROOT_DIR/Sources/StillLoop/Resources/Runtime"
 RUNTIME_SOURCE="$ROOT_DIR/Sources/StillLoop/Resources/Runtime/llama-server"
+HELPER_EXECUTABLE_NAME="stillloop-llama-server"
 STATIC_ENTITLEMENTS_FILE="$ROOT_DIR/Config/StillLoop-AppStore.entitlements"
 ENTITLEMENTS_FILE="$OUTPUT_DIR/StillLoop-AppStore.generated.entitlements"
 HELPER_ENTITLEMENTS_FILE="$OUTPUT_DIR/StillLoop-Helper.generated.entitlements"
@@ -43,9 +44,9 @@ if [[ ! -f "$RUNTIME_SOURCE" ]]; then
   echo "Bundled llama-server not found: $RUNTIME_SOURCE" >&2
   exit 1
 fi
-cp "$RUNTIME_SOURCE" "$HELPERS_DIR/llama-server"
+cp "$RUNTIME_SOURCE" "$HELPERS_DIR/$HELPER_EXECUTABLE_NAME"
 cp -R "$RUNTIME_SOURCE_DIR"/lib*.dylib "$HELPERS_DIR"/
-find "$HELPERS_DIR" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -exec chmod 755 {} \;
+find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec chmod 755 {} \;
 cp "$STILLLOOP_PROVISIONING_PROFILE" "$CONTENTS_DIR/embedded.provisionprofile"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
@@ -120,7 +121,7 @@ cat > "$HELPER_ENTITLEMENTS_FILE" <<PLIST
 PLIST
 plutil -lint "$HELPER_ENTITLEMENTS_FILE" >/dev/null
 /usr/bin/xattr -cr "$APP_DIR"
-find "$HELPERS_DIR" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$HELPER_ENTITLEMENTS_FILE" {} \;
+find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$HELPER_ENTITLEMENTS_FILE" {} \;
 /usr/bin/codesign --force --options runtime --sign "$STILLLOOP_APP_SIGN_IDENTITY" --entitlements "$ENTITLEMENTS_FILE" "$APP_DIR"
 /usr/bin/codesign --verify --strict --deep --verbose=2 "$APP_DIR"
 /usr/bin/productbuild --sign "$STILLLOOP_INSTALLER_SIGN_IDENTITY" --component "$APP_DIR" /Applications "$PKG_PATH"

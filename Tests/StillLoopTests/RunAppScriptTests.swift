@@ -35,10 +35,11 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("HELPERS_DIR=\"$CONTENTS_DIR/Helpers\""))
         XCTAssertTrue(script.contains("RUNTIME_SOURCE_DIR=\"$ROOT_DIR/Sources/StillLoop/Resources/Runtime\""))
         XCTAssertTrue(script.contains("RUNTIME_SOURCE=\"$ROOT_DIR/Sources/StillLoop/Resources/Runtime/llama-server\""))
-        XCTAssertTrue(script.contains("cp \"$RUNTIME_SOURCE\" \"$HELPERS_DIR/llama-server\""))
+        XCTAssertTrue(script.contains("HELPER_EXECUTABLE_NAME=\"stillloop-llama-server\""))
+        XCTAssertTrue(script.contains("cp \"$RUNTIME_SOURCE\" \"$HELPERS_DIR/$HELPER_EXECUTABLE_NAME\""))
         XCTAssertTrue(script.contains("cp -R \"$RUNTIME_SOURCE_DIR\"/lib*.dylib \"$HELPERS_DIR\"/"))
-        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"llama-server\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
-        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"llama-server\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --sign \"$CODESIGN_IDENTITY\" {} \\;"))
+        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
+        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --sign \"$CODESIGN_IDENTITY\" {} \\;"))
     }
 
     func testRunAppUsesDistinctDevelopmentDisplayName() throws {
@@ -129,10 +130,11 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("HELPERS_DIR=\"$CONTENTS_DIR/Helpers\""))
         XCTAssertTrue(script.contains("RUNTIME_SOURCE_DIR=\"$ROOT_DIR/Sources/StillLoop/Resources/Runtime\""))
         XCTAssertTrue(script.contains("RUNTIME_SOURCE=\"$ROOT_DIR/Sources/StillLoop/Resources/Runtime/llama-server\""))
-        XCTAssertTrue(script.contains("cp \"$RUNTIME_SOURCE\" \"$HELPERS_DIR/llama-server\""))
+        XCTAssertTrue(script.contains("HELPER_EXECUTABLE_NAME=\"stillloop-llama-server\""))
+        XCTAssertTrue(script.contains("cp \"$RUNTIME_SOURCE\" \"$HELPERS_DIR/$HELPER_EXECUTABLE_NAME\""))
         XCTAssertTrue(script.contains("cp -R \"$RUNTIME_SOURCE_DIR\"/lib*.dylib \"$HELPERS_DIR\"/"))
-        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"llama-server\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
-        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"llama-server\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$HELPER_ENTITLEMENTS_FILE\" {} \\;"))
+        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
+        XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$HELPER_ENTITLEMENTS_FILE\" {} \\;"))
         XCTAssertTrue(script.contains("<key>com.apple.security.inherit</key>"))
         XCTAssertTrue(script.contains("<key>com.apple.security.network.server</key>"))
     }

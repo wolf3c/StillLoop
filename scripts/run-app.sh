@@ -9,6 +9,7 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 HELPERS_DIR="$CONTENTS_DIR/Helpers"
 RUNTIME_SOURCE_DIR="$ROOT_DIR/Sources/StillLoop/Resources/Runtime"
 RUNTIME_SOURCE="$ROOT_DIR/Sources/StillLoop/Resources/Runtime/llama-server"
+HELPER_EXECUTABLE_NAME="stillloop-llama-server"
 BUNDLE_IDENTIFIER="local.StillLoop.dev"
 CODESIGN_IDENTITY="${STILLLOOP_CODESIGN_IDENTITY:--}"
 DESIGNATED_REQUIREMENT="=designated => identifier \"$BUNDLE_IDENTIFIER\""
@@ -23,9 +24,9 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR"
 cp "$ROOT_DIR/.build/arm64-apple-macosx/debug/StillLoop" "$MACOS_DIR/StillLoop"
 cp "$ROOT_DIR/Sources/StillLoop/Resources/StillLoop.icns" "$RESOURCES_DIR/StillLoop.icns"
 if [[ -f "$RUNTIME_SOURCE" ]]; then
-  cp "$RUNTIME_SOURCE" "$HELPERS_DIR/llama-server"
+  cp "$RUNTIME_SOURCE" "$HELPERS_DIR/$HELPER_EXECUTABLE_NAME"
   cp -R "$RUNTIME_SOURCE_DIR"/lib*.dylib "$HELPERS_DIR"/
-  find "$HELPERS_DIR" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -exec chmod 755 {} \;
+  find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec chmod 755 {} \;
 else
   echo "Warning: bundled llama-server not found at $RUNTIME_SOURCE" >&2
 fi
@@ -67,8 +68,8 @@ CODESIGN_ARGS=(--force --deep --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   CODESIGN_ARGS+=(--requirements "$DESIGNATED_REQUIREMENT")
 fi
-if [[ -f "$HELPERS_DIR/llama-server" ]]; then
-  find "$HELPERS_DIR" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" {} \;
+if [[ -f "$HELPERS_DIR/$HELPER_EXECUTABLE_NAME" ]]; then
+  find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" {} \;
 fi
 /usr/bin/codesign "${CODESIGN_ARGS[@]}" "$APP_DIR"
 

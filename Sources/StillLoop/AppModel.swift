@@ -1623,13 +1623,15 @@ final class AppModel: ObservableObject {
         case .imageInputUnavailable:
             return "自带模型：不支持图片输入"
         case .missingExecutable:
-            return "自带模型：缺少 llama-server"
+            return "自带模型：缺少 stillloop-llama-server"
         case .missingModel:
             return "自带模型：缺少模型文件"
         case .missingProjector:
             return "自带模型：缺少视觉投影文件"
         case .portInUse:
             return "自带模型：端口被占用"
+        case .noAvailablePort:
+            return "自带模型：可用端口不足"
         case .launchFailed:
             return "自带模型：启动失败"
         case .readinessFailed:
@@ -1652,6 +1654,8 @@ final class AppModel: ObservableObject {
             return "bundledRuntimeMissingProjector"
         case .portInUse:
             return "bundledRuntimePortInUse"
+        case .noAvailablePort:
+            return "bundledRuntimeNoAvailablePort"
         case .launchFailed:
             return "bundledRuntimeLaunchFailed"
         case .readinessFailed:

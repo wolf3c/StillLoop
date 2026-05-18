@@ -129,12 +129,12 @@ The llama.cpp target path is:
 Current runtime behavior:
 
 - `FocusEvaluator` remains the deterministic fallback.
-- When the built-in model is selected, StillLoop starts the bundled `llama-server` helper during a focus session and connects to `http://127.0.0.1:17631/v1`.
+- When the built-in model is selected, StillLoop starts the bundled `stillloop-llama-server` helper during a focus session, preferring `http://127.0.0.1:17631/v1` and automatically trying ports through `17640` if needed.
 - Runtime readiness requires both text completion and an image-input probe. If the bundled model cannot accept `image_url`, StillLoop reports the built-in runtime as unavailable and falls back to the heuristic evaluator.
 - `LLMFocusEvaluator` can still call any user-configured OpenAI-compatible `/v1/chat/completions` endpoint when manual model configuration is selected.
 - If model evaluation fails, StillLoop falls back to the heuristic evaluator instead of blocking the focus session.
 
-The bundled runtime files live under `Sources/StillLoop/Resources/Runtime/` and are copied into `Contents/Helpers` by the development and App Store packaging scripts. The included llama.cpp binary package is the macOS arm64 `b9060` release from `ggml-org/llama.cpp`; keep `LICENSE.llama.cpp` with the runtime files.
+The bundled runtime files live under `Sources/StillLoop/Resources/Runtime/` and are copied into `Contents/Helpers/stillloop-llama-server` by the development and App Store packaging scripts. The included llama.cpp binary package is the macOS arm64 `b9060` release from `ggml-org/llama.cpp`; keep `LICENSE.llama.cpp` with the runtime files.
 
 ### LM Studio Server
 

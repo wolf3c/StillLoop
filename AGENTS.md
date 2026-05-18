@@ -149,7 +149,7 @@ STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
 scripts/run-app.sh
 ```
 
-The default built-in-model path uses the bundled llama.cpp helper under `Sources/StillLoop/Resources/Runtime/`. `scripts/run-app.sh` copies `llama-server` and its `lib*.dylib` dependencies into `.build/StillLoop.app/Contents/Helpers`, signs the helper files, and StillLoop starts the helper lazily during a focus session on `http://127.0.0.1:17631/v1`. If the focus screen shows a built-in runtime failure, check `pgrep -fl "llama-server|StillLoop"` and `lsof -nP -iTCP:17631` before falling back to manual HTTP testing.
+The default built-in-model path uses the bundled llama.cpp helper under `Sources/StillLoop/Resources/Runtime/`. `scripts/run-app.sh` copies it into `.build/StillLoop.app/Contents/Helpers/stillloop-llama-server` with its `lib*.dylib` dependencies, signs the helper files, and StillLoop starts the helper lazily during a focus session. It prefers `http://127.0.0.1:17631/v1`, can reuse a healthy compatible helper already on that port, and can try ports through `17640` when another process owns the default port. If the focus screen shows a built-in runtime failure, check `pgrep -fl "stillloop-llama-server|llama-server|StillLoop"` and `lsof -nP -iTCP:17631` before falling back to manual HTTP testing.
 
 Only launch with a local HTTP model when the task explicitly requires manual model configuration, HTTP endpoint checks, or fallback behavior:
 

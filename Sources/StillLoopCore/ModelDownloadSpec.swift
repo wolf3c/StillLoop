@@ -40,7 +40,11 @@ public struct ModelDownloadSpec: Equatable {
     }
 
     public var localServerBaseURL: URL {
-        URL(string: "http://127.0.0.1:\(localServerPort)/v1")!
+        localServerBaseURL(port: localServerPort)
+    }
+
+    public func localServerBaseURL(port: Int) -> URL {
+        URL(string: "http://127.0.0.1:\(port)/v1")!
     }
 
     public static let builtIn = ModelDownloadSpec(

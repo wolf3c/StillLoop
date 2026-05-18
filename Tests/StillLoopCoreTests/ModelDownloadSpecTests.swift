@@ -29,6 +29,7 @@ final class ModelDownloadSpecTests: XCTestCase {
 
         XCTAssertEqual(spec.localServerPort, 17631)
         XCTAssertEqual(spec.localServerBaseURL.absoluteString, "http://127.0.0.1:17631/v1")
+        XCTAssertEqual(spec.localServerBaseURL(port: 17632).absoluteString, "http://127.0.0.1:17632/v1")
         XCTAssertEqual(spec.recommendedContextSize, 32_768)
         XCTAssertEqual(spec.recommendedCacheTypeK, "f16")
         XCTAssertEqual(spec.recommendedCacheTypeV, "f16")
