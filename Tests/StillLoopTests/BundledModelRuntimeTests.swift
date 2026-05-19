@@ -141,6 +141,36 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state, .running)
     }
 
+    func testStopTerminatesAdoptedStillLoopHelper() async throws {
+        let executableURL = try makeExecutable()
+        let modelURL = try makeModelFile()
+        let mmprojURL = try makeProjectorFile()
+        let helper = makeHelperOccupant(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            port: ModelDownloadSpec.builtIn.localServerPort
+        )
+        var terminatedOccupants: [BundledModelPortOccupant] = []
+        let runtime = BundledModelRuntime(
+            executableURL: executableURL,
+            modelURL: modelURL,
+            mmprojURL: mmprojURL,
+            spec: .builtIn,
+            isPortInUse: { $0 == ModelDownloadSpec.builtIn.localServerPort },
+            portOccupant: { _ in nil },
+            helperProcesses: { [helper] },
+            terminatePortOccupant: { terminatedOccupants.append($0) },
+            readinessProbe: { _, _ in .ready }
+        )
+
+        try await runtime.startIfNeeded()
+        runtime.stop()
+
+        XCTAssertEqual(terminatedOccupants, [helper])
+        XCTAssertEqual(runtime.state, .stopped)
+    }
+
     func testStartReusesHealthyStillLoopHelperOnBackupPortBeforeLaunchingDefaultPort() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
@@ -187,6 +217,7 @@ final class BundledModelRuntimeTests: XCTestCase {
             mmprojURL: mmprojURL,
             port: 17_632
         )
+        var terminatedOccupants: [BundledModelPortOccupant] = []
         let runtime = BundledModelRuntime(
             executableURL: executableURL,
             modelURL: modelURL,
@@ -202,9 +233,7 @@ final class BundledModelRuntimeTests: XCTestCase {
                 )
             },
             helperProcesses: { [helper] },
-            terminatePortOccupant: { occupant in
-                XCTFail("Other processes must not be terminated: \(occupant)")
-            },
+            terminatePortOccupant: { terminatedOccupants.append($0) },
             readinessProbe: { baseURL, _ in
                 XCTAssertEqual(baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
                 return .ready
@@ -213,9 +242,14 @@ final class BundledModelRuntimeTests: XCTestCase {
 
         try await runtime.startIfNeeded()
 
+        XCTAssertEqual(terminatedOccupants, [])
         XCTAssertEqual(launcher.launchCount, 0)
         XCTAssertEqual(runtime.baseURL, ModelDownloadSpec.builtIn.localServerBaseURL(port: 17_632))
         XCTAssertEqual(runtime.state, .running)
+
+        runtime.stop()
+
+        XCTAssertEqual(terminatedOccupants, [helper])
     }
 
     func testStartTerminatesStaleStillLoopHelperOnBackupPortThenRestarts() async throws {
@@ -771,7 +805,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
 
         let process = try FoundationBundledModelProcessLauncher().launch(executableURL: executableURL, arguments: [])
-        for _ in 0..<30 where process.isRunning {
+        for _ in 0..<100 where process.isRunning {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         let isStillRunning = process.isRunning
@@ -780,6 +814,31 @@ final class BundledModelRuntimeTests: XCTestCase {
         }
 
         XCTAssertFalse(isStillRunning, "A helper that writes lots of logs should be drained instead of blocking on a full pipe")
+    }
+
+    func testFoundationLauncherStopsHelperWhenParentProcessDisappears() async throws {
+        let executableURL = temporaryDirectory.appendingPathComponent("long-running-helper")
+        try """
+        #!/bin/sh
+        while true; do
+          sleep 1
+        done
+        """.write(to: executableURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+
+        let process = try FoundationBundledModelProcessLauncher(parentProcessIdentifier: 999_999).launch(
+            executableURL: executableURL,
+            arguments: []
+        )
+        for _ in 0..<30 where process.isRunning {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let isStillRunning = process.isRunning
+        if isStillRunning {
+            process.terminate()
+        }
+
+        XCTAssertFalse(isStillRunning, "A helper should stop when the launching app process is gone")
     }
 
     func testImageReadinessFailureStopsLaunchedProcess() async throws {

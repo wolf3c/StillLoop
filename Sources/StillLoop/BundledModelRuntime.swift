@@ -358,8 +358,12 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     }
 
     func stop() {
+        let ownedProcessIdentifier = process?.processIdentifier
         process?.terminate()
         process = nil
+        for helper in verifiedStillLoopHelpers() where helper.occupant.pid != ownedProcessIdentifier {
+            terminatePortOccupant(helper.occupant)
+        }
         state = .stopped
     }
 
@@ -587,6 +591,12 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
 }
 
 struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
+    private let parentProcessIdentifier: Int32
+
+    init(parentProcessIdentifier: Int32 = getpid()) {
+        self.parentProcessIdentifier = parentProcessIdentifier
+    }
+
     func launch(executableURL: URL, arguments: [String]) throws -> BundledModelProcessManaging {
         let process = Process()
         let outputPipe = Pipe()
@@ -599,7 +609,11 @@ struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
         process.standardError = errorPipe
         do {
             try process.run()
-            return FoundationBundledModelProcess(process: process, drains: [outputDrain, errorDrain])
+            let parentMonitor = ParentProcessDeathMonitor.launch(
+                parentProcessIdentifier: parentProcessIdentifier,
+                childProcessIdentifier: process.processIdentifier
+            )
+            return FoundationBundledModelProcess(process: process, drains: [outputDrain, errorDrain], parentMonitor: parentMonitor)
         } catch {
             outputDrain.close()
             errorDrain.close()
@@ -611,12 +625,15 @@ struct FoundationBundledModelProcessLauncher: BundledModelProcessLaunching {
 private final class FoundationBundledModelProcess: BundledModelProcessManaging {
     private let process: Process
     private let drains: [BoundedProcessPipeDrain]
+    private let parentMonitor: ParentProcessDeathMonitor?
 
-    init(process: Process, drains: [BoundedProcessPipeDrain]) {
+    init(process: Process, drains: [BoundedProcessPipeDrain], parentMonitor: ParentProcessDeathMonitor?) {
         self.process = process
         self.drains = drains
+        self.parentMonitor = parentMonitor
         process.terminationHandler = { _ in
             drains.forEach { $0.close() }
+            parentMonitor?.stop()
         }
     }
 
@@ -635,6 +652,50 @@ private final class FoundationBundledModelProcess: BundledModelProcessManaging {
 
     deinit {
         drains.forEach { $0.close() }
+        parentMonitor?.stop()
+    }
+}
+
+private final class ParentProcessDeathMonitor {
+    private let process: Process
+
+    private init(process: Process) {
+        self.process = process
+    }
+
+    static func launch(parentProcessIdentifier: Int32, childProcessIdentifier: Int32) -> ParentProcessDeathMonitor? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c",
+            """
+            parent="$1"
+            child="$2"
+            while kill -0 "$child" 2>/dev/null; do
+              if ! kill -0 "$parent" 2>/dev/null; then
+                kill -TERM "$child" 2>/dev/null
+                sleep 2
+                kill -KILL "$child" 2>/dev/null
+                exit 0
+              fi
+              sleep 1
+            done
+            """,
+            "stillloop-parent-monitor",
+            String(parentProcessIdentifier),
+            String(childProcessIdentifier)
+        ]
+        do {
+            try process.run()
+            return ParentProcessDeathMonitor(process: process)
+        } catch {
+            return nil
+        }
+    }
+
+    func stop() {
+        guard process.isRunning else { return }
+        process.terminate()
     }
 }
 
