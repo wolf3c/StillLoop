@@ -27,8 +27,7 @@ public final class SessionReviewCommentGenerator: SessionReviewCommentGenerating
             throw GenerationError.insufficientSessionContext
         }
         let response = try await engine.complete(messages: messages(for: session))
-        let json = extractJSONObject(from: response)
-        let modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
+        let modelResponse = try LLMJSONResponseExtractor.decodeFirst(ModelResponse.self, from: response, using: decoder)
         let comment = normalizedComment(modelResponse.comment)
         guard !comment.isEmpty else {
             throw GenerationError.emptyComment
@@ -138,13 +137,4 @@ public final class SessionReviewCommentGenerator: SessionReviewCommentGenerating
         return hasCJK && !hasJapaneseKana
     }
 
-    private func extractJSONObject(from text: String) -> String {
-        guard
-            let start = text.firstIndex(of: "{"),
-            let end = text.lastIndex(of: "}")
-        else {
-            return text
-        }
-        return String(text[start...end])
-    }
 }

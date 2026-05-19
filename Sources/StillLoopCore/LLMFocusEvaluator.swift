@@ -207,10 +207,9 @@ public struct LLMFocusEvaluator {
         } else {
             response = try await engine.complete(messages: promptMessages)
         }
-        let json = extractJSONObject(from: response)
         var modelResponse: ModelResponse
         do {
-            modelResponse = try decoder.decode(ModelResponse.self, from: Data(json.utf8))
+            modelResponse = try decodeModelResponse(from: response)
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
@@ -345,14 +344,8 @@ public struct LLMFocusEvaluator {
         return "available \(width)x\(height) \(bytes)B"
     }
 
-    private func extractJSONObject(from text: String) -> String {
-        guard
-            let start = text.firstIndex(of: "{"),
-            let end = text.lastIndex(of: "}")
-        else {
-            return text
-        }
-        return String(text[start...end])
+    private func decodeModelResponse(from text: String) throws -> ModelResponse {
+        try LLMJSONResponseExtractor.decodeFirst(ModelResponse.self, from: text, using: decoder)
     }
 
     private func applyFocusedMismatchGuard(

@@ -87,6 +87,35 @@ final class SessionReviewCommentGeneratorTests: XCTestCase {
         }
     }
 
+    func testParsesReviewCommentAfterThinkingAndUnrelatedJSON() async throws {
+        let generator = SessionReviewCommentGenerator(engine: StubReviewEngine(response: """
+        <think>
+        可以先草拟一个对象 {"comment":"这只是思考草稿。"}
+        </think>
+        上下文摘要：{"source":"session","events":2}
+        ```json
+        {"comment":"这段专注里，你从跑偏后回到写产品方案，并完成了关键段落整理。下次开始时，可以先接着补齐待确认的小节，继续保持这个推进节奏。"}
+        ```
+        """))
+        let session = FocusSession(
+            task: "写产品方案",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: Date(timeIntervalSince1970: 300),
+            events: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 60), state: .distracted, context: "Safari", nudge: "先回到：写产品方案"),
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 240), state: .focused, context: "Pages", nudge: nil)
+            ],
+            feedback: nil
+        )
+
+        let comment = try await generator.generateComment(for: session)
+
+        XCTAssertEqual(
+            comment,
+            "这段专注里，你从跑偏后回到写产品方案，并完成了关键段落整理。下次开始时，可以先接着补齐待确认的小节，继续保持这个推进节奏。"
+        )
+    }
+
     func testSessionWithoutEventsHasInsufficientContext() async {
         let engine = StubReviewEngine(response: #"{"comment":"继续保持专注。"}"#)
         let generator = SessionReviewCommentGenerator(engine: engine)

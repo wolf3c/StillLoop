@@ -89,6 +89,46 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.analysis?.observedActivity, "")
     }
 
+    func testParsesFinalJSONAfterTaggedThinkingWithDecoyJSON() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        <think>
+        先推理一下，也许可以返回 {"state":"focused","confidence":0.99,"reason":"只是草稿","nudge":null}
+        </think>
+        {"state":"distracted","confidence":0.76,"reason":"页面内容与任务无关。","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写产品方案",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertEqual(result.confidence, 0.76)
+        XCTAssertEqual(result.reason, "页面内容与任务无关。")
+    }
+
+    func testParsesFirstValidEvaluationJSONAmongMixedObjects() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        采样摘要：{"source":"browser","title":"V2EX"}
+
+        最终判断：
+        ```json
+        {"state":"stuck","confidence":"0.58","reason":"任务相关页面没有明显进展。","nudge":null}
+        ```
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "开发 StillLoop 产品",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .stuck)
+        XCTAssertEqual(result.confidence, 0.58)
+        XCTAssertEqual(result.reason, "任务相关页面没有明显进展。")
+    }
+
     func testBuildsPromptWithRecentHistory() async throws {
         let engine = StubEngine(response: """
         {"state":"uncertain","confidence":0.4,"reason":"Ambiguous","nudge":null}
