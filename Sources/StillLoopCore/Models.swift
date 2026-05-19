@@ -210,6 +210,58 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
     }
 }
 
+public extension FocusEvent {
+    func recognitionDebugClipboardText(timeText: String) -> String {
+        var sections: [String] = [
+            "识别详情",
+            "时间：\(timeText)"
+        ]
+
+        var timelineLines = [context]
+        if let nudge {
+            timelineLines.append("提醒：\(nudge)")
+        }
+        sections.append((["时间线摘要"] + timelineLines).joined(separator: "\n"))
+
+        if let debugDetail {
+            if !debugDetail.capturedContext.isEmpty {
+                sections.append((["采样上下文"] + debugDetail.capturedContext).joined(separator: "\n"))
+            }
+
+            var resultLines = [
+                "评估器：\(debugDetail.evaluator)",
+                "任务：\(debugDetail.task)",
+                "状态：\(debugDetail.resultState.displayName) (\(debugDetail.resultState.rawValue))",
+                String(format: "置信度：%.2f", debugDetail.confidence),
+                "原因：\(debugDetail.reason)",
+                "触发提醒：\(debugDetail.shouldNudge ? "是" : "否")"
+            ]
+            if let nudge = debugDetail.nudge {
+                resultLines.append("返回提醒：\(nudge)")
+            }
+            sections.append((["运算返回结果"] + resultLines).joined(separator: "\n"))
+
+            if let analysis = debugDetail.analysis {
+                sections.append([
+                    "模型分析",
+                    "用户状态：\(analysis.userEngagement)",
+                    "页面内容：\(analysis.screenContent)",
+                    "可见操作：\(analysis.observedActivity)",
+                    "任务匹配：\(analysis.taskAlignment)",
+                    "判断依据：\(analysis.decisionRationale)"
+                ].joined(separator: "\n"))
+            }
+        } else {
+            sections.append([
+                "运算返回结果",
+                "旧时间线记录没有保存本轮运算详情。"
+            ].joined(separator: "\n"))
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+}
+
 public struct FocusEventDebugDetail: Codable, Equatable {
     public var task: String
     public var evaluator: String

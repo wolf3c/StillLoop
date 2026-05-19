@@ -1,4 +1,5 @@
 import StillLoopCore
+import AppKit
 import Charts
 import SwiftUI
 
@@ -1131,6 +1132,8 @@ private struct TimelineEventRow: View {
 
 private struct TimelineEventDebugPopover: View {
     var event: FocusEvent
+    @State private var didCopy = false
+
     private let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
@@ -1189,10 +1192,26 @@ private struct TimelineEventDebugPopover: View {
                         TimelineDebugText("旧时间线记录没有保存本轮运算详情。")
                     }
                 }
+
+                Button {
+                    copyRecognitionDebugDetail()
+                } label: {
+                    Label(didCopy ? "已复制全部信息" : "复制全部信息", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(16)
         }
         .frame(width: 420, height: 480)
+    }
+
+    private func copyRecognitionDebugDetail() {
+        let text = event.recognitionDebugClipboardText(timeText: formatter.string(from: event.timestamp))
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        didCopy = true
     }
 }
 

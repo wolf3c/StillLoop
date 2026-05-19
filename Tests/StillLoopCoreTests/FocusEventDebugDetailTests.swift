@@ -121,4 +121,43 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertFalse(detail.capturedContext[0].contains("q=private"))
         XCTAssertFalse(detail.capturedContext[0].contains("#section"))
     }
+
+    func testRecognitionDebugClipboardTextIncludesEveryVisibleSection() {
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .distracted,
+            context: "Chrome · 文档页面",
+            nudge: "回到：整理发布说明",
+            debugDetail: FocusEventDebugDetail(
+                task: "整理发布说明",
+                evaluator: "自带模型",
+                capturedContext: ["capture[1] 1970-01-01T00:00:01Z\nChrome · 文档页面\nscreenshot=available; camera=unavailable"],
+                resultState: .distracted,
+                confidence: 0.91,
+                reason: "页面内容偏离当前任务",
+                shouldNudge: true,
+                nudge: "请回到发布说明",
+                analysis: LLMFocusAnalysis(
+                    userEngagement: "用户在阅读页面。",
+                    screenContent: "页面显示文章内容。",
+                    observedActivity: "连续停留在浏览器。",
+                    taskAlignment: "内容与发布说明无关。",
+                    decisionRationale: "当前内容不支持任务推进。"
+                )
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "08:00:01")
+
+        XCTAssertTrue(text.contains("识别详情"))
+        XCTAssertTrue(text.contains("时间：08:00:01"))
+        XCTAssertTrue(text.contains("时间线摘要\nChrome · 文档页面\n提醒：回到：整理发布说明"))
+        XCTAssertTrue(text.contains("采样上下文\ncapture[1] 1970-01-01T00:00:01Z"))
+        XCTAssertTrue(text.contains("运算返回结果"))
+        XCTAssertTrue(text.contains("状态：明显偏离 (distracted)"))
+        XCTAssertTrue(text.contains("置信度：0.91"))
+        XCTAssertTrue(text.contains("触发提醒：是"))
+        XCTAssertTrue(text.contains("模型分析"))
+        XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))
+    }
 }

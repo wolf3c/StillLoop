@@ -25,4 +25,13 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("任务匹配："))
         XCTAssertTrue(source.contains("判断依据："))
     }
+
+    func testRecognitionDebugPopoverCanCopyAllDetails() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("复制全部信息"))
+        XCTAssertTrue(source.contains("copyRecognitionDebugDetail()"))
+        XCTAssertTrue(source.contains("NSPasteboard.general.setString"))
+        XCTAssertTrue(source.contains("recognitionDebugClipboardText(timeText:"))
+    }
 }
