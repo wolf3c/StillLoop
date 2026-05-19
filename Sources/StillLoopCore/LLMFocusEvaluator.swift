@@ -4,6 +4,14 @@ public protocol LocalLLMEngine: AnyObject {
     func complete(messages: [LLMMessage]) async throws -> String
 }
 
+public enum LLMResponseFormat: Equatable {
+    case focusEvaluation
+}
+
+public protocol StructuredLocalLLMEngine: LocalLLMEngine {
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String
+}
+
 public struct LLMMessage: Equatable {
     public enum Role: String, Equatable {
         case system
@@ -192,7 +200,13 @@ public struct LLMFocusEvaluator {
         recentSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async throws -> LLMEvaluationResult {
-        let response = try await engine.complete(messages: messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents))
+        let promptMessages = messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents)
+        let response: String
+        if let structuredEngine = engine as? StructuredLocalLLMEngine {
+            response = try await structuredEngine.complete(messages: promptMessages, responseFormat: .focusEvaluation)
+        } else {
+            response = try await engine.complete(messages: promptMessages)
+        }
         let json = extractJSONObject(from: response)
         var modelResponse: ModelResponse
         do {

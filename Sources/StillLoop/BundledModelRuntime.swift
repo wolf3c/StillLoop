@@ -391,7 +391,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     }
 
     private static func defaultReadinessProbe(baseURL: URL, modelID: String) async throws -> Readiness {
-        let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: modelID)
+        let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: modelID, disablesReasoning: true)
         do {
             _ = try await engine.checkModelReadiness(requiresImageInput: true)
             return .ready

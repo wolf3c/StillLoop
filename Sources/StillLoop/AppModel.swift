@@ -531,7 +531,12 @@ final class AppModel: ObservableObject {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
         self.bundledLLMEngineFactory = bundledLLMEngineFactory ?? { baseURL, modelID in
-            OpenAICompatibleLLMEngine(baseURL: baseURL, model: modelID)
+            OpenAICompatibleLLMEngine(
+                baseURL: baseURL,
+                model: modelID,
+                disablesReasoning: true,
+                usesResponseFormat: true
+            )
         }
         let resolvedLaunchAtLoginManager = launchAtLoginManager ?? LaunchAtLoginManagerFactory.defaultManager()
         self.launchAtLoginManager = resolvedLaunchAtLoginManager

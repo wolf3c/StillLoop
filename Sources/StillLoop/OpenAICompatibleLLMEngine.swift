@@ -1,7 +1,7 @@
 import Foundation
 import StillLoopCore
 
-final class OpenAICompatibleLLMEngine: LocalLLMEngine {
+final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
     enum VisualCapability: Equatable {
         case supported
         case notAdvertised
@@ -19,6 +19,10 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
     }
 
     struct RequestBody: Encodable {
+        struct ChatTemplateKwargs: Encodable {
+            var enable_thinking: Bool
+        }
+
         struct Message: Encodable {
             struct TextPart: Encodable {
                 var type = "text"
@@ -69,6 +73,104 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
         var presence_penalty: Double
         var max_tokens: Int
         var stream: Bool
+        var chat_template_kwargs: ChatTemplateKwargs?
+        var response_format: FocusResponseFormat?
+    }
+
+    struct FocusResponseFormat: Encodable {
+        struct Definition: Encodable {
+            var name: String
+            var strict: Bool
+            var schema: ObjectSchema
+        }
+
+        struct ObjectSchema: Encodable {
+            var type = "object"
+            var additionalProperties = false
+            var properties: Properties
+            var required: [String]
+        }
+
+        struct Properties: Encodable {
+            var analysis: AnalysisSchema?
+            var state: StateSchema?
+            var confidence: NumberSchema?
+            var reason: StringSchema?
+            var nudge: NullableStringSchema?
+        }
+
+        struct AnalysisProperties: Encodable {
+            var userEngagement: StringSchema?
+            var screenContent: StringSchema?
+            var observedActivity: StringSchema?
+            var taskAlignment: StringSchema?
+            var decisionRationale: StringSchema?
+        }
+
+        struct AnalysisSchema: Encodable {
+            var type = "object"
+            var additionalProperties = false
+            var properties = AnalysisProperties(
+                userEngagement: .init(),
+                screenContent: .init(),
+                observedActivity: .init(),
+                taskAlignment: .init(),
+                decisionRationale: .init()
+            )
+            var required = [
+                "userEngagement",
+                "screenContent",
+                "observedActivity",
+                "taskAlignment",
+                "decisionRationale"
+            ]
+        }
+
+        struct StateSchema: Encodable {
+            var type = "string"
+            var `enum` = ["focused", "uncertain", "distracted", "stuck", "resting", "away"]
+        }
+
+        struct StringSchema: Encodable {
+            var type = "string"
+        }
+
+        struct NumberSchema: Encodable {
+            var type = "number"
+            var minimum = 0
+            var maximum = 1
+        }
+
+        struct NullableStringSchema: Encodable {
+            enum CodingKeys: String, CodingKey {
+                case type
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(["string", "null"], forKey: .type)
+            }
+        }
+
+        var type = "json_schema"
+        var json_schema: Definition
+
+        static let focusEvaluation = FocusResponseFormat(
+            json_schema: Definition(
+                name: "focus_evaluation",
+                strict: true,
+                schema: ObjectSchema(
+                    properties: Properties(
+                        analysis: .init(),
+                        state: .init(),
+                        confidence: .init(),
+                        reason: .init(),
+                        nudge: .init()
+                    ),
+                    required: ["analysis", "state", "confidence", "reason", "nudge"]
+                )
+            )
+        )
     }
 
     struct ResponseBody: Decodable {
@@ -96,12 +198,23 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
     private let model: String
     private let apiKey: String?
     private let session: URLSession
+    private let disablesReasoning: Bool
+    private let usesResponseFormat: Bool
 
-    init(baseURL: URL, model: String, apiKey: String? = nil, session: URLSession = .shared) {
+    init(
+        baseURL: URL,
+        model: String,
+        apiKey: String? = nil,
+        disablesReasoning: Bool = false,
+        usesResponseFormat: Bool = false,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
         self.model = model
         self.apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.session = session
+        self.disablesReasoning = disablesReasoning
+        self.usesResponseFormat = usesResponseFormat
     }
 
     func checkConnection() async throws {
@@ -164,6 +277,10 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
     }
 
     func complete(messages: [LLMMessage]) async throws -> String {
+        try await complete(messages: messages, responseFormat: nil)
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -181,7 +298,13 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
                 top_k: 20,
                 presence_penalty: 1.5,
                 max_tokens: 500,
-                stream: false
+                stream: false,
+                chat_template_kwargs: disablesReasoning
+                    ? .init(enable_thinking: false)
+                    : nil,
+                response_format: usesResponseFormat
+                    ? Self.openAIResponseFormat(for: responseFormat)
+                    : nil
             )
         )
 
@@ -194,6 +317,15 @@ final class OpenAICompatibleLLMEngine: LocalLLMEngine {
             throw URLError(.cannotParseResponse)
         }
         return content
+    }
+
+    private static func openAIResponseFormat(for responseFormat: LLMResponseFormat?) -> FocusResponseFormat? {
+        switch responseFormat {
+        case .focusEvaluation:
+            return .focusEvaluation
+        case nil:
+            return nil
+        }
     }
 
     private func content(for parts: [LLMMessage.Content]) -> RequestBody.Message.Content {

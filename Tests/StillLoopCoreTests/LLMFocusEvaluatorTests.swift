@@ -439,6 +439,31 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("app: Codex"))
         XCTAssertFalse(engine.flattenedPrompt.contains("window: Codex"))
     }
+
+    func testRequestsFocusJSONSchemaWhenEngineSupportsStructuredOutput() async throws {
+        let engine = StructuredStubEngine(response: """
+        {"state":"distracted","confidence":0.8,"reason":"当前页面与任务不匹配。","nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "开发 StillLoop 产品",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "V2EX",
+                    browserTitle: "V2EX",
+                    browserURL: "https://www.v2ex.com/t/1213620",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(engine.lastResponseFormat, .focusEvaluation)
+    }
 }
 
 private final class StubEngine: LocalLLMEngine {
@@ -459,6 +484,27 @@ private final class StubEngine: LocalLLMEngine {
 
     func complete(messages: [LLMMessage]) async throws -> String {
         lastMessages = messages
+        return response
+    }
+}
+
+private final class StructuredStubEngine: StructuredLocalLLMEngine {
+    let response: String
+    private(set) var lastMessages: [LLMMessage] = []
+    private(set) var lastResponseFormat: LLMResponseFormat?
+
+    init(response: String) {
+        self.response = response
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        lastMessages = messages
+        return response
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        lastMessages = messages
+        lastResponseFormat = responseFormat
         return response
     }
 }

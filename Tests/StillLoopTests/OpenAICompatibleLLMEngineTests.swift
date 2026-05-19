@@ -47,6 +47,114 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["presence_penalty"] as? Double, 1.5)
         XCTAssertEqual(requestBody?["max_tokens"] as? Int, 500)
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
+        XCTAssertNil(requestBody?["chat_template_kwargs"])
+    }
+
+    func testCompletionRequestCanDisableReasoningForBundledLlamaServer() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestBody: [String: Any]?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+            disablesReasoning: true,
+            session: session
+        )
+
+        _ = try await engine.complete(messages: [
+            LLMMessage(role: .user, content: [.text("status")])
+        ])
+
+        let kwargs = try XCTUnwrap(requestBody?["chat_template_kwargs"] as? [String: Any])
+        XCTAssertEqual(kwargs["enable_thinking"] as? Bool, false)
+    }
+
+    func testCompletionRequestCanConstrainFocusEvaluationToJSONSchema() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestBody: [String: Any]?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+            usesResponseFormat: true,
+            session: session
+        )
+
+        _ = try await engine.complete(
+            messages: [
+                LLMMessage(role: .user, content: [.text("status")])
+            ],
+            responseFormat: .focusEvaluation
+        )
+
+        let responseFormat = try XCTUnwrap(requestBody?["response_format"] as? [String: Any])
+        XCTAssertEqual(responseFormat["type"] as? String, "json_schema")
+        let jsonSchema = try XCTUnwrap(responseFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(jsonSchema["name"] as? String, "focus_evaluation")
+        XCTAssertEqual(jsonSchema["strict"] as? Bool, true)
+        let schema = try XCTUnwrap(jsonSchema["schema"] as? [String: Any])
+        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+        let state = try XCTUnwrap(properties["state"] as? [String: Any])
+        XCTAssertEqual(state["enum"] as? [String], ["focused", "uncertain", "distracted", "stuck", "resting", "away"])
+    }
+
+    func testCompletionRequestIgnoresStructuredResponseFormatByDefault() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestBody: [String: Any]?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "manual-model",
+            session: session
+        )
+
+        _ = try await engine.complete(
+            messages: [
+                LLMMessage(role: .user, content: [.text("status")])
+            ],
+            responseFormat: .focusEvaluation
+        )
+
+        XCTAssertNil(requestBody?["response_format"])
     }
 
     func testReadinessProbeRequiresImageInputWhenRequested() async throws {
