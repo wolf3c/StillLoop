@@ -24,7 +24,7 @@ enum LLMJSONResponseExtractor {
 
     private static func textWithoutReasoningSections(_ text: String) -> String {
         var output = text
-        for tag in ["think", "thinking", "reasoning"] {
+        for tag in ["think", "thinking", "thought", "thoughts", "reason", "reasoning"] {
             output = removingTaggedSection(tag, from: output)
         }
         return trimmingLeadingReasoningBeforeFinalAnswer(in: output)
@@ -45,8 +45,8 @@ enum LLMJSONResponseExtractor {
     }
 
     private static func trimmingLeadingReasoningBeforeFinalAnswer(in text: String) -> String {
-        let reasoningMarkers = ["思考", "推理", "reasoning", "analysis"]
-        let finalMarkers = ["最终答案", "最终输出", "final answer", "final output"]
+        let reasoningMarkers = ["思考", "推理", "thought", "reason", "reasoning", "analysis"]
+        let finalMarkers = ["最终答案", "最终输出", "最终判断", "final answer", "final output"]
         guard reasoningMarkers.contains(where: { text.range(of: $0, options: [.caseInsensitive]) != nil }) else {
             return text
         }

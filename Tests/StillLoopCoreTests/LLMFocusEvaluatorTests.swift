@@ -108,6 +108,48 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.reason, "页面内容与任务无关。")
     }
 
+    func testParsesFinalJSONAfterThoughtAndReasonTagsWithDecoyJSON() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        <thought>
+        Maybe this draft object: {"state":"focused","confidence":0.99,"reason":"draft thought","nudge":null}
+        </thought>
+        <reason>
+        Another draft object: {"state":"distracted","confidence":0.88,"reason":"draft reason","nudge":null}
+        </reason>
+        {"state":"uncertain","confidence":0.52,"reason":"信号不足，需要继续观察。","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写产品方案",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertEqual(result.confidence, 0.52)
+        XCTAssertEqual(result.reason, "信号不足，需要继续观察。")
+    }
+
+    func testParsesFinalJSONAfterPlainReasonSectionWithDecoyJSON() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        Reason:
+        I might output {"state":"focused","confidence":0.95,"reason":"draft reason","nudge":null}
+
+        Final Answer:
+        {"state":"away","confidence":0.81,"reason":"摄像头画面里没有看到用户。","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写产品方案",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .away)
+        XCTAssertEqual(result.confidence, 0.81)
+        XCTAssertEqual(result.reason, "摄像头画面里没有看到用户。")
+    }
+
     func testParsesFirstValidEvaluationJSONAmongMixedObjects() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         采样摘要：{"source":"browser","title":"V2EX"}
