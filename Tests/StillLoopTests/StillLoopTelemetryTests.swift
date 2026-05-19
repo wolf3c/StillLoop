@@ -130,10 +130,13 @@ final class StillLoopTelemetryTests: XCTestCase {
         model.userFeedbackBody = "希望增加快捷反馈入口"
         model.userFeedbackReplyAddress = "reply@example.com"
         model.userFeedbackAllowsContact = true
+        model.isUserFeedbackPresented = true
 
         await model.submitUserFeedback()
 
         XCTAssertEqual(model.userFeedbackSubmissionStatus, .sent)
+        XCTAssertFalse(model.isUserFeedbackPresented)
+        XCTAssertEqual(model.toastMessage, "已提交")
         XCTAssertEqual(model.userFeedbackBody, "")
         XCTAssertEqual(model.userFeedbackReplyAddress, "")
         XCTAssertFalse(model.userFeedbackAllowsContact)

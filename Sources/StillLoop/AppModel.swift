@@ -239,6 +239,7 @@ final class AppModel: ObservableObject {
     @Published var userFeedbackAllowsContact = false
     @Published var userFeedbackSubmissionStatus: UserFeedbackSubmissionStatus = .idle
     @Published var userFeedbackSubmissionMessage = ""
+    @Published var toastMessage = ""
     @Published var modelConnectionStatus = "尚未检查"
     @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
     @Published var isModelConnectionUsable = false
@@ -278,6 +279,7 @@ final class AppModel: ObservableObject {
     private var reviewCommentTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
+    private var toastTask: Task<Void, Never>?
     private var bundledModelRuntimeFailureStatus: String?
     private var bundledModelRuntimeUnavailableStatus: String?
     private var systemSuspendedAt: Date?
@@ -688,13 +690,27 @@ final class AppModel: ObservableObject {
         do {
             try await telemetry.submitUserFeedback(draft)
             userFeedbackSubmissionStatus = .sent
-            userFeedbackSubmissionMessage = "已发送，感谢反馈。"
+            userFeedbackSubmissionMessage = ""
+            isUserFeedbackPresented = false
+            showToast("已提交")
             userFeedbackBody = ""
             userFeedbackReplyAddress = ""
             userFeedbackAllowsContact = false
         } catch {
             userFeedbackSubmissionStatus = .failed
             userFeedbackSubmissionMessage = "发送失败，请稍后重试。"
+        }
+    }
+
+    private func showToast(_ message: String) {
+        toastTask?.cancel()
+        toastMessage = message
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.toastMessage = ""
+            }
         }
     }
 

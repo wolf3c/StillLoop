@@ -30,6 +30,14 @@ struct StillLoopView: View {
         }
         .frame(minWidth: 820, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) {
+            if !model.toastMessage.isEmpty {
+                StillLoopToast(message: model.toastMessage)
+                    .padding(.top, 18)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: model.toastMessage)
     }
 
     @ViewBuilder
@@ -101,6 +109,24 @@ private struct HeaderView: View {
         .padding(.top, 36)
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
+    }
+}
+
+private struct StillLoopToast: View {
+    var message: String
+
+    var body: some View {
+        Label(message, systemImage: "checkmark.circle.fill")
+            .font(.callout.weight(.medium))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+            )
+            .accessibilityLabel(message)
     }
 }
 
@@ -1203,6 +1229,11 @@ private struct TimelineDebugText: View {
     }
 }
 
+enum ReviewLayout {
+    static let maximumContentWidth: CGFloat = 852
+    static let metricSpacing: CGFloat = 12
+}
+
 private struct ReviewView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -1240,12 +1271,7 @@ private struct ReviewView: View {
                         ReviewCommentCard(comment: reviewComment)
                     }
 
-                    HStack(spacing: 12) {
-                        Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
-                        Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
-                        Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
-                        Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
-                    }
+                    ReviewMetricRow(summary: summary, stats: stats)
                     ReviewAppUsageCard(topApps: summary.topApps)
                 }
             }
@@ -1268,26 +1294,48 @@ private struct ReviewCommentCard: View {
     var comment: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("本次表现")
-                .font(.caption.weight(.semibold))
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "text.quote")
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Text(comment)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("本次表现")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(comment)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(14)
-        .frame(maxWidth: 640, alignment: .leading)
+        .padding(16)
+        .frame(maxWidth: ReviewLayout.maximumContentWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.12))
+                .stroke(Color.secondary.opacity(0.18))
         )
+    }
+}
+
+private struct ReviewMetricRow: View {
+    var summary: SessionSummary
+    var stats: ReviewStats
+
+    var body: some View {
+        HStack(spacing: ReviewLayout.metricSpacing) {
+            Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
+            Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
+            Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
+            Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
+        }
+        .frame(maxWidth: ReviewLayout.maximumContentWidth, alignment: .leading)
     }
 }
 
@@ -1306,7 +1354,7 @@ private struct ReviewTaskSummary: View {
                 continueButton
             }
         }
-        .frame(maxWidth: 640, alignment: .leading)
+        .frame(maxWidth: ReviewLayout.maximumContentWidth, alignment: .leading)
     }
 
     private var taskText: some View {

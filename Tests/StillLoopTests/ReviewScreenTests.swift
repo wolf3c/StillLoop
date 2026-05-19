@@ -119,4 +119,23 @@ final class ReviewScreenTests: XCTestCase {
         XCTAssertFalse(source.contains("暂未生成"))
         XCTAssertFalse(source.contains("重新生成"))
     }
+
+    func testReviewCommentAndMetricsShareReviewContentWidth() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let reviewStart = try XCTUnwrap(source.range(of: "private struct ReviewView: View"))
+        let commentStart = try XCTUnwrap(source.range(of: "private struct ReviewCommentCard: View"))
+        let taskStart = try XCTUnwrap(source.range(of: "private struct ReviewTaskSummary: View"))
+        let appUsageStart = try XCTUnwrap(source.range(of: "private struct ReviewAppUsageCard: View"))
+        let reviewSnippet = String(source[reviewStart.lowerBound..<commentStart.lowerBound])
+        let commentSnippet = String(source[commentStart.lowerBound..<taskStart.lowerBound])
+        let taskSnippet = String(source[taskStart.lowerBound..<appUsageStart.lowerBound])
+
+        XCTAssertTrue(source.contains("enum ReviewLayout"))
+        XCTAssertTrue(reviewSnippet.contains("ReviewMetricRow("))
+        XCTAssertFalse(reviewSnippet.contains("HStack(spacing: 12) {\n                        Metric(title: \"总时长\""))
+        XCTAssertTrue(commentSnippet.contains(".frame(maxWidth: ReviewLayout.maximumContentWidth"))
+        XCTAssertTrue(taskSnippet.contains(".frame(maxWidth: ReviewLayout.maximumContentWidth"))
+        XCTAssertTrue(source.contains("private struct ReviewMetricRow: View"))
+        XCTAssertTrue(source.contains(".frame(maxWidth: ReviewLayout.maximumContentWidth"))
+    }
 }
