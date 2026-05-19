@@ -19,6 +19,8 @@ Package.resolved
 *.xcarchive
 *.ipa
 build/
+.release-assets/
+docs/*.mp4
 
 # Local secrets and machine-specific config
 .env
