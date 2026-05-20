@@ -77,11 +77,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
 
     struct LaunchTuning: Equatable {
         var metricsEnabled: Bool
-        var batchSize: Int?
-        var ubatchSize: Int?
 
-        static let development = LaunchTuning(metricsEnabled: true, batchSize: 4_096, ubatchSize: 1_024)
-        static let production = LaunchTuning(metricsEnabled: false, batchSize: nil, ubatchSize: nil)
+        static let development = LaunchTuning(metricsEnabled: true)
+        static let production = LaunchTuning(metricsEnabled: false)
 
         static var `default`: LaunchTuning {
             #if DEBUG
@@ -213,12 +211,6 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         ]
         if let mmprojURL {
             arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)
-        }
-        if let batchSize = tuning.batchSize {
-            arguments.append(contentsOf: ["--batch-size", String(batchSize)])
-        }
-        if let ubatchSize = tuning.ubatchSize {
-            arguments.append(contentsOf: ["--ubatch-size", String(ubatchSize)])
         }
         if tuning.metricsEnabled {
             arguments.append("--metrics")

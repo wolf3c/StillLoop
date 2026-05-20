@@ -41,8 +41,6 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--cache-type-v", "f16",
             "--no-cache-prompt",
             "--cache-ram", "0",
-            "--batch-size", "4096",
-            "--ubatch-size", "1024",
             "--metrics"
         ])
     }
@@ -54,11 +52,9 @@ final class BundledModelRuntimeTests: XCTestCase {
         )
 
         #if DEBUG
-        XCTAssertEqual(arguments.suffix(5), [
-            "--batch-size", "4096",
-            "--ubatch-size", "1024",
-            "--metrics"
-        ])
+        XCTAssertFalse(arguments.contains("--batch-size"))
+        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertEqual(arguments.last, "--metrics")
         #else
         XCTAssertFalse(arguments.contains("--batch-size"))
         XCTAssertFalse(arguments.contains("--ubatch-size"))
