@@ -136,6 +136,51 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertFalse(detail.capturedContext[0].contains("#section"))
     }
 
+    func testFormattedRequestMetricLinesShowsFullLLMUsageJSON() throws {
+        let data = Data("""
+        {
+          "visualCaptureCount": 1,
+          "imageCount": 2,
+          "textSnapshotCount": 3,
+          "previousEventCount": 4,
+          "payloadBytes": 5678,
+          "responseChars": 901,
+          "inputTextCharacterCount": 234,
+          "inputTextTokenCount": 56,
+          "usage": {
+            "completion_tokens": 8,
+            "prompt_tokens": 21,
+            "total_tokens": 29,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          }
+        }
+        """.utf8)
+        let metrics = try JSONDecoder().decode(LLMRequestDebugMetrics.self, from: data)
+
+        let lines = FocusEventDebugDetail.formattedRequestMetricLines(metrics)
+
+        XCTAssertTrue(lines.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
+    }
+
+    func testFormattedRequestMetricLinesOmitsLLMUsageWhenMissing() {
+        let metrics = LLMRequestDebugMetrics(
+            visualCaptureCount: 1,
+            imageCount: 2,
+            textSnapshotCount: 3,
+            previousEventCount: 4,
+            payloadBytes: 5_678,
+            responseChars: 901,
+            inputTextCharacterCount: 234,
+            inputTextTokenCount: 56
+        )
+
+        let lines = FocusEventDebugDetail.formattedRequestMetricLines(metrics)
+
+        XCTAssertFalse(lines.contains { $0.hasPrefix("LLM usage：") })
+    }
+
     func testRecognitionDebugClipboardTextIncludesEveryVisibleSection() {
         let event = FocusEvent(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -159,7 +204,15 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     payloadBytes: 5_678,
                     responseChars: 901,
                     inputTextCharacterCount: 234,
-                    inputTextTokenCount: 56
+                    inputTextTokenCount: 56,
+                    usage: .object([
+                        "completion_tokens": .int(8),
+                        "prompt_tokens": .int(21),
+                        "total_tokens": .int(29),
+                        "prompt_tokens_details": .object([
+                            "cached_tokens": .int(0)
+                        ])
+                    ])
                 ),
                 analysis: LLMFocusAnalysis(
                     userEngagement: "用户在阅读页面。",
@@ -183,6 +236,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("模型运行时长：1.23 秒"))
         XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=2, textSnapshotCount=3, previousEventCount=4"))
         XCTAssertTrue(text.contains("输入规模：payloadBytes=5678, responseChars=901, inputTextCharacterCount=234, inputTextTokenCount=56"))
+        XCTAssertTrue(text.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
         XCTAssertTrue(text.contains("触发提醒：是"))
         XCTAssertTrue(text.contains("模型分析"))
         XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))

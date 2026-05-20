@@ -449,8 +449,8 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             "请求规模：visualCaptureCount=\(metrics.visualCaptureCount), imageCount=\(metrics.imageCount), textSnapshotCount=\(metrics.textSnapshotCount), previousEventCount=\(metrics.previousEventCount)",
             "输入规模：payloadBytes=\(optionalIntText(metrics.payloadBytes)), responseChars=\(metrics.responseChars), inputTextCharacterCount=\(metrics.inputTextCharacterCount), inputTextTokenCount=\(optionalIntText(metrics.inputTextTokenCount))"
         ]
-        if metrics.llmInputTokenCount != nil || metrics.llmOutputTokenCount != nil {
-            lines.append("LLM Tokens：inputTokens=\(optionalIntText(metrics.llmInputTokenCount)), outputTokens=\(optionalIntText(metrics.llmOutputTokenCount))")
+        if let usage = metrics.usage?.compactJSONString {
+            lines.append("LLM usage：\(usage)")
         }
         return lines
     }

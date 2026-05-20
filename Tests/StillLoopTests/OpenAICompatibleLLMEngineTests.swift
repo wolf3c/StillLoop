@@ -211,6 +211,38 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(metrics.payloadBytes, capturedPayloadBytes)
         XCTAssertEqual(metrics.responseChars, response.count)
         XCTAssertNil(metrics.inputTextTokenCount)
+        XCTAssertNil(metrics.usage)
+    }
+
+    func testCompletionRecordsFullUsageDebugMetrics() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"focused"}}],"usage":{"completion_tokens":8,"prompt_tokens":21,"total_tokens":29,"prompt_tokens_details":{"cached_tokens":0}}}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "manual-model",
+            session: session
+        )
+
+        _ = try await engine.complete(messages: [
+            LLMMessage(role: .user, content: [.text("status")])
+        ])
+
+        let metrics = try XCTUnwrap(engine.lastRequestTransportMetrics)
+        XCTAssertEqual(
+            metrics.usage?.compactJSONString,
+            #"{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#
+        )
     }
 
     func testLocalLlamaInputTextTokenCountUsesTokenizeEndpoint() async throws {

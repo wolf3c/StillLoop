@@ -24,7 +24,15 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         let engine = InstrumentedStubEngine(
             response: response,
             payloadBytes: 12_345,
-            inputTextTokenCount: 678
+            inputTextTokenCount: 678,
+            usage: .object([
+                "completion_tokens": .int(8),
+                "prompt_tokens": .int(21),
+                "total_tokens": .int(29),
+                "prompt_tokens_details": .object([
+                    "cached_tokens": .int(0)
+                ])
+            ])
         )
         let evaluator = LLMFocusEvaluator(engine: engine)
         let textSnapshots = [
@@ -80,6 +88,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(metrics.payloadBytes, 12_345)
         XCTAssertEqual(metrics.responseChars, response.count)
         XCTAssertEqual(metrics.inputTextTokenCount, 678)
+        XCTAssertEqual(
+            metrics.usage?.compactJSONString,
+            #"{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#
+        )
         XCTAssertEqual(metrics.inputTextCharacterCount, engine.inputTextCharacterCount)
         XCTAssertGreaterThan(metrics.inputTextCharacterCount, 0)
     }
@@ -1186,13 +1198,19 @@ private final class InstrumentedStubEngine: LocalLLMEngine, LLMRequestTransportM
             }
     }
 
-    init(response: String, payloadBytes: Int, inputTextTokenCount: Int) {
+    init(
+        response: String,
+        payloadBytes: Int,
+        inputTextTokenCount: Int,
+        usage: LLMUsageValue? = nil
+    ) {
         self.response = response
         self.inputTextTokens = inputTextTokenCount
         self.lastRequestTransportMetrics = LLMRequestTransportMetrics(
             payloadBytes: payloadBytes,
             responseChars: response.count,
-            inputTextTokenCount: nil
+            inputTextTokenCount: nil,
+            usage: usage
         )
     }
 

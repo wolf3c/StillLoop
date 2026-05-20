@@ -223,6 +223,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         }
 
         var choices: [Choice]
+        var usage: LLMUsageValue?
     }
 
     private struct ModelsResponse: Decodable {
@@ -372,7 +373,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         lastRequestTransportMetrics = LLMRequestTransportMetrics(
             payloadBytes: payload.count,
             responseChars: content.count,
-            inputTextTokenCount: nil
+            inputTextTokenCount: nil,
+            usage: body.usage
         )
         return content
     }

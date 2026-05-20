@@ -12,15 +12,83 @@ public protocol StructuredLocalLLMEngine: LocalLLMEngine {
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String
 }
 
+public enum LLMUsageValue: Codable, Equatable {
+    case object([String: LLMUsageValue])
+    case array([LLMUsageValue])
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: LLMUsageValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([LLMUsageValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported LLM usage JSON value"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .string(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    public var compactJSONString: String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 public struct LLMRequestTransportMetrics: Equatable {
     public var payloadBytes: Int?
     public var responseChars: Int?
     public var inputTextTokenCount: Int?
+    public var usage: LLMUsageValue?
 
-    public init(payloadBytes: Int? = nil, responseChars: Int? = nil, inputTextTokenCount: Int? = nil) {
+    public init(
+        payloadBytes: Int? = nil,
+        responseChars: Int? = nil,
+        inputTextTokenCount: Int? = nil,
+        usage: LLMUsageValue? = nil
+    ) {
         self.payloadBytes = payloadBytes
         self.responseChars = responseChars
         self.inputTextTokenCount = inputTextTokenCount
+        self.usage = usage
     }
 }
 
@@ -61,8 +129,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var responseChars: Int
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
-    public var llmInputTokenCount: Int?
-    public var llmOutputTokenCount: Int?
+    public var usage: LLMUsageValue?
 
     public init(
         visualCaptureCount: Int,
@@ -73,8 +140,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         responseChars: Int,
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
-        llmInputTokenCount: Int? = nil,
-        llmOutputTokenCount: Int? = nil
+        usage: LLMUsageValue? = nil
     ) {
         self.visualCaptureCount = visualCaptureCount
         self.imageCount = imageCount
@@ -84,8 +150,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.responseChars = responseChars
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
-        self.llmInputTokenCount = llmInputTokenCount
-        self.llmOutputTokenCount = llmOutputTokenCount
+        self.usage = usage
     }
 }
 
@@ -372,7 +437,8 @@ public struct LLMFocusEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount
+                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                usage: transportMetrics?.usage
             ),
             analysis: modelResponse.analysis,
             returnTarget: returnTarget
