@@ -9,10 +9,10 @@ enum NudgeIntensity: Equatable {
 
     var displayDuration: TimeInterval {
         switch self {
-        case .gentle: return 2.4
-        case .noticeable: return 8.0
-        case .strong: return 12.0
-        case .permission: return 3.2
+        case .gentle: return 4
+        case .noticeable: return 10
+        case .strong: return 15
+        case .permission: return 5
         }
     }
 

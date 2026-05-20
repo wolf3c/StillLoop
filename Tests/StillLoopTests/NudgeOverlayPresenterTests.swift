@@ -22,13 +22,14 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     func testOverlayDurationsIncreaseWithIntensity() {
+        XCTAssertEqual(NudgeIntensity.gentle.displayDuration, 4)
         XCTAssertLessThan(NudgeIntensity.gentle.displayDuration, NudgeIntensity.noticeable.displayDuration)
         XCTAssertLessThan(NudgeIntensity.noticeable.displayDuration, NudgeIntensity.strong.displayDuration)
     }
 
     func testDistractedAndStuckOverlaysStayVisibleLongEnoughToNotice() {
-        XCTAssertGreaterThanOrEqual(NudgeIntensity.noticeable.displayDuration, 8)
-        XCTAssertGreaterThanOrEqual(NudgeIntensity.strong.displayDuration, 12)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.noticeable.displayDuration, 10)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.strong.displayDuration, 15)
     }
 
     func testDistractedAndStuckOverlaysUseStatusBarWindowLevel() {
@@ -391,7 +392,7 @@ final class NudgeOverlayPresenterTests: XCTestCase {
 
     func testPermissionNoticeUsesHighVisibilityOverlay() {
         XCTAssertEqual(NudgeIntensity.permission.windowLevel, .statusBar)
-        XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.displayDuration, 3)
+        XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.displayDuration, 5)
         XCTAssertGreaterThanOrEqual(NudgeIntensity.permission.width, 430)
     }
 
