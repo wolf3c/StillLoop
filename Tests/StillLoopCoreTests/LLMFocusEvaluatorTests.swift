@@ -240,8 +240,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"observedActivity\""))
         XCTAssertTrue(prompt.contains("\"taskAlignment\""))
         XCTAssertTrue(prompt.contains("\"decisionRationale\""))
-        XCTAssertTrue(prompt.contains("infer userEngaged from camera snapshots and screen activity"))
-        XCTAssertTrue(prompt.contains("Camera absence alone is not enough to set userEngaged=false"))
+        XCTAssertTrue(prompt.contains("infer userEngaged from camera snapshots"))
         XCTAssertTrue(prompt.contains("infer taskAligned from screenshot/app/window/browser context"))
         XCTAssertTrue(prompt.contains("Never use userEngaged alone to choose focused"))
         XCTAssertTrue(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
@@ -476,55 +475,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "先回到：研究 Matt Pocock公开的.claude")
         XCTAssertEqual(result.analysis?.taskAligned, false)
-    }
-
-    func testCameraAbsenceWithActiveScreenContextDoesNotDowngradeFocusedJudgementToAway() async throws {
-        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {
-          "analysis": {
-            "userEngaged": false,
-            "taskAligned": true,
-            "userEngagement": "The user is not visible in the camera frame, but the screen shows active engagement through application changes.",
-            "screenContent": "A GitHub page about mattpocock skills and Claude workflow is visible, then WeChat becomes the active window.",
-            "observedActivity": "The captures move from Chrome research material to a messaging app, indicating active computer interaction.",
-            "taskAlignment": "The GitHub page directly supports researching Matt Pocock public .claude workflows.",
-            "decisionRationale": "The user is not visible in camera, but screen activity and task evidence conflict with an away judgement."
-          },
-          "state": "focused",
-          "confidence": 0.0,
-          "reason": "The visible research material supports the task.",
-          "nudge": null
-        }
-        """))
-
-        let result = try await evaluator.evaluate(
-            task: "研究 Matt Pocock公开的.claude专属工作流",
-            recentSnapshots: [
-                ContextSnapshot(
-                    timestamp: Date(timeIntervalSince1970: 1),
-                    activeAppName: "Google Chrome",
-                    windowTitle: "mattpocock/skills: Skills for Real Engineers",
-                    browserTitle: "mattpocock/skills: Skills for Real Engineers. Straight from my .claude directory.",
-                    browserURL: "https://github.com/mattpocock/skills",
-                    screenshotAvailable: true,
-                    cameraFrameAvailable: true
-                ),
-                ContextSnapshot(
-                    timestamp: Date(timeIntervalSince1970: 2),
-                    activeAppName: "微信",
-                    windowTitle: "当前窗口",
-                    browserTitle: nil,
-                    browserURL: nil,
-                    screenshotAvailable: true,
-                    cameraFrameAvailable: true
-                )
-            ],
-            previousEvents: []
-        )
-
-        XCTAssertEqual(result.state, .uncertain)
-        XCTAssertNotEqual(result.state, .away)
-        XCTAssertTrue(result.reason.contains("屏幕活动"))
     }
 
     func testFocusedJudgementRequiresObservableEvidenceForResearchTask() async throws {

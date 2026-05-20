@@ -303,12 +303,12 @@ public struct LLMFocusEvaluator {
         Your job is to judge whether the user's current visible activity supports the stated session goal.
 
         Decision rule:
-        1) First infer userEngaged from camera snapshots and screen activity: whether the user appears present, actively operating, or watching the computer. Camera absence alone is not enough to set userEngaged=false when screenshots, app changes, typing, or visible progress show active computer interaction.
+        1) First infer userEngaged from camera snapshots: whether the user is physically present and actively operating or watching the computer.
         2) Then infer taskAligned from screenshot/app/window/browser context: whether the visible work directly supports the current task.
         3) The final state must follow the decision table below. Never use userEngaged alone to choose focused.
 
         Important distinction:
-        - userEngaged means the user appears present, attentive, or actively operating the computer.
+        - userEngaged means the user appears present, attentive, and active.
         - taskAligned means the visible work content directly supports the current task.
         - A user can be highly engaged and still be distracted if the visible content is for another task.
 
@@ -316,7 +316,7 @@ public struct LLMFocusEvaluator {
         - userEngaged=true and taskAligned=true -> focused.
         - userEngaged=true and taskAligned=false -> distracted.
         - userEngaged=true and taskAligned is unclear or weak -> uncertain.
-        - userEngaged=false because the user appears absent and the screen shows no active interaction -> away.
+        - userEngaged=false because the user appears absent -> away.
         - userEngaged=false because the user appears intentionally pausing -> resting.
 
         State definitions (choose exactly one):
@@ -328,7 +328,7 @@ public struct LLMFocusEvaluator {
           c) attention appears repeatedly split without clear task progress.
         - stuck: on-task engagement and task context stay present, but no visible forward progress signals.
         - resting: intentional short break; camera or context suggests rest (eyes closed, leaning away, or non-task pause) without distress signals.
-        - away: user appears to have left the computer or is not physically present, with no active screen interaction.
+        - away: user appears to have left the computer or is not physically present.
 
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
         Do not infer task alignment from the application category alone. taskAligned=true requires positive evidence that the visible content directly supports the task, such as task-specific document text, outline text, project names, filenames, page titles, or browser metadata.
@@ -340,7 +340,7 @@ public struct LLMFocusEvaluator {
         "focused" requires both userEngaged=true and taskAligned=true.
 
         Before the final judgement, write brief observable analysis fields:
-        - userEngagement: whether the user is present or actively operating the computer.
+        - userEngagement: whether the user is present and appears attentive.
         - screenContent: high-level summary of visible page/app content.
         - observedActivity: visible operation or progress signals across captures.
         - taskAlignment: whether visible content matches the current task.
@@ -458,18 +458,6 @@ public struct LLMFocusEvaluator {
 
         if var analysis = response.analysis {
             if analysis.userEngaged == false {
-                if hasActiveScreenContextSignal(analysis: analysis, snapshots: recentSnapshots) {
-                    downgradeFocusedResponse(
-                        &response,
-                        to: .uncertain,
-                        confidenceCap: 0.52,
-                        reason: "摄像头未确认人在场，但屏幕活动与离开判断冲突，不能判为人已离开。",
-                        taskAligned: analysis.taskAligned,
-                        taskAlignment: analysis.taskAlignment,
-                        decisionRationale: "摄像头缺席不能单独推出 away；当前屏幕活动显示仍可能有人在操作。"
-                    )
-                    return
-                }
                 downgradeFocusedResponse(
                     &response,
                     to: .away,
@@ -623,68 +611,6 @@ public struct LLMFocusEvaluator {
             return false
         }
         return terms.contains { observableText.contains($0) }
-    }
-
-    private func hasActiveScreenContextSignal(
-        analysis: LLMFocusAnalysis,
-        snapshots: [ContextSnapshot]
-    ) -> Bool {
-        let orderedSnapshots = snapshots.sorted { $0.timestamp < $1.timestamp }
-        guard !orderedSnapshots.isEmpty else {
-            return analysisMentionsActiveScreenInteraction(analysis)
-        }
-
-        let activeApps = Set(orderedSnapshots.map { normalizedSignalText($0.activeAppName) }.filter { !$0.isEmpty })
-        if activeApps.count > 1 {
-            return true
-        }
-
-        let browserTitles = Set(orderedSnapshots.compactMap { normalizedMeaningfulTitle($0.browserTitle) })
-        if browserTitles.count > 1 {
-            return true
-        }
-
-        let browserURLs = Set(orderedSnapshots.compactMap { normalizedSignalText($0.sanitizedBrowserURLText) }.filter { !$0.isEmpty })
-        if browserURLs.count > 1 {
-            return true
-        }
-
-        let windowTitles = Set(orderedSnapshots.compactMap { normalizedMeaningfulTitle($0.displayWindowTitle) })
-        if windowTitles.count > 1 {
-            return true
-        }
-
-        return analysisMentionsActiveScreenInteraction(analysis)
-    }
-
-    private func normalizedMeaningfulTitle(_ text: String?) -> String? {
-        let normalized = normalizedSignalText(text)
-        guard !normalized.isEmpty, normalized != "当前窗口", normalized != "current window" else {
-            return nil
-        }
-        return normalized
-    }
-
-    private func normalizedSignalText(_ text: String?) -> String {
-        text?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-    }
-
-    private func analysisMentionsActiveScreenInteraction(_ analysis: LLMFocusAnalysis) -> Bool {
-        let text = [
-            analysis.userEngagement,
-            analysis.observedActivity,
-            analysis.decisionRationale
-        ]
-            .joined(separator: " ")
-            .lowercased()
-
-        return containsAny(text, [
-            "active engagement", "actively", "interacting", "typing", "operating", "clicking",
-            "screen activity", "application changes", "app changes", "switching",
-            "持续操作", "正在操作", "有操作", "操作电脑", "打字", "输入", "互动", "切换", "屏幕活动"
-        ])
     }
 
     private func distinctiveTaskTerms(from task: String) -> [String] {
