@@ -38,6 +38,34 @@ final class MacLocalContextProviderTests: XCTestCase {
         XCTAssertTrue(CGWindowFocusedWindowReader.isStillLoopAppName("StillLoop Dev"))
         XCTAssertFalse(CGWindowFocusedWindowReader.isStillLoopAppName("Google Chrome"))
     }
+
+    func testCameraStillCaptureScheduleWarmsUpBeforePhotoAndStartsTimeoutAfterCapture() {
+        let scheduler = RecordingCameraStillCaptureScheduler()
+        let recorder = CameraStillCaptureEventRecorder()
+        let schedule = CameraStillCaptureSchedule(
+            timing: CameraStillCaptureTiming(warmUpDelay: 1.0, photoTimeout: 3.0),
+            scheduler: scheduler
+        )
+
+        schedule.capture(
+            startRunning: { recorder.append("start") },
+            capturePhoto: { recorder.append("photo") },
+            timeout: { recorder.append("timeout") }
+        )
+
+        XCTAssertEqual(recorder.events, ["start"])
+        XCTAssertEqual(scheduler.pendingDelays, [1.0])
+
+        scheduler.runNextDelayed()
+
+        XCTAssertEqual(recorder.events, ["start", "photo"])
+        XCTAssertEqual(scheduler.pendingDelays, [3.0])
+
+        scheduler.runNextDelayed()
+
+        XCTAssertEqual(recorder.events, ["start", "photo", "timeout"])
+        XCTAssertEqual(scheduler.pendingDelays, [])
+    }
 }
 
 private struct StubBrowserMetadataReader: BrowserTabMetadataReading {
@@ -96,5 +124,38 @@ private struct OrderedBrowserAutomationNoticePresenter: BrowserAutomationNoticeP
 
     func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {
         recorder.append("notice:\(appName)")
+    }
+}
+
+private final class RecordingCameraStillCaptureScheduler: CameraStillCaptureScheduling {
+    private var delayedWork: [(delay: TimeInterval, work: () -> Void)] = []
+
+    var pendingDelays: [TimeInterval] {
+        delayedWork.map(\.delay)
+    }
+
+    func async(_ work: @escaping () -> Void) {
+        work()
+    }
+
+    func asyncAfter(seconds: TimeInterval, _ work: @escaping () -> Void) {
+        delayedWork.append((seconds, work))
+    }
+
+    func runNextDelayed() {
+        let next = delayedWork.removeFirst()
+        next.work()
+    }
+}
+
+private final class CameraStillCaptureEventRecorder {
+    private var recordedEvents: [String] = []
+
+    var events: [String] {
+        recordedEvents
+    }
+
+    func append(_ event: String) {
+        recordedEvents.append(event)
     }
 }

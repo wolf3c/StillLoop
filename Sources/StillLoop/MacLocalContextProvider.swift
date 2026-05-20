@@ -256,10 +256,64 @@ private func compress(image: CGImage, maxDimension: Double, quality: Double) -> 
     return VisualCaptureSummary(width: targetWidth, height: targetHeight, compressedBytes: data.count, mimeType: "image/jpeg", data: data)
 }
 
+struct CameraStillCaptureTiming: Equatable {
+    var warmUpDelay: TimeInterval
+    var photoTimeout: TimeInterval
+
+    static let standard = CameraStillCaptureTiming(warmUpDelay: 1.0, photoTimeout: 3.0)
+}
+
+protocol CameraStillCaptureScheduling {
+    func async(_ work: @escaping () -> Void)
+    func asyncAfter(seconds: TimeInterval, _ work: @escaping () -> Void)
+}
+
+struct DispatchQueueCameraStillCaptureScheduler: CameraStillCaptureScheduling {
+    func async(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .utility).async(execute: work)
+    }
+
+    func asyncAfter(seconds: TimeInterval, _ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+}
+
+struct CameraStillCaptureSchedule {
+    var timing: CameraStillCaptureTiming
+    var scheduler: any CameraStillCaptureScheduling
+
+    init(
+        timing: CameraStillCaptureTiming = .standard,
+        scheduler: any CameraStillCaptureScheduling = DispatchQueueCameraStillCaptureScheduler()
+    ) {
+        self.timing = timing
+        self.scheduler = scheduler
+    }
+
+    func capture(
+        startRunning: @escaping () -> Void,
+        capturePhoto: @escaping () -> Void,
+        timeout: @escaping () -> Void
+    ) {
+        scheduler.async {
+            startRunning()
+            scheduler.asyncAfter(seconds: timing.warmUpDelay) {
+                capturePhoto()
+                scheduler.asyncAfter(seconds: timing.photoTimeout, timeout)
+            }
+        }
+    }
+}
+
 private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
     private var continuation: CheckedContinuation<VisualCaptureSummary?, Never>?
     private var activeSession: AVCaptureSession?
     private var activeOutput: AVCapturePhotoOutput?
+    private let captureSchedule: CameraStillCaptureSchedule
+
+    init(captureSchedule: CameraStillCaptureSchedule = CameraStillCaptureSchedule()) {
+        self.captureSchedule = captureSchedule
+    }
 
     func capture() async -> VisualCaptureSummary? {
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
@@ -294,13 +348,17 @@ private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate,
             self.activeSession = session
             self.activeOutput = output
 
-            DispatchQueue.global(qos: .utility).async {
-                session.startRunning()
-                output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+            captureSchedule.capture(
+                startRunning: {
+                    session.startRunning()
+                },
+                capturePhoto: {
+                    output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
+                },
+                timeout: {
                     self.finish(nil)
                 }
-            }
+            )
         }
     }
 
