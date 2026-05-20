@@ -7,7 +7,12 @@ enum FocusTaskAlignment {
         "sourcetree", "source tree"
     ]
     private static let personalWritingKeywords = [
-        "日记", "日志", "周记", "复盘", "回顾", "反思", "journal", "diary", "reflection", "review"
+        "日记", "日志", "周记", "复盘", "回顾", "反思",
+        "journal", "diary", "reflection", "review"
+    ]
+    private static let creativeWritingKeywords = [
+        "小说", "故事", "剧本", "创作",
+        "novel", "fiction", "story", "screenplay", "creative writing"
     ]
     private static let developmentKeywords = [
         "开发", "代码", "编程", "项目", "修复", "调试", "测试", "实现", "重构",
@@ -35,7 +40,7 @@ enum FocusTaskAlignment {
         task: String,
         snapshots: [ContextSnapshot]
     ) -> Bool {
-        guard isPersonalWritingTaskWithoutDevelopmentIntent(task),
+        guard isWritingTaskWithoutDevelopmentIntent(task),
               !hasTaskEvidence(task: task, in: snapshots)
         else {
             return false
@@ -52,6 +57,12 @@ enum FocusTaskAlignment {
     private static func isPersonalWritingTaskWithoutDevelopmentIntent(_ task: String) -> Bool {
         let normalized = task.lowercased()
         return personalWritingKeywords.contains { normalized.contains($0) }
+            && !containsDevelopmentIntent(normalized)
+    }
+
+    private static func isWritingTaskWithoutDevelopmentIntent(_ task: String) -> Bool {
+        let normalized = task.lowercased()
+        return (personalWritingKeywords + creativeWritingKeywords).contains { normalized.contains($0) }
             && !containsDevelopmentIntent(normalized)
     }
 
@@ -91,6 +102,9 @@ enum FocusTaskAlignment {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.count >= 2 }
         for keyword in personalWritingKeywords where normalized.contains(keyword) && !terms.contains(keyword) {
+            terms.append(keyword)
+        }
+        for keyword in creativeWritingKeywords where normalized.contains(keyword) && !terms.contains(keyword) {
             terms.append(keyword)
         }
         return terms

@@ -33,6 +33,8 @@ public struct LLMMessage: Equatable {
 }
 
 public struct LLMFocusAnalysis: Codable, Equatable {
+    public var userEngaged: Bool?
+    public var taskAligned: Bool?
     public var userEngagement: String
     public var screenContent: String
     public var observedActivity: String
@@ -40,12 +42,16 @@ public struct LLMFocusAnalysis: Codable, Equatable {
     public var decisionRationale: String
 
     public init(
+        userEngaged: Bool? = nil,
+        taskAligned: Bool? = nil,
         userEngagement: String,
         screenContent: String,
         observedActivity: String,
         taskAlignment: String,
         decisionRationale: String
     ) {
+        self.userEngaged = userEngaged
+        self.taskAligned = taskAligned
         self.userEngagement = userEngagement
         self.screenContent = screenContent
         self.observedActivity = observedActivity
@@ -55,6 +61,8 @@ public struct LLMFocusAnalysis: Codable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        userEngaged = try? container.decodeIfPresent(Bool.self, forKey: .userEngaged)
+        taskAligned = try? container.decodeIfPresent(Bool.self, forKey: .taskAligned)
         userEngagement = (try? container.decode(String.self, forKey: .userEngagement)) ?? ""
         screenContent = (try? container.decode(String.self, forKey: .screenContent)) ?? ""
         observedActivity = (try? container.decode(String.self, forKey: .observedActivity)) ?? ""
@@ -214,6 +222,7 @@ public struct LLMFocusEvaluator {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
         applyFocusedMismatchGuard(to: &modelResponse, task: task, recentSnapshots: recentSnapshots)
+        applyAnalysisConsistencyGuard(to: &modelResponse)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
             state: modelResponse.state,
@@ -240,16 +249,28 @@ public struct LLMFocusEvaluator {
 
     private var systemPrompt: String {
         """
-        You are StillLoop, a local privacy-first focus companion.
-        Classify whether the user is on-task with regard to the current session goal.
+        You are a focus-session evaluator.
+        Your job is to judge whether the user's current visible activity supports the stated session goal.
 
         Decision rule:
-        1) First infer user engagement from camera snapshots: whether the user is physically present, visually focused, and acting with task-like attention.
-        2) Then infer task match from screenshot/app/window/browser context: whether current activity is aligned with the task description.
-        3) The final state must combine both signals. A user can look focused but still be distracted if content is off-task.
+        1) First infer userEngaged from camera snapshots: whether the user is physically present and actively operating or watching the computer.
+        2) Then infer taskAligned from screenshot/app/window/browser context: whether the visible work directly supports the current task.
+        3) The final state must follow the decision table below. Never use userEngaged alone to choose focused.
+
+        Important distinction:
+        - userEngaged means the user appears present, attentive, and active.
+        - taskAligned means the visible work content directly supports the current task.
+        - A user can be highly engaged and still be distracted if the visible content is for another task.
+
+        Final state rule:
+        - userEngaged=true and taskAligned=true -> focused.
+        - userEngaged=true and taskAligned=false -> distracted.
+        - userEngaged=true and taskAligned is unclear or weak -> uncertain.
+        - userEngaged=false because the user appears absent -> away.
+        - userEngaged=false because the user appears intentionally pausing -> resting.
 
         State definitions (choose exactly one):
-        - focused: camera and context are both consistent with attention to the current task.
+        - focused: the user is engaged and the visible content clearly supports the current task.
         - uncertain: temporary, recoverable attention drift; engagement or task-match is weaker, but signals are not clearly off-task and task intent still appears plausible.
         - distracted: one of:
           a) engagement is present but content is clearly unrelated to the task;
@@ -260,10 +281,11 @@ public struct LLMFocusEvaluator {
         - away: user appears to have left the computer or is not physically present.
 
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
-        Developer tools such as Codex, Xcode, Terminal, editors, and IDEs are off-task for diary, journaling, or personal review goals unless the visible content explicitly shows the diary/review work.
+        Do not infer task alignment from the application category alone. taskAligned=true requires positive evidence that the visible content directly supports the task, such as task-specific document text, outline text, project names, filenames, page titles, or browser metadata.
+        If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence and choose uncertain or distracted instead of focused.
         If app/window/browser metadata only names an unrelated tool and has no task-relevant evidence, do not choose focused.
         "uncertain" is the state that represents mild deviation.
-        "focused" requires both engagement and task-content alignment.
+        "focused" requires both userEngaged=true and taskAligned=true.
 
         Before the final judgement, write brief observable analysis fields:
         - userEngagement: whether the user is present and appears attentive.
@@ -271,13 +293,16 @@ public struct LLMFocusEvaluator {
         - observedActivity: visible operation or progress signals across captures.
         - taskAlignment: whether visible content matches the current task.
         - decisionRationale: why the final state follows from the observations.
+        - userEngaged: boolean, whether the user appears present and active.
+        - taskAligned: boolean, whether visible work directly supports the current task.
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
         The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge.
+        Fill the analysis object first, then choose the final state, confidence, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale"},"state":"focused|uncertain|distracted|stuck|resting|away","confidence":0.0,"reason":"short reason","nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"state":"focused|uncertain|distracted|stuck|resting|away","confidence":0.0,"reason":"short reason","nudge":"short Chinese nudge or null"}
         """
     }
 
@@ -364,11 +389,28 @@ public struct LLMFocusEvaluator {
 
         response.state = .distracted
         response.confidence = min(response.confidence, 0.78)
-        response.reason = "当前应用是开发工具，与写日记或复盘任务不匹配。"
+        response.reason = "当前上下文主要是开发工具，没有看到与写作任务直接相关的证据。"
         response.nudge = nil
         if var analysis = response.analysis {
-            analysis.taskAlignment = "当前上下文主要是开发工具，没有看到日记或复盘相关证据。"
+            analysis.taskAligned = false
+            analysis.taskAlignment = "当前上下文主要是开发工具，没有看到写作任务相关证据。"
             analysis.decisionRationale = "用户可能在认真操作，但内容与当前任务不一致，因此不能判为专注。"
+            response.analysis = analysis
+        }
+    }
+
+    private func applyAnalysisConsistencyGuard(to response: inout ModelResponse) {
+        guard response.state == .focused,
+              response.analysis?.taskAligned == false
+        else {
+            return
+        }
+
+        response.state = .distracted
+        response.reason = "用户看起来在投入操作，但模型分析显示当前内容与任务不匹配。"
+        response.nudge = nil
+        if var analysis = response.analysis {
+            analysis.decisionRationale = "用户可能在认真操作，但 taskAligned=false，因此不能判为专注。"
             response.analysis = analysis
         }
     }

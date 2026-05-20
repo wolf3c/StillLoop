@@ -591,6 +591,11 @@ final class NudgeOverlayPresenter {
 
     private func animateIn(_ state: PanelState) {
         apply(NudgeOverlayInteraction.visiblePresentation, to: state, animated: true, duration: Self.enterDuration)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.enterDuration + 0.05))
+            guard !state.isClosing else { return }
+            self.apply(NudgeOverlayInteraction.visiblePresentation, to: state, animated: false)
+        }
     }
 
     private func handleRelease(_ action: NudgeOverlayReleaseAction, for state: PanelState) {

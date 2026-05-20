@@ -105,6 +105,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
             var observedActivity: StringSchema?
             var taskAlignment: StringSchema?
             var decisionRationale: StringSchema?
+            var userEngaged: BooleanSchema?
+            var taskAligned: BooleanSchema?
         }
 
         struct AnalysisSchema: Encodable {
@@ -115,14 +117,18 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
                 screenContent: .init(),
                 observedActivity: .init(),
                 taskAlignment: .init(),
-                decisionRationale: .init()
+                decisionRationale: .init(),
+                userEngaged: .init(),
+                taskAligned: .init()
             )
             var required = [
                 "userEngagement",
                 "screenContent",
                 "observedActivity",
                 "taskAlignment",
-                "decisionRationale"
+                "decisionRationale",
+                "userEngaged",
+                "taskAligned"
             ]
         }
 
@@ -133,6 +139,10 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
 
         struct StringSchema: Encodable {
             var type = "string"
+        }
+
+        struct BooleanSchema: Encodable {
+            var type = "boolean"
         }
 
         struct NumberSchema: Encodable {
