@@ -213,6 +213,7 @@ final class AppModel: ObservableObject {
     @Published var screen: Screen = .welcome {
         didSet {
             telemetry.setScreen(screen)
+            scheduleBundledModelPrewarmIfHomeReady()
         }
     }
     @Published var taskText = ""
@@ -292,6 +293,7 @@ final class AppModel: ObservableObject {
     private var reviewCommentTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
+    private var bundledModelPrewarmTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
     private var pendingModelDownloadTask: String?
     private var bundledModelRuntimeFailureStatus: String?
@@ -1470,6 +1472,8 @@ final class AppModel: ObservableObject {
         case .manual:
             bundledModelRuntimeFailureStatus = nil
             bundledModelRuntimeUnavailableStatus = nil
+            bundledModelPrewarmTask?.cancel()
+            bundledModelPrewarmTask = nil
             bundledModelRuntime.stop()
             bundledModelRuntimeStatus = "自带模型：已停止"
             modelConfigurationChanged()
@@ -1499,11 +1503,15 @@ final class AppModel: ObservableObject {
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
             return
         }
+        if bundledModelRuntime.state == .running {
+            markBundledModelRuntimeWarmIfRunning()
+            return
+        }
         bundledModelRuntimeStatus = modelDownloader.isDownloaded()
-            ? "自带模型：待专注时启动"
+            ? "自带模型：待主页预热"
             : "自带模型：等待模型文件"
         localLLMStatus = modelDownloader.isDownloaded()
-            ? "当前评估：自带模型将在专注时启动"
+            ? "当前评估：进入主页后后台预热自带模型"
             : "当前评估：基础规则（等待自带模型文件）"
     }
 
@@ -1654,7 +1662,7 @@ final class AppModel: ObservableObject {
             userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
             configureBundledModelSelectionStatus()
             modelConnectionStatus = "应用自带模型已选中"
-            modelConnectionDetail = "当前不使用手动 HTTP 模型服务；自带模型会在专注时启动，并在首次评估前完成图片输入探测。"
+            modelConnectionDetail = "当前不使用手动 HTTP 模型服务；自带模型会在进入主页后后台预热，并在首次评估前完成图片输入探测。"
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
@@ -1720,6 +1728,62 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func prepareBundledModelForEvaluation() async -> Bool {
+        if let bundledModelPrewarmTask {
+            await bundledModelPrewarmTask.value
+            if modelSetupSelection.source == .bundled, llmEvaluator != nil {
+                return true
+            }
+        }
+        if modelSetupSelection.source == .bundled, llmEvaluator != nil {
+            return true
+        }
+
+        return await startBundledModelRuntime(
+            startingRuntimeStatus: "自带模型：启动中",
+            startingLocalStatus: "当前评估：自带模型启动中",
+            readyRuntimeStatus: "自带模型：已启动",
+            readyLocalStatus: "当前评估：自带模型已连接"
+        )
+    }
+
+    private func scheduleBundledModelPrewarmIfHomeReady() {
+        guard screen == .taskSetup else { return }
+        guard status == .idle else { return }
+        guard modelSetupSelection.source == .bundled else { return }
+        guard modelDownloader.isDownloaded() else { return }
+        guard bundledModelRuntimeFailureStatus == nil else { return }
+        guard llmEvaluator == nil else {
+            markBundledModelRuntimeWarmIfRunning()
+            return
+        }
+        guard bundledModelPrewarmTask == nil else { return }
+
+        bundledModelRuntimeStatus = "自带模型：后台预热中"
+        localLLMStatus = "当前评估：自带模型后台预热中"
+        bundledModelPrewarmTask = Task { [weak self] in
+            await self?.prewarmBundledModelRuntimeForHome()
+        }
+    }
+
+    private func prewarmBundledModelRuntimeForHome() async {
+        defer { bundledModelPrewarmTask = nil }
+        guard screen == .taskSetup, status == .idle else { return }
+
+        _ = await startBundledModelRuntime(
+            startingRuntimeStatus: "自带模型：后台预热中",
+            startingLocalStatus: "当前评估：自带模型后台预热中",
+            readyRuntimeStatus: "自带模型：已预热",
+            readyLocalStatus: "当前评估：自带模型已预热"
+        )
+    }
+
+    @discardableResult
+    private func startBundledModelRuntime(
+        startingRuntimeStatus: String,
+        startingLocalStatus: String,
+        readyRuntimeStatus: String,
+        readyLocalStatus: String
+    ) async -> Bool {
         guard modelSetupSelection.source == .bundled else {
             return false
         }
@@ -1741,15 +1805,19 @@ final class AppModel: ObservableObject {
             return false
         }
 
-        bundledModelRuntimeStatus = "自带模型：启动中"
-        localLLMStatus = "当前评估：自带模型启动中"
+        bundledModelRuntimeStatus = startingRuntimeStatus
+        localLLMStatus = startingLocalStatus
         do {
             try await bundledModelRuntime.startIfNeeded()
+            guard !Task.isCancelled, modelSetupSelection.source == .bundled else {
+                bundledModelRuntime.stop()
+                return false
+            }
             let engine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
             llmEngine = engine
             llmEvaluator = LLMFocusEvaluator(engine: engine)
-            bundledModelRuntimeStatus = "自带模型：已启动"
-            localLLMStatus = "当前评估：自带模型已连接"
+            bundledModelRuntimeStatus = readyRuntimeStatus
+            localLLMStatus = readyLocalStatus
             bundledModelRuntimeFailureStatus = nil
             bundledModelRuntimeUnavailableStatus = nil
             return true
@@ -1870,6 +1938,8 @@ final class AppModel: ObservableObject {
 
     func stopBundledModelRuntime() {
         guard modelSetupSelection.source == .bundled else { return }
+        bundledModelPrewarmTask?.cancel()
+        bundledModelPrewarmTask = nil
         bundledModelRuntime.stop()
         llmEngine = nil
         llmEvaluator = nil
@@ -1877,7 +1947,7 @@ final class AppModel: ObservableObject {
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
         } else {
             bundledModelRuntimeStatus = "自带模型：已停止"
-            localLLMStatus = "当前评估：自带模型将在专注时启动"
+            localLLMStatus = "当前评估：进入主页后后台预热自带模型"
         }
     }
 

@@ -267,6 +267,21 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.hasBypassedInitialSetup)
     }
 
+    func testWelcomeContinuePrewarmsBundledModelWhenHomeBecomesReady() async throws {
+        let runtime = FakeBundledRuntime()
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.screen = .welcome
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.selectModelSource(.bundled)
+
+        model.continueFromWelcome()
+
+        XCTAssertEqual(model.screen, .taskSetup)
+        try await waitUntil { runtime.startCount == 1 }
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已预热")
+    }
+
     func testPermissionsContinueSkipsPermissionsWhenSetupIsReady() {
         let model = makeModel()
         model.screen = .permissions
@@ -364,6 +379,42 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.screen, .taskSetup)
     }
 
+    func testOpenHomePrewarmsBundledModelOnceWhenHomeIsShown() async throws {
+        let runtime = FakeBundledRuntime()
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.selectModelSource(.bundled)
+        model.bypassInitialSetup()
+
+        model.openHome()
+        try await waitUntil { runtime.startCount == 1 }
+        model.openHome()
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertEqual(model.screen, .taskSetup)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已预热")
+    }
+
+    func testOpenHomeDoesNotPrewarmBundledModelForManualSelection() async throws {
+        let runtime = FakeBundledRuntime()
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.screenCapturePermission = "已允许"
+        model.cameraPermission = "已允许"
+        model.modelSetupSelection.source = .manual
+        model.useLocalLLM = true
+        model.llmBaseURLText = "http://127.0.0.1:8080/v1"
+        model.llmModelText = "qwen-local"
+        model.bypassInitialSetup()
+
+        model.openHome()
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertEqual(model.screen, .taskSetup)
+        XCTAssertEqual(runtime.startCount, 0)
+    }
+
     func testManualConfigurationPersistsManualModelSelectionWhenFieldsArePresent() {
         let defaults = isolatedDefaults
         let model = makeModel(userDefaults: defaults)
@@ -452,7 +503,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertFalse(canUseManualModel)
         XCTAssertFalse(model.useLocalLLM)
         XCTAssertEqual(model.modelConnectionStatus, "应用自带模型已选中")
-        XCTAssertTrue(model.modelConnectionDetail.contains("专注时启动"))
+        XCTAssertTrue(model.modelConnectionDetail.contains("进入主页后后台预热"))
         XCTAssertFalse(defaults.bool(forKey: "useLocalLLM"))
     }
 
@@ -821,6 +872,20 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertFalse(model.openLastFocusedReturnTarget())
         XCTAssertTrue(opener.openedTargets.isEmpty)
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for condition")
     }
 }
 
