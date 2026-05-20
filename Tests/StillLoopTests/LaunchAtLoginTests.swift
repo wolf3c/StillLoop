@@ -38,26 +38,40 @@ final class LaunchAtLoginTests: XCTestCase {
         )
     }
 
-    func testNewUserDefaultsLaunchAtLoginOnWithoutRegisteringBeforeSetup() {
+    func testNewUserDefaultsLaunchAtLoginOffWithoutRegisteringBeforeSetup() {
         let manager = FakeLaunchAtLoginManager()
         let model = makeModel(launchAtLoginManager: manager)
 
-        XCTAssertTrue(model.launchAtLoginEnabled)
+        XCTAssertFalse(model.launchAtLoginEnabled)
         XCTAssertFalse(model.hasBypassedInitialSetup)
         XCTAssertEqual(manager.registerCount, 0)
         XCTAssertEqual(manager.unregisterCount, 0)
     }
 
-    func testCompletingInitialSetupRegistersDefaultLaunchAtLogin() {
+    func testCompletingInitialSetupDoesNotRegisterLaunchAtLoginByDefault() {
         let manager = FakeLaunchAtLoginManager()
         let model = makeModel(launchAtLoginManager: manager)
+
+        model.bypassInitialSetup()
+
+        XCTAssertFalse(model.launchAtLoginEnabled)
+        XCTAssertFalse(manager.isRegistered)
+        XCTAssertEqual(manager.registerCount, 0)
+        XCTAssertEqual(manager.unregisterCount, 0)
+    }
+
+    func testEnablingLaunchAtLoginBeforeSetupRegistersAfterSetupCompletes() {
+        let manager = FakeLaunchAtLoginManager()
+        let model = makeModel(launchAtLoginManager: manager)
+
+        model.setLaunchAtLoginEnabled(true)
+        XCTAssertEqual(manager.registerCount, 0)
 
         model.bypassInitialSetup()
 
         XCTAssertTrue(model.launchAtLoginEnabled)
         XCTAssertTrue(manager.isRegistered)
         XCTAssertEqual(manager.registerCount, 1)
-        XCTAssertEqual(manager.unregisterCount, 0)
     }
 
     func testDisablingLaunchAtLoginPersistsAndUnregistersAfterSetup() {

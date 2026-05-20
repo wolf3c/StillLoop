@@ -22,7 +22,7 @@ final class PermissionPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation.detail, "未生效")
-        XCTAssertEqual(presentation.actionTitle, "打开系统设置")
+        XCTAssertEqual(presentation.actionTitle, "继续")
         XCTAssertEqual(presentation.action, .openSettings)
         XCTAssertTrue(presentation.guidance.contains("系统设置"))
         XCTAssertTrue(presentation.guidance.contains("重新开启"))
@@ -45,7 +45,7 @@ final class PermissionPresentationTests: XCTestCase {
         let presentation = AppModel.cameraPermissionPresentation(for: .denied)
 
         XCTAssertEqual(presentation.detail, "已拒绝")
-        XCTAssertEqual(presentation.actionTitle, "打开系统设置")
+        XCTAssertEqual(presentation.actionTitle, "继续")
         XCTAssertEqual(presentation.action, .openSettings)
         XCTAssertTrue(presentation.guidance.contains("系统设置"))
         XCTAssertTrue(presentation.guidance.contains("摄像头"))
@@ -55,8 +55,19 @@ final class PermissionPresentationTests: XCTestCase {
         let presentation = AppModel.cameraPermissionPresentation(for: .notDetermined)
 
         XCTAssertEqual(presentation.detail, "未请求")
-        XCTAssertEqual(presentation.actionTitle, "请求权限")
+        XCTAssertEqual(presentation.actionTitle, "继续")
         XCTAssertEqual(presentation.action, .request)
+    }
+
+    func testOnboardingPermissionRowsDoNotUsePermissionRequestButtonText() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let permissionsStart = try XCTUnwrap(source.range(of: "private struct PermissionsView: View"))
+        let permissionRowStart = try XCTUnwrap(source.range(of: "private struct PermissionRow: View"))
+        let permissionsSnippet = String(source[permissionsStart.lowerBound..<permissionRowStart.lowerBound])
+
+        XCTAssertFalse(permissionsSnippet.contains("actionTitle: \"打开系统设置\""))
+        XCTAssertFalse(permissionsSnippet.contains("actionTitle: model.cameraPermission == \"未请求\" ? \"请求权限\" : \"打开系统设置\""))
+        XCTAssertTrue(permissionsSnippet.contains("model.continuePermissionRequestFlow()"))
     }
 
     func testCameraSettingsTargetsCameraPrivacyPaneFirst() {

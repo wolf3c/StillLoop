@@ -38,6 +38,10 @@ struct StillLoopView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .sheet(isPresented: $model.isModelDownloadPromptPresented) {
+            ModelDownloadPromptSheet()
+                .environmentObject(model)
+        }
         .animation(.easeOut(duration: 0.18), value: model.toastMessage)
     }
 
@@ -61,6 +65,20 @@ struct StillLoopView: View {
         case .privacy:
             PrivacySettingsView()
         }
+    }
+}
+
+struct AppSettingsView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        SettingsView()
+            .environmentObject(model)
+            .frame(minWidth: 560, minHeight: 460)
+            .sheet(isPresented: $model.isModelDownloadPromptPresented) {
+                ModelDownloadPromptSheet()
+                    .environmentObject(model)
+            }
     }
 }
 
@@ -191,22 +209,17 @@ private struct PermissionsView: View {
                 .font(.largeTitle.weight(.semibold))
             Text(StillLoopPermissionsCopy.subtitle)
                 .foregroundStyle(.secondary)
-            LaunchAtLoginPreferenceView()
             PermissionRow(
                 title: "屏幕录制",
                 detail: model.screenCapturePermission,
                 guidance: model.screenCapturePermissionGuidance,
-                actionTitle: "打开系统设置",
-                isAllowed: model.screenCapturePermission == "已允许",
-                action: model.requestScreenCapturePermission
+                isAllowed: model.screenCapturePermission == "已允许"
             )
             PermissionRow(
                 title: "摄像头",
                 detail: model.cameraPermission,
                 guidance: model.cameraPermissionGuidance,
-                actionTitle: model.cameraPermission == "未请求" ? "请求权限" : "打开系统设置",
-                isAllowed: model.cameraPermission == "已允许",
-                action: model.requestCameraPermission
+                isAllowed: model.cameraPermission == "已允许"
             )
             if !model.permissionOpenStatus.isEmpty {
                 Text(model.permissionOpenStatus)
@@ -214,10 +227,11 @@ private struct PermissionsView: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Button(StillLoopPermissionsCopy.primaryActionTitle) { model.continueAfterPermissions() }
+                Button(StillLoopPermissionsCopy.primaryActionTitle) { model.continuePermissionRequestFlow() }
                     .keyboardShortcut(.defaultAction)
             }
             Spacer()
+            LaunchAtLoginPreferenceView()
         }
         .padding(40)
     }
@@ -227,9 +241,7 @@ private struct PermissionRow: View {
     var title: String
     var detail: String
     var guidance: String = ""
-    var actionTitle: String
     var isAllowed: Bool
-    var action: () -> Void
 
     var body: some View {
         HStack {
@@ -247,7 +259,9 @@ private struct PermissionRow: View {
                 Label("已就绪", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                Button(actionTitle, action: action)
+                Text("待处理")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(14)
@@ -483,6 +497,63 @@ private struct ModelSetupView: View {
                 model.llmBaseURLText = value
             }
         )
+    }
+}
+
+private struct ModelDownloadPromptSheet: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(title)
+                .font(.title2.weight(.semibold))
+            Text(message)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(ModelDownloadSpec.builtIn.downloadSizeText, systemImage: "externaldrive.badge.plus")
+                Label("来源：Hugging Face / \(ModelDownloadSpec.builtIn.repoID)", systemImage: "network")
+                Label("保存位置：Application Support/StillLoop/Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", systemImage: "folder")
+                Label("暂不下载时，本次专注会使用基础规则判断，准确性可能低于本地模型。", systemImage: "exclamationmark.triangle")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(14)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            HStack {
+                Button("暂不下载") {
+                    model.skipModelDownloadForCurrentContext()
+                }
+                Spacer()
+                Button("下载模型") {
+                    model.confirmModelDownload()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+    }
+
+    private var title: String {
+        switch model.modelDownloadPromptMode {
+        case .setup:
+            return "下载本地模型"
+        case .startTask:
+            return "开始前下载本地模型？"
+        }
+    }
+
+    private var message: String {
+        switch model.modelDownloadPromptMode {
+        case .setup:
+            return "StillLoop 可以下载应用自带模型，在本机完成更细致的专注判断。下载开始前需要你的确认。"
+        case .startTask:
+            return "当前尚未下载应用自带模型。你可以先下载模型，也可以暂不下载并立即开始本次专注。"
+        }
     }
 }
 

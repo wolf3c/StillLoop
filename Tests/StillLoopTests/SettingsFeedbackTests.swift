@@ -1,6 +1,14 @@
 import XCTest
 
 final class SettingsFeedbackTests: XCTestCase {
+    func testAppSettingsSceneUsesRealSettingsView() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopApp.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("Settings {\n            EmptyView()\n        }"))
+        XCTAssertTrue(source.contains("AppSettingsView()"))
+        XCTAssertTrue(source.contains(".environmentObject(sharedAppModel)"))
+    }
+
     func testSettingsViewContainsUserFeedbackEntryAndSheet() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
         let settingsStart = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))

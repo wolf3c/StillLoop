@@ -1,8 +1,25 @@
 import XCTest
 @testable import StillLoop
+import StillLoopCore
 
 @MainActor
 final class AppModelModelIssueRoutingTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDownWithError() throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+    }
+
+    private func makeModelWithMissingBundledModel() -> AppModel {
+        let supportDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StillLoopModelIssueTests-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(supportDirectory)
+        return AppModel(supportDirectory: supportDirectory)
+    }
+
     func testStartSessionShowsFocusScreenBeforeModelConnectionCheckCompletes() {
         let model = AppModel()
         model.taskText = "优化 StillLoop"
@@ -64,14 +81,81 @@ final class AppModelModelIssueRoutingTests: XCTestCase {
     }
 
     func testDownloadBundledModelReturnsHomeForBackgroundDownload() {
-        let model = AppModel()
+        let model = makeModelWithMissingBundledModel()
         model.screen = .modelSetup
 
         model.downloadBundledModel()
 
+        XCTAssertTrue(model.isModelDownloadPromptPresented)
+        XCTAssertEqual(model.modelDownloadPromptMode, .setup)
+    }
+
+    func testConfirmingModelDownloadStartsBackgroundDownloadFromSetupPrompt() {
+        let model = makeModelWithMissingBundledModel()
+        model.screen = .modelSetup
+
+        model.downloadBundledModel()
+        model.confirmModelDownload()
+
         XCTAssertEqual(model.screen, .taskSetup)
         XCTAssertTrue(model.hasBypassedInitialSetup)
+        XCTAssertFalse(model.isModelDownloadPromptPresented)
         model.cancelModelDownload()
+    }
+
+    func testStartSessionWithMissingBundledModelPresentsDownloadPromptBeforeRunning() {
+        let model = makeModelWithMissingBundledModel()
+        model.taskText = "完成 App Store 修复"
+        model.screen = .taskSetup
+        model.startPermissionDecisionOverride = .proceed
+        model.selectModelSource(.bundled)
+        model.modelReadiness = .checking
+
+        model.startSession()
+
+        XCTAssertTrue(model.isModelDownloadPromptPresented)
+        XCTAssertEqual(model.modelDownloadPromptMode, .startTask)
+        XCTAssertEqual(model.status, .idle)
+        XCTAssertNil(model.currentSession)
+    }
+
+    func testSkippingStartTaskModelDownloadStartsRuleBasedSession() async {
+        let model = makeModelWithMissingBundledModel()
+        model.taskText = "完成 App Store 修复"
+        model.screen = .taskSetup
+        model.startPermissionDecisionOverride = .proceed
+        model.selectModelSource(.bundled)
+        model.modelReadiness = .checking
+
+        model.startSession()
+        model.skipModelDownloadForCurrentContext()
+
+        XCTAssertEqual(model.screen, .focus)
+        XCTAssertEqual(model.status, .running)
+        XCTAssertEqual(model.currentSession?.task, "完成 App Store 修复")
+        XCTAssertTrue(model.isCurrentSessionUsingRuleBasedModelFallback)
+        XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
+        XCTAssertTrue(model.localLLMStatus.contains("准确性可能低于本地模型"))
+        XCTAssertTrue(model.toastMessage.contains("基础规则"))
+
+        let result = await model.evaluateFocus(
+            task: "完成 App Store 修复",
+            snapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Xcode",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.evaluator, "基础规则（暂不下载自带模型）")
+        model.pauseSession()
     }
 
     func testDownloadProgressFractionUsesKnownByteCounts() {

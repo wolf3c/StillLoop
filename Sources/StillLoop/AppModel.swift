@@ -148,6 +148,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum ModelDownloadPromptMode: Equatable {
+        case setup
+        case startTask
+    }
+
     enum PermissionAction: Equatable {
         case none
         case request
@@ -220,6 +225,8 @@ final class AppModel: ObservableObject {
     @Published var summaries: [SessionSummary] = []
     @Published var modelStatus = "应用自带模型：未检查"
     @Published var modelReadiness: ModelReadiness = .checking
+    @Published var isModelDownloadPromptPresented = false
+    @Published private(set) var modelDownloadPromptMode: ModelDownloadPromptMode = .setup
     @Published var modelSetupSelection = ModelSetupSelection()
     @Published var screenCapturePermission = "未检查"
     @Published var screenCapturePermissionGuidance = ""
@@ -250,10 +257,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var diagnosticLogPath = ""
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
-    @Published private(set) var launchAtLoginEnabled = true
+    @Published private(set) var launchAtLoginEnabled = false
     @Published private(set) var launchAtLoginStatus = ""
     @Published private(set) var isSuspendedForSystemInactivity = false
     @Published private(set) var hasBypassedInitialSetup = false
+    @Published private(set) var isCurrentSessionUsingRuleBasedModelFallback = false
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
     let slowEvaluationThresholdSeconds: TimeInterval = 10
@@ -282,6 +290,7 @@ final class AppModel: ObservableObject {
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
+    private var pendingModelDownloadTask: String?
     private var bundledModelRuntimeFailureStatus: String?
     private var bundledModelRuntimeUnavailableStatus: String?
     private var systemSuspendedAt: Date?
@@ -342,7 +351,7 @@ final class AppModel: ObservableObject {
         return PermissionPresentation(
             detail: "未生效",
             guidance: "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经开启但仍未生效，请关闭后重新开启一次，然后重启 StillLoop。",
-            actionTitle: "打开系统设置",
+            actionTitle: "继续",
             action: .openSettings,
             isAllowed: false
         )
@@ -355,8 +364,8 @@ final class AppModel: ObservableObject {
         case .notDetermined:
             return PermissionPresentation(
                 detail: "未请求",
-                guidance: "点击请求权限后，macOS 会弹出摄像头授权窗口。",
-                actionTitle: "请求权限",
+                guidance: "继续后，macOS 会弹出摄像头授权窗口。",
+                actionTitle: "继续",
                 action: .request,
                 isAllowed: false
             )
@@ -364,7 +373,7 @@ final class AppModel: ObservableObject {
             return PermissionPresentation(
                 detail: "已拒绝",
                 guidance: "请在系统设置 > 隐私与安全性 > 摄像头 中允许 StillLoop。",
-                actionTitle: "打开系统设置",
+                actionTitle: "继续",
                 action: .openSettings,
                 isAllowed: false
             )
@@ -372,7 +381,7 @@ final class AppModel: ObservableObject {
             return PermissionPresentation(
                 detail: "受限制",
                 guidance: "当前系统限制了摄像头访问，请在系统设置 > 隐私与安全性 > 摄像头 中检查 StillLoop。",
-                actionTitle: "打开系统设置",
+                actionTitle: "继续",
                 action: .openSettings,
                 isAllowed: false
             )
@@ -380,7 +389,7 @@ final class AppModel: ObservableObject {
             return PermissionPresentation(
                 detail: "未知",
                 guidance: "无法确认摄像头授权状态，请在系统设置中检查 StillLoop 的摄像头权限。",
-                actionTitle: "打开系统设置",
+                actionTitle: "继续",
                 action: .openSettings,
                 isAllowed: false
             )
@@ -587,7 +596,7 @@ final class AppModel: ObservableObject {
         if let storedLaunchAtLoginEnabled = userDefaults.object(forKey: DefaultsKey.launchAtLoginEnabled) as? Bool {
             launchAtLoginEnabled = storedLaunchAtLoginEnabled
         } else {
-            launchAtLoginEnabled = hasCompletedInitialSetup ? resolvedLaunchAtLoginManager.isRegistered : true
+            launchAtLoginEnabled = hasCompletedInitialSetup ? resolvedLaunchAtLoginManager.isRegistered : false
         }
         let support = overrideSupportDirectory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -762,6 +771,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func continuePermissionRequestFlow() {
+        let decision = AppModel.startPermissionDecision(
+            screenCaptureAllowed: CGPreflightScreenCaptureAccess(),
+            cameraStatus: AVCaptureDevice.authorizationStatus(for: .video)
+        )
+
+        switch decision {
+        case .proceed:
+            continueAfterPermissions()
+        case .requestCameraAuthorization:
+            requestCameraPermission()
+        case .openScreenCaptureSettings:
+            requestScreenCapturePermission()
+        case .openCameraSettings:
+            requestCameraPermission()
+        }
+    }
+
     private var hasMissingPermissions: Bool {
         screenCapturePermission != "已允许"
             || cameraPermission != "已允许"
@@ -777,12 +804,10 @@ final class AppModel: ObservableObject {
         }
 
         switch modelReadiness {
-        case .ready:
+        case .ready, .skipped, .checking, .paused, .failed:
             return nil
         case .downloading:
             return .modelDownloading(progress: modelReadiness.progress)
-        case .skipped, .checking, .paused, .failed:
-            return .model
         }
     }
 
@@ -991,6 +1016,10 @@ final class AppModel: ObservableObject {
 
         switch decision {
         case .proceed:
+            if shouldPromptForBundledModelDownloadBeforeStarting {
+                presentModelDownloadPrompt(mode: .startTask, task: task)
+                return
+            }
             beginSessionWithModelCheck(task: task)
         case .requestCameraAuthorization:
             requestCameraAuthorizationBeforeStarting(task: task)
@@ -1001,6 +1030,12 @@ final class AppModel: ObservableObject {
             screen = .permissions
             requestCameraPermission()
         }
+    }
+
+    private var shouldPromptForBundledModelDownloadBeforeStarting: Bool {
+        guard modelSetupSelection.source == .bundled else { return false }
+        guard !modelDownloader.isDownloaded() else { return false }
+        return !modelReadiness.isDownloading
     }
 
     private func beginSessionWithModelCheck(task: String) {
@@ -1044,9 +1079,10 @@ final class AppModel: ObservableObject {
         screen = .modelSetup
     }
 
-    private func beginSession(task: String) {
+    private func beginSession(task: String, forceRuleBasedModel: Bool = false) {
         currentSession = FocusSession(task: task, startedAt: Date(), endedAt: nil, events: [], feedback: nil)
         provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)
+        isCurrentSessionUsingRuleBasedModelFallback = forceRuleBasedModel
         contextSourceDescription = "上下文来源：真实本机"
         status = .running
         currentState = .uncertain
@@ -1056,6 +1092,9 @@ final class AppModel: ObservableObject {
         systemSuspendedAt = nil
         accumulatedSystemSuspendedDuration = 0
         analysisPhase = .idle
+        if forceRuleBasedModel {
+            localLLMStatus = "当前评估：基础规则（暂不下载自带模型，准确性可能低于本地模型）"
+        }
         screen = .focus
         telemetry.record(
             .focusSessionStarted(
@@ -1329,8 +1368,10 @@ final class AppModel: ObservableObject {
             selectModelSource(.bundled)
             bypassInitialSetup()
             screen = .taskSetup
-        case .startDownload, .retryDownload:
+        case .startDownload:
             downloadBundledModel()
+        case .retryDownload:
+            presentModelDownloadPrompt(mode: .setup)
         case .resumeDownload:
             bypassInitialSetup()
             screen = .taskSetup
@@ -1343,10 +1384,46 @@ final class AppModel: ObservableObject {
     }
 
     func downloadBundledModel() {
+        presentModelDownloadPrompt(mode: .setup)
+    }
+
+    func presentModelDownloadPrompt(mode: ModelDownloadPromptMode, task: String? = nil) {
+        modelDownloadPromptMode = mode
+        pendingModelDownloadTask = task
+        isModelDownloadPromptPresented = true
+    }
+
+    func confirmModelDownload() {
+        let mode = modelDownloadPromptMode
+        isModelDownloadPromptPresented = false
+        pendingModelDownloadTask = nil
         selectModelSource(.bundled)
-        bypassInitialSetup()
+        if !hasBypassedInitialSetup {
+            bypassInitialSetup()
+        }
         screen = .taskSetup
         startModelDownloadIfNeeded()
+        if mode == .startTask {
+            localLLMStatus = "当前评估：等待自带模型下载完成"
+        }
+    }
+
+    func skipModelDownloadForCurrentContext() {
+        let task = pendingModelDownloadTask
+        pendingModelDownloadTask = nil
+        isModelDownloadPromptPresented = false
+
+        guard let task else {
+            if !hasBypassedInitialSetup {
+                bypassInitialSetup()
+            }
+            screen = .taskSetup
+            localLLMStatus = "当前评估：基础规则（暂不下载自带模型，准确性可能低于本地模型）"
+            return
+        }
+
+        beginSession(task: task, forceRuleBasedModel: true)
+        showToast("本次专注使用基础规则判断，准确性可能低于本地模型")
     }
 
     func selectModelSource(_ source: ModelSetupSelection.Source) {
@@ -2007,6 +2084,14 @@ final class AppModel: ObservableObject {
                 ]
             )
         )
+        if modelSetupSelection.source == .bundled, isCurrentSessionUsingRuleBasedModelFallback {
+            return ruleBasedEvaluation(
+                task: task,
+                snapshots: snapshots,
+                previousEvents: previousEvents,
+                evaluatorName: "基础规则（暂不下载自带模型）"
+            )
+        }
         if modelSetupSelection.source == .bundled {
             let canUseBundledModel = await prepareBundledModelForEvaluation()
             if canUseBundledModel, let llmEvaluator {

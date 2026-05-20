@@ -10,6 +10,7 @@ public struct ModelDownloadSpec: Equatable {
     public let recommendedContextSize: Int
     public let recommendedCacheTypeK: String
     public let recommendedCacheTypeV: String
+    public let downloadByteCounts: [String: Int64]
 
     public var modelPageURL: URL {
         URL(string: "https://huggingface.co/\(repoID)")!
@@ -29,6 +30,17 @@ public struct ModelDownloadSpec: Equatable {
             filenames.append(mmprojFilename)
         }
         return filenames
+    }
+
+    public var totalDownloadBytes: Int64 {
+        requiredFilenames.reduce(0) { total, filename in
+            total + (downloadByteCounts[filename] ?? 0)
+        }
+    }
+
+    public var downloadSizeText: String {
+        let megabytes = Int((Double(totalDownloadBytes) / 1_000_000).rounded())
+        return "约 \(megabytes) MB"
     }
 
     public func downloadURL(for filename: String) -> URL {
@@ -56,6 +68,10 @@ public struct ModelDownloadSpec: Equatable {
         localServerPort: 17_631,
         recommendedContextSize: 32_768,
         recommendedCacheTypeK: "f16",
-        recommendedCacheTypeV: "f16"
+        recommendedCacheTypeV: "f16",
+        downloadByteCounts: [
+            "Qwen3.5-0.8B-Base.Q4_K_M.gguf": 529_296_960,
+            "Qwen3.5-0.8B-Base.BF16-mmproj.gguf": 207_346_048
+        ]
     )
 }

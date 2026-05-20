@@ -239,7 +239,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.hasBypassedInitialSetup)
     }
 
-    func testWelcomeContinueRoutesToModelSetupWhenPermissionsReadyButModelMissing() {
+    func testWelcomeContinueRoutesToTaskSetupWhenPermissionsReadyButBundledModelMissing() {
         let model = makeModel()
         model.screen = .welcome
         model.screenCapturePermission = "已允许"
@@ -249,7 +249,7 @@ final class HomeNavigationTests: XCTestCase {
 
         model.continueFromWelcome()
 
-        XCTAssertEqual(model.screen, .modelSetup)
+        XCTAssertEqual(model.screen, .taskSetup)
         XCTAssertTrue(model.hasBypassedInitialSetup)
     }
 
@@ -303,7 +303,7 @@ final class HomeNavigationTests: XCTestCase {
         model.bypassInitialSetup()
 
         XCTAssertTrue(model.shouldShowHomeNavigation)
-        XCTAssertEqual(model.setupIssueIndicators, [.permissions, .model])
+        XCTAssertEqual(model.setupIssueIndicators, [.permissions])
     }
 
     func testHomeButtonShowsModelDownloadProgressInsteadOfMissingModelSetup() {

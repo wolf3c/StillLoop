@@ -6,7 +6,8 @@ struct StillLoopApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            AppSettingsView()
+                .environmentObject(sharedAppModel)
         }
     }
 }

@@ -34,4 +34,11 @@ final class ModelDownloadSpecTests: XCTestCase {
         XCTAssertEqual(spec.recommendedCacheTypeK, "f16")
         XCTAssertEqual(spec.recommendedCacheTypeV, "f16")
     }
+
+    func testBuiltInModelDisclosesDownloadSizeForAppReviewPrompt() {
+        let spec = ModelDownloadSpec.builtIn
+
+        XCTAssertEqual(spec.totalDownloadBytes, 736_643_008)
+        XCTAssertEqual(spec.downloadSizeText, "约 737 MB")
+    }
 }
