@@ -1,8 +1,8 @@
 import Foundation
 
 public enum SnapshotSampler {
-    public static let defaultLimit = 8
-    public static let defaultTrailingCount = 4
+    public static let defaultLimit = 3
+    public static let defaultTrailingCount = 2
 
     public static func select(
         _ snapshots: [ContextSnapshot],

@@ -307,7 +307,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
                 top_p: 0.8,
                 top_k: 20,
                 presence_penalty: 1.5,
-                max_tokens: 500,
+                max_tokens: 900,
                 stream: false,
                 chat_template_kwargs: disablesReasoning
                     ? .init(enable_thinking: false)

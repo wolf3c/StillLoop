@@ -518,7 +518,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.nudge, "先推进一步：优化 stillloop")
     }
 
-    func testPromptIncludesChronologicalCaptureTimeline() async throws {
+    func testPromptIncludesFullTextTimelineAndSampledVisualCaptures() async throws {
         let engine = StubEngine(response: """
         {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
         """)
@@ -526,7 +526,45 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         _ = try await evaluator.evaluate(
             task: "优化 stillloop",
-            recentSnapshots: [
+            textSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 40),
+                    activeAppName: "Xcode",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 511,
+                    screenshotPixelHeight: 332,
+                    screenshotCompressedBytes: 14000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([13, 14, 15]),
+                    cameraPixelWidth: 384,
+                    cameraPixelHeight: 216,
+                    cameraCompressedBytes: 4000,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([16, 17, 18])
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 30),
+                    activeAppName: "Mail",
+                    windowTitle: "Inbox",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 511,
+                    screenshotPixelHeight: 332,
+                    screenshotCompressedBytes: 13000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([7, 8, 9]),
+                    cameraPixelWidth: 384,
+                    cameraPixelHeight: 216,
+                    cameraCompressedBytes: 3500,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([10, 11, 12])
+                ),
                 ContextSnapshot(
                     timestamp: Date(timeIntervalSince1970: 20),
                     activeAppName: "Ghostty",
@@ -559,29 +597,101 @@ final class LLMFocusEvaluatorTests: XCTestCase {
                     screenshotCompressedBytes: 11000
                 )
             ],
+            visualSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 10),
+                    activeAppName: "Safari",
+                    windowTitle: "Video",
+                    browserTitle: "Recommended",
+                    browserURL: "https://example.com",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: false,
+                    screenshotPixelWidth: 511,
+                    screenshotPixelHeight: 332,
+                    screenshotCompressedBytes: 11000
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 30),
+                    activeAppName: "Mail",
+                    windowTitle: "Inbox",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 511,
+                    screenshotPixelHeight: 332,
+                    screenshotCompressedBytes: 13000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([7, 8, 9]),
+                    cameraPixelWidth: 384,
+                    cameraPixelHeight: 216,
+                    cameraCompressedBytes: 3500,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([10, 11, 12])
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 40),
+                    activeAppName: "Xcode",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 511,
+                    screenshotPixelHeight: 332,
+                    screenshotCompressedBytes: 14000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([13, 14, 15]),
+                    cameraPixelWidth: 384,
+                    cameraPixelHeight: 216,
+                    cameraCompressedBytes: 4000,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([16, 17, 18])
+                )
+            ],
             previousEvents: []
         )
 
-        let firstIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "capture[1]"))
-        let secondIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "capture[2]"))
+        let firstIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "timeline[1]"))
+        let secondIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "timeline[2]"))
+        let thirdIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "timeline[3]"))
+        let fourthIndex = try XCTUnwrap(engine.flattenedPrompt.range(of: "timeline[4]"))
         XCTAssertLessThan(firstIndex.lowerBound, secondIndex.lowerBound)
+        XCTAssertLessThan(secondIndex.lowerBound, thirdIndex.lowerBound)
+        XCTAssertLessThan(thirdIndex.lowerBound, fourthIndex.lowerBound)
+        XCTAssertTrue(engine.flattenedPrompt.contains("Text timeline: all pending captures, metadata only."))
         XCTAssertTrue(engine.flattenedPrompt.contains("time: 1970-01-01T00:00:10Z"))
         XCTAssertTrue(engine.flattenedPrompt.contains("browserTitle: Recommended"))
         XCTAssertTrue(engine.flattenedPrompt.contains("browserURL: https://example.com"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("app: Ghostty"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("app: Mail"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[3]"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[2]"))
         XCTAssertTrue(engine.flattenedPrompt.contains("visualOrder: screenshot image first, then camera image for this same capture timestamp"))
         XCTAssertTrue(engine.flattenedPrompt.contains("screenshot: available 511x332 11000B"))
         XCTAssertTrue(engine.flattenedPrompt.contains("camera: unavailable"))
-        XCTAssertEqual(engine.lastMessages.filter { $0.role == .user }.count, 3)
+        XCTAssertEqual(engine.lastMessages.filter { $0.role == .user }.count, 5)
 
-        let secondCapture = engine.lastMessages.filter { $0.role == .user }[2]
-        XCTAssertEqual(secondCapture.content.count, 3)
-        if case .text = secondCapture.content[0],
-           case .image(let screenshotMime, let screenshotData) = secondCapture.content[1],
-           case .image(let cameraMime, let cameraData) = secondCapture.content[2] {
+        let visualMessages = engine.lastMessages.filter { message in
+            guard case .text(let text)? = message.content.first else { return false }
+            return text.hasPrefix("visual sample")
+        }
+        XCTAssertEqual(visualMessages.count, 3)
+        XCTAssertFalse(visualMessages.contains { message in
+            guard case .text(let text)? = message.content.first else { return false }
+            return text.contains("app: Ghostty")
+        })
+        let secondVisualCapture = try XCTUnwrap(visualMessages.dropFirst().first)
+        XCTAssertEqual(secondVisualCapture.content.count, 3)
+        if case .text(let text) = secondVisualCapture.content[0],
+           case .image(let screenshotMime, let screenshotData) = secondVisualCapture.content[1],
+           case .image(let cameraMime, let cameraData) = secondVisualCapture.content[2] {
+            XCTAssertTrue(text.contains("visual sample[2]"))
             XCTAssertEqual(screenshotMime, "image/jpeg")
-            XCTAssertEqual(screenshotData, Data([1, 2, 3]))
+            XCTAssertEqual(screenshotData, Data([7, 8, 9]))
             XCTAssertEqual(cameraMime, "image/jpeg")
-            XCTAssertEqual(cameraData, Data([4, 5, 6]))
+            XCTAssertEqual(cameraData, Data([10, 11, 12]))
         } else {
             XCTFail("Expected text, screenshot image, camera image content order")
         }

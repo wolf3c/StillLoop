@@ -3,31 +3,31 @@ import XCTest
 
 final class SnapshotSamplingTests: XCTestCase {
     func testKeepsAllSnapshotsWhenWithinLimit() {
-        let snapshots = makeSnapshots(count: 6)
+        let snapshots = makeSnapshots(count: 3)
 
-        let selected = SnapshotSampler.select(snapshots, limit: 8, trailingCount: 4)
+        let selected = SnapshotSampler.select(snapshots)
 
-        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-2", "app-3", "app-4", "app-5", "app-6"])
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-2", "app-3"])
     }
 
-    func testSamplesWholeSnapshotsWhenBacklogExceedsLimit() {
+    func testSamplesFirstAndRecentSnapshotsWhenBacklogExceedsLimit() {
         let snapshots = makeSnapshots(count: 18)
 
-        let selected = SnapshotSampler.select(snapshots, limit: 8, trailingCount: 4)
+        let selected = SnapshotSampler.select(snapshots)
 
-        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-4", "app-8", "app-12", "app-15", "app-16", "app-17", "app-18"])
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-17", "app-18"])
     }
 
     func testPreservesCompleteSnapshotContentsWhenSampling() throws {
         let snapshots = makeSnapshots(count: 10)
 
-        let selected = SnapshotSampler.select(snapshots, limit: 8, trailingCount: 4)
-        let sampledMiddle = try XCTUnwrap(selected.first { $0.activeAppName == "app-4" })
+        let selected = SnapshotSampler.select(snapshots)
+        let sampledRecent = try XCTUnwrap(selected.first { $0.activeAppName == "app-9" })
 
-        XCTAssertEqual(sampledMiddle.screenshotMimeType, "image/jpeg")
-        XCTAssertEqual(sampledMiddle.screenshotData, Data([4]))
-        XCTAssertEqual(sampledMiddle.cameraMimeType, "image/jpeg")
-        XCTAssertEqual(sampledMiddle.cameraData, Data([104]))
+        XCTAssertEqual(sampledRecent.screenshotMimeType, "image/jpeg")
+        XCTAssertEqual(sampledRecent.screenshotData, Data([9]))
+        XCTAssertEqual(sampledRecent.cameraMimeType, "image/jpeg")
+        XCTAssertEqual(sampledRecent.cameraData, Data([109]))
     }
 
     private func makeSnapshots(count: Int) -> [ContextSnapshot] {

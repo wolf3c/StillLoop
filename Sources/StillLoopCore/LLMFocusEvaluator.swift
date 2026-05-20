@@ -208,7 +208,49 @@ public struct LLMFocusEvaluator {
         recentSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async throws -> LLMEvaluationResult {
-        let promptMessages = messages(task: task, recentSnapshots: recentSnapshots, previousEvents: previousEvents)
+        let promptMessages = messages(
+            task: task,
+            textSnapshots: recentSnapshots,
+            visualSnapshots: recentSnapshots,
+            previousEvents: previousEvents
+        )
+        return try await evaluate(
+            task: task,
+            textSnapshots: recentSnapshots,
+            visualSnapshots: recentSnapshots,
+            previousEvents: previousEvents,
+            promptMessages: promptMessages
+        )
+    }
+
+    public func evaluate(
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent]
+    ) async throws -> LLMEvaluationResult {
+        let promptMessages = messages(
+            task: task,
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents
+        )
+        return try await evaluate(
+            task: task,
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents,
+            promptMessages: promptMessages
+        )
+    }
+
+    private func evaluate(
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        promptMessages: [LLMMessage]
+    ) async throws -> LLMEvaluationResult {
         let response: String
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
             response = try await structuredEngine.complete(messages: promptMessages, responseFormat: .focusEvaluation)
@@ -221,7 +263,7 @@ public struct LLMFocusEvaluator {
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
-        applyFocusedMismatchGuard(to: &modelResponse, task: task, recentSnapshots: recentSnapshots)
+        applyFocusedMismatchGuard(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
         applyAnalysisConsistencyGuard(to: &modelResponse)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
@@ -308,7 +350,8 @@ public struct LLMFocusEvaluator {
 
     private func messages(
         task: String,
-        recentSnapshots: [ContextSnapshot],
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) -> [LLMMessage] {
         let history = previousEvents.suffix(8).map { event in
@@ -318,32 +361,24 @@ public struct LLMFocusEvaluator {
         var messages = [
             LLMMessage(role: .system, content: [.text(systemPrompt)]),
             LLMMessage(role: .user, content: [.text("""
-        Current task:
-        \(task)
+            Current task:
+            \(task)
 
-        Recent state log (background only; current captures have priority and prior decisions may be wrong):
-        \(history.isEmpty ? "none" : history)
-        """)])
+            Recent state log (background only; current captures have priority and prior decisions may be wrong):
+            \(history.isEmpty ? "none" : history)
+            """)])
         ]
 
-        messages.append(contentsOf: recentSnapshots
+        let orderedTextSnapshots = textSnapshots.sorted { $0.timestamp < $1.timestamp }
+        if !orderedTextSnapshots.isEmpty {
+            messages.append(LLMMessage(role: .user, content: [.text(textTimeline(for: orderedTextSnapshots))]))
+        }
+
+        messages.append(contentsOf: visualSnapshots
             .sorted { $0.timestamp < $1.timestamp }
             .enumerated()
             .map { index, snapshot in
-                var captureLines = [
-                    "capture[\(index + 1)]",
-                    "time: \(dateFormatter.string(from: snapshot.timestamp))",
-                    "app: \(snapshot.activeAppName)"
-                ]
-                if let windowTitle = snapshot.displayWindowTitle {
-                    captureLines.append("window: \(windowTitle)")
-                }
-                if let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !browserTitle.isEmpty {
-                    captureLines.append("browserTitle: \(browserTitle)")
-                }
-                if let browserURL = snapshot.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines), !browserURL.isEmpty {
-                    captureLines.append("browserURL: \(browserURL)")
-                }
+                var captureLines = captureMetadataLines(for: snapshot, label: "visual sample[\(index + 1)]")
                 captureLines.append(contentsOf: [
                     "visualOrder: screenshot image first, then camera image for this same capture timestamp",
                     "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))",
@@ -361,6 +396,37 @@ public struct LLMFocusEvaluator {
                 return LLMMessage(role: .user, content: content)
             })
         return messages
+    }
+
+    private func textTimeline(for snapshots: [ContextSnapshot]) -> String {
+        var lines = [
+            "Text timeline: all pending captures, metadata only. Images are attached only to separate visual sample messages."
+        ]
+        for (index, snapshot) in snapshots.enumerated() {
+            lines.append("")
+            lines.append(contentsOf: captureMetadataLines(for: snapshot, label: "timeline[\(index + 1)]"))
+            lines.append("screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))")
+            lines.append("camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func captureMetadataLines(for snapshot: ContextSnapshot, label: String) -> [String] {
+        var captureLines = [
+            label,
+            "time: \(dateFormatter.string(from: snapshot.timestamp))",
+            "app: \(snapshot.activeAppName)"
+        ]
+        if let windowTitle = snapshot.displayWindowTitle {
+            captureLines.append("window: \(windowTitle)")
+        }
+        if let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !browserTitle.isEmpty {
+            captureLines.append("browserTitle: \(browserTitle)")
+        }
+        if let browserURL = snapshot.sanitizedBrowserURLText {
+            captureLines.append("browserURL: \(browserURL)")
+        }
+        return captureLines
     }
 
     private func visualLine(available: Bool, width: Int?, height: Int?, bytes: Int?) -> String {

@@ -1924,15 +1924,15 @@ final class AppModel: ObservableObject {
         }
         let pendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
         let pendingCount = pendingSnapshots.count
-        let snapshots = SnapshotSampler.select(pendingSnapshots)
+        let visualSnapshots = SnapshotSampler.select(pendingSnapshots)
         diagnosticLogger.record(
             "evaluation.selected",
             fields: diagnosticFields(
                 sessionID: sessionID,
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "pendingCount": .int(pendingCount),
-                    "selectedCount": .int(snapshots.count)
+                    "selectedCount": .int(visualSnapshots.count)
                 ]
             )
         )
@@ -1940,16 +1940,21 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
-        evaluationLoopDescription = snapshots.count == pendingCount
-            ? "正在分析 \(snapshots.count) 条未分析采集"
-            : "正在抽样分析 \(snapshots.count)/\(pendingCount) 条未分析采集"
+        evaluationLoopDescription = visualSnapshots.count == pendingCount
+            ? "正在分析 \(visualSnapshots.count) 条未分析采集"
+            : "正在分析 \(pendingCount) 条文本上下文，抽样 \(visualSnapshots.count) 条视觉采集"
         let evaluationStartedAt = Date()
-        let result = await evaluateFocus(task: session.task, snapshots: snapshots, previousEvents: session.events)
+        let result = await evaluateFocus(
+            task: session.task,
+            snapshots: pendingSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: session.events
+        )
         diagnosticLogger.record(
             "evaluation.completed",
             fields: diagnosticFields(
                 sessionID: sessionID,
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "durationMS": .int(Self.durationMilliseconds(since: evaluationStartedAt)),
                     "evaluator": .string(result.evaluator),
@@ -1985,7 +1990,7 @@ final class AppModel: ObservableObject {
                 ]
             )
         }
-        let context = snapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
+        let context = visualSnapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
             FocusEvent(
                 timestamp: Date(),
@@ -1995,7 +2000,7 @@ final class AppModel: ObservableObject {
                 debugDetail: FocusEventDebugDetail.make(
                     task: session.task,
                     evaluator: result.evaluator,
-                    snapshots: snapshots,
+                    snapshots: visualSnapshots,
                     result: result
                 )
             ),
@@ -2071,12 +2076,14 @@ final class AppModel: ObservableObject {
     func evaluateFocus(
         task: String,
         snapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot]? = nil,
         previousEvents: [FocusEvent]
     ) async -> LLMEvaluationResult {
+        let visualSnapshots = visualSnapshots ?? snapshots
         diagnosticLogger.record(
             "model.evaluation.started",
             fields: diagnosticFields(
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string(modelSetupSelection.source.rawValue),
                     "previousEventCount": .int(previousEvents.count),
@@ -2101,13 +2108,14 @@ final class AppModel: ObservableObject {
                         llmEvaluator,
                         task: task,
                         snapshots: snapshots,
+                        visualSnapshots: visualSnapshots,
                         previousEvents: previousEvents
                     )
                 } catch {
                     diagnosticLogger.record(
                         "model.evaluation.failed",
                         fields: diagnosticFields(
-                            snapshots: snapshots,
+                            snapshots: visualSnapshots,
                             extra: [
                                 "modelSource": .string("bundled"),
                                 "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
@@ -2117,6 +2125,7 @@ final class AppModel: ObservableObject {
                     let retryResult = await retryBundledEvaluationAfterFailure(
                         task: task,
                         snapshots: snapshots,
+                        visualSnapshots: visualSnapshots,
                         previousEvents: previousEvents
                     )
                     if case .success(let result) = retryResult {
@@ -2129,7 +2138,7 @@ final class AppModel: ObservableObject {
                     diagnosticLogger.record(
                         "model.evaluation.fallback",
                         fields: diagnosticFields(
-                            snapshots: snapshots,
+                            snapshots: visualSnapshots,
                             extra: [
                                 "modelSource": .string("bundled"),
                                 "fallback": .string("ruleBased"),
@@ -2160,7 +2169,7 @@ final class AppModel: ObservableObject {
                 diagnosticLogger.record(
                     "model.evaluation.fallback",
                     fields: diagnosticFields(
-                        snapshots: snapshots,
+                        snapshots: visualSnapshots,
                         extra: [
                             "modelSource": .string("bundled"),
                             "fallback": .string("ruleBased"),
@@ -2180,7 +2189,8 @@ final class AppModel: ObservableObject {
                 localLLMStatus = "当前评估：手动模型运算中"
                 var result = try await llmEvaluator.evaluate(
                     task: task,
-                    recentSnapshots: snapshots,
+                    textSnapshots: snapshots,
+                    visualSnapshots: visualSnapshots,
                     previousEvents: previousEvents
                 )
                 result.evaluator = "手动模型"
@@ -2191,7 +2201,7 @@ final class AppModel: ObservableObject {
                 diagnosticLogger.record(
                     "model.evaluation.fallback",
                     fields: diagnosticFields(
-                        snapshots: snapshots,
+                        snapshots: visualSnapshots,
                         extra: [
                             "modelSource": .string("manual"),
                             "fallback": .string("ruleBased"),
@@ -2220,7 +2230,7 @@ final class AppModel: ObservableObject {
         diagnosticLogger.record(
             "model.evaluation.fallback",
             fields: diagnosticFields(
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string(modelSetupSelection.source.rawValue),
                     "fallback": .string("ruleBased"),
@@ -2235,18 +2245,20 @@ final class AppModel: ObservableObject {
         _ llmEvaluator: LLMFocusEvaluator,
         task: String,
         snapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async throws -> LLMEvaluationResult {
         var result = try await llmEvaluator.evaluate(
             task: task,
-            recentSnapshots: snapshots,
+            textSnapshots: snapshots,
+            visualSnapshots: visualSnapshots,
             previousEvents: previousEvents
         )
         result.evaluator = "自带模型"
         diagnosticLogger.record(
             "model.evaluation.succeeded",
             fields: diagnosticFields(
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string("bundled"),
                     "state": .string(result.state.rawValue),
@@ -2261,6 +2273,7 @@ final class AppModel: ObservableObject {
     private func retryBundledEvaluationAfterFailure(
         task: String,
         snapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async -> Result<LLMEvaluationResult, Error> {
         bundledModelRuntime.stop()
@@ -2269,7 +2282,7 @@ final class AppModel: ObservableObject {
         diagnosticLogger.record(
             "model.evaluation.retry.started",
             fields: diagnosticFields(
-                snapshots: snapshots,
+                snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string("bundled")
                 ]
@@ -2291,6 +2304,7 @@ final class AppModel: ObservableObject {
                 llmEvaluator,
                 task: task,
                 snapshots: snapshots,
+                visualSnapshots: visualSnapshots,
                 previousEvents: previousEvents
             )
             return .success(result)
@@ -2298,7 +2312,7 @@ final class AppModel: ObservableObject {
             diagnosticLogger.record(
                 "model.evaluation.retry.failed",
                 fields: diagnosticFields(
-                    snapshots: snapshots,
+                    snapshots: visualSnapshots,
                     extra: [
                         "modelSource": .string("bundled"),
                         "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)

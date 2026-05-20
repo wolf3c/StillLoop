@@ -45,7 +45,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["top_p"] as? Double, 0.8)
         XCTAssertEqual(requestBody?["top_k"] as? Int, 20)
         XCTAssertEqual(requestBody?["presence_penalty"] as? Double, 1.5)
-        XCTAssertEqual(requestBody?["max_tokens"] as? Int, 500)
+        XCTAssertEqual(requestBody?["max_tokens"] as? Int, 900)
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
         XCTAssertNil(requestBody?["chat_template_kwargs"])
     }

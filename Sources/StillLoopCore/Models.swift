@@ -140,7 +140,7 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
             activeAppName.trimmingCharacters(in: .whitespacesAndNewlines),
             displayWindowTitle,
             browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-            sanitizedBrowserURL
+            sanitizedBrowserURLText
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
@@ -152,7 +152,7 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         .joined(separator: " · ")
     }
 
-    private var sanitizedBrowserURL: String? {
+    public var sanitizedBrowserURLText: String? {
         guard let browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !browserURL.isEmpty
         else { return nil }
