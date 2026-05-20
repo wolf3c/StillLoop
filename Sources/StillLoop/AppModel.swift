@@ -266,7 +266,7 @@ final class AppModel: ObservableObject {
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
     let slowEvaluationThresholdSeconds: TimeInterval = 10
-    let slowEvaluationRetryDelaySeconds: TimeInterval = 5
+    let slowEvaluationRetryDelaySeconds: TimeInterval = 1
     nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
 
     private let evaluator = FocusEvaluator()

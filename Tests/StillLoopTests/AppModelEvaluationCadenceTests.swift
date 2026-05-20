@@ -8,6 +8,6 @@ final class AppModelEvaluationCadenceTests: XCTestCase {
 
         XCTAssertEqual(model.targetEvaluationCadenceSeconds, 15)
         XCTAssertEqual(model.slowEvaluationThresholdSeconds, 10)
-        XCTAssertEqual(model.slowEvaluationRetryDelaySeconds, 5)
+        XCTAssertEqual(model.slowEvaluationRetryDelaySeconds, 1)
     }
 }
