@@ -13,11 +13,10 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         temporaryDirectories.removeAll()
     }
 
-    func testBundledModelTimeoutWritesFailureRetryAndFallbackDiagnostics() async throws {
+    func testBundledModelTimeoutWritesFailureAndFallbackDiagnosticsWithoutRetry() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         let engine = SequencedDiagnosticLLMEngine(outcomes: [
-            .failure(URLError(.timedOut)),
             .failure(URLError(.timedOut))
         ])
         let model = AppModel(
@@ -56,10 +55,13 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.started" })
         XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.failed" && $0["failureKind"] as? String == "请求超时" })
-        XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
-        XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" && $0["failureKind"] as? String == "请求超时" })
+        XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
+        XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" })
         XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.fallback" && $0["fallback"] as? String == "ruleBased" })
         XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_000 && $0["cameraBytes"] as? Int == 9_000 })
+        XCTAssertEqual(engine.callCount, 1)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(runtime.stopCount, 0)
     }
 
     private var isolatedDefaults: UserDefaults {
@@ -102,12 +104,16 @@ private final class FakeDiagnosticBundledRuntime: BundledModelRuntimeManaging {
     var baseURL = ModelDownloadSpec.builtIn.localServerBaseURL
     var modelID = ModelDownloadSpec.builtIn.localServerModelID
     var state: BundledModelRuntime.State = .notStarted
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
 
     func startIfNeeded() async throws {
+        startCount += 1
         state = .running
     }
 
     func stop() {
+        stopCount += 1
         state = .stopped
     }
 }
@@ -118,12 +124,14 @@ private final class SequencedDiagnosticLLMEngine: LocalLLMEngine {
     }
 
     private var outcomes: [Outcome]
+    private(set) var callCount = 0
 
     init(outcomes: [Outcome]) {
         self.outcomes = outcomes
     }
 
     func complete(messages: [LLMMessage]) async throws -> String {
+        callCount += 1
         guard !outcomes.isEmpty else {
             throw URLError(.cannotParseResponse)
         }

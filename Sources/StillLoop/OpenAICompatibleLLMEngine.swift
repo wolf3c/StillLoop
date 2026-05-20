@@ -294,7 +294,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 60
+        request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuthentication(to: &request)
         request.httpBody = try JSONEncoder().encode(

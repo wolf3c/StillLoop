@@ -51,6 +51,18 @@ final class HomeNavigationTests: XCTestCase {
         )
     }
 
+    private func makeEvaluationContextSnapshot(offset: TimeInterval, appName: String, latest: Date) -> ContextSnapshot {
+        ContextSnapshot(
+            timestamp: latest.addingTimeInterval(offset),
+            activeAppName: appName,
+            windowTitle: appName,
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+    }
+
     func testWelcomeCopyLeadsWithUserValue() {
         XCTAssertEqual(StillLoopWelcomeCopy.title, "分心时，我会轻轻把你带回当前任务")
         XCTAssertEqual(
@@ -544,7 +556,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(runtime.startCount, 1)
     }
 
-    func testBundledInferenceFailureRestartsRuntimeAndRetriesOnce() async {
+    func testBundledInferenceFailureFallsBackWithoutRuntimeRestartOrRetry() async {
         let runtime = FakeBundledRuntime()
         let engine = SequencedLLMEngine(outcomes: [
             .failure(URLError(.timedOut)),
@@ -589,11 +601,10 @@ final class HomeNavigationTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.evaluator, "自带模型")
-        XCTAssertEqual(result.state, .focused)
-        XCTAssertEqual(runtime.startCount, 2)
-        XCTAssertEqual(runtime.stopCount, 1)
-        XCTAssertEqual(engine.callCount, 2)
+        XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：请求超时）")
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(runtime.stopCount, 0)
+        XCTAssertEqual(engine.callCount, 1)
     }
 
     func testBundledInferenceFallbackRecordsFailureReasonInEvaluator() async {
@@ -626,9 +637,38 @@ final class HomeNavigationTests: XCTestCase {
         )
 
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：JSON 解析失败）")
-        XCTAssertEqual(runtime.startCount, 2)
-        XCTAssertEqual(runtime.stopCount, 1)
-        XCTAssertEqual(engine.callCount, 2)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(runtime.stopCount, 0)
+        XCTAssertEqual(engine.callCount, 1)
+    }
+
+    func testEvaluationContextUsesOnlyLatestMinuteAndKeepsVisualSamplingLimit() {
+        let latest = Date(timeIntervalSince1970: 120)
+        let snapshots = [
+            makeEvaluationContextSnapshot(offset: -90, appName: "old-90", latest: latest),
+            makeEvaluationContextSnapshot(offset: -61, appName: "old-61", latest: latest),
+            makeEvaluationContextSnapshot(offset: -60, appName: "recent-60", latest: latest),
+            makeEvaluationContextSnapshot(offset: -45, appName: "recent-45", latest: latest),
+            makeEvaluationContextSnapshot(offset: -30, appName: "recent-30", latest: latest),
+            makeEvaluationContextSnapshot(offset: -15, appName: "recent-15", latest: latest),
+            makeEvaluationContextSnapshot(offset: 0, appName: "recent-now", latest: latest)
+        ]
+
+        let contextSnapshots = AppModel.evaluationContextSnapshots(from: snapshots)
+        let visualSnapshots = SnapshotSampler.select(contextSnapshots)
+
+        XCTAssertEqual(contextSnapshots.map(\.activeAppName), [
+            "recent-60",
+            "recent-45",
+            "recent-30",
+            "recent-15",
+            "recent-now"
+        ])
+        XCTAssertEqual(visualSnapshots.map(\.activeAppName), [
+            "recent-60",
+            "recent-15",
+            "recent-now"
+        ])
     }
 
     func testBundledRuntimeStaysWarmWhenPausingOrEndingSession() {

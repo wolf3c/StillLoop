@@ -19,9 +19,11 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         configuration.protocolClasses = [URLProtocolStub.self]
         let session = URLSession(configuration: configuration)
         var requestBody: [String: Any]?
+        var requestTimeout: TimeInterval?
 
         URLProtocolStub.requestHandler = { request in
             if request.url?.path == "/v1/chat/completions" {
+                requestTimeout = request.timeoutInterval
                 let data = try XCTUnwrap(request.bodyData)
                 requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
@@ -48,6 +50,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["max_tokens"] as? Int, 900)
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
         XCTAssertNil(requestBody?["chat_template_kwargs"])
+        XCTAssertEqual(requestTimeout, 180)
     }
 
     func testCompletionRequestCanDisableReasoningForBundledLlamaServer() async throws {

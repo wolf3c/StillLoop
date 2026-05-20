@@ -266,6 +266,7 @@ final class AppModel: ObservableObject {
     let targetEvaluationCadenceSeconds: TimeInterval = 15
     let slowEvaluationThresholdSeconds: TimeInterval = 10
     let slowEvaluationRetryDelaySeconds: TimeInterval = 5
+    nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
 
     private let evaluator = FocusEvaluator()
     private var llmEvaluator: LLMFocusEvaluator?
@@ -318,6 +319,16 @@ final class AppModel: ObservableObject {
 
     nonisolated static let systemSettingsBundleIdentifier = "com.apple.systempreferences"
     nonisolated static let systemSettingsApplicationPath = "/System/Applications/System Settings.app"
+
+    nonisolated static func evaluationContextSnapshots(
+        from snapshots: [ContextSnapshot],
+        windowSeconds: TimeInterval = evaluationContextWindowSeconds
+    ) -> [ContextSnapshot] {
+        let orderedSnapshots = snapshots.sorted { $0.timestamp < $1.timestamp }
+        guard let latestTimestamp = orderedSnapshots.last?.timestamp else { return [] }
+        let windowStart = latestTimestamp.addingTimeInterval(-windowSeconds)
+        return orderedSnapshots.filter { $0.timestamp >= windowStart }
+    }
 
     nonisolated static func systemOpenArguments(for urlString: String) -> [String] {
         ["-b", systemSettingsBundleIdentifier, urlString]
@@ -1922,9 +1933,11 @@ final class AppModel: ObservableObject {
             evaluationLoopDescription = "等待采集样本"
             return false
         }
-        let pendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
-        let pendingCount = pendingSnapshots.count
-        let visualSnapshots = SnapshotSampler.select(pendingSnapshots)
+        let allPendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let pendingCount = allPendingSnapshots.count
+        let contextSnapshots = Self.evaluationContextSnapshots(from: allPendingSnapshots)
+        let contextCount = contextSnapshots.count
+        let visualSnapshots = SnapshotSampler.select(contextSnapshots)
         diagnosticLogger.record(
             "evaluation.selected",
             fields: diagnosticFields(
@@ -1932,6 +1945,8 @@ final class AppModel: ObservableObject {
                 snapshots: visualSnapshots,
                 extra: [
                     "pendingCount": .int(pendingCount),
+                    "textCount": .int(contextCount),
+                    "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds)),
                     "selectedCount": .int(visualSnapshots.count)
                 ]
             )
@@ -1940,13 +1955,13 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
-        evaluationLoopDescription = visualSnapshots.count == pendingCount
-            ? "正在分析 \(visualSnapshots.count) 条未分析采集"
-            : "正在分析 \(pendingCount) 条文本上下文，抽样 \(visualSnapshots.count) 条视觉采集"
+        evaluationLoopDescription = visualSnapshots.count == contextCount
+            ? "正在分析最近 1 分钟 \(contextCount) 条上下文"
+            : "正在分析最近 1 分钟 \(contextCount) 条文本上下文，抽样 \(visualSnapshots.count) 条视觉采集"
         let evaluationStartedAt = Date()
         let result = await evaluateFocus(
             task: session.task,
-            snapshots: pendingSnapshots,
+            snapshots: contextSnapshots,
             visualSnapshots: visualSnapshots,
             previousEvents: session.events
         )
@@ -1960,7 +1975,10 @@ final class AppModel: ObservableObject {
                     "evaluator": .string(result.evaluator),
                     "state": .string(result.state.rawValue),
                     "confidence": .double(result.confidence),
-                    "shouldNudge": .bool(result.shouldNudge)
+                    "shouldNudge": .bool(result.shouldNudge),
+                    "pendingCount": .int(pendingCount),
+                    "textCount": .int(contextCount),
+                    "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds))
                 ]
             )
         )
@@ -2007,7 +2025,7 @@ final class AppModel: ObservableObject {
             at: 0
         )
         currentSession = latestSession
-        removeAnalyzedSnapshots(pendingSnapshots)
+        removeAnalyzedSnapshots(allPendingSnapshots)
         analysisPhase = .committed
         try? await Task.sleep(for: .milliseconds(350))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
@@ -2112,29 +2130,17 @@ final class AppModel: ObservableObject {
                         previousEvents: previousEvents
                     )
                 } catch {
+                    let failure = Self.modelInferenceFailurePresentation(for: error)
                     diagnosticLogger.record(
                         "model.evaluation.failed",
                         fields: diagnosticFields(
                             snapshots: visualSnapshots,
                             extra: [
                                 "modelSource": .string("bundled"),
-                                "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
+                                "failureKind": .string(failure.debugText)
                             ]
                         )
                     )
-                    let retryResult = await retryBundledEvaluationAfterFailure(
-                        task: task,
-                        snapshots: snapshots,
-                        visualSnapshots: visualSnapshots,
-                        previousEvents: previousEvents
-                    )
-                    if case .success(let result) = retryResult {
-                        return result
-                    }
-                    guard case .failure(let finalError) = retryResult else {
-                        return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
-                    }
-                    let failure = Self.modelInferenceFailurePresentation(for: finalError)
                     diagnosticLogger.record(
                         "model.evaluation.fallback",
                         fields: diagnosticFields(
@@ -2268,59 +2274,6 @@ final class AppModel: ObservableObject {
         )
         localLLMStatus = "当前评估：自带模型已连接"
         return result
-    }
-
-    private func retryBundledEvaluationAfterFailure(
-        task: String,
-        snapshots: [ContextSnapshot],
-        visualSnapshots: [ContextSnapshot],
-        previousEvents: [FocusEvent]
-    ) async -> Result<LLMEvaluationResult, Error> {
-        bundledModelRuntime.stop()
-        llmEngine = nil
-        llmEvaluator = nil
-        diagnosticLogger.record(
-            "model.evaluation.retry.started",
-            fields: diagnosticFields(
-                snapshots: visualSnapshots,
-                extra: [
-                    "modelSource": .string("bundled")
-                ]
-            )
-        )
-        guard await prepareBundledModelForEvaluation(), let llmEvaluator else {
-            diagnosticLogger.record(
-                "model.evaluation.retry.failed",
-                fields: [
-                    "modelSource": .string("bundled"),
-                    "failureKind": .string("restartFailed")
-                ]
-            )
-            return .failure(BundledModelRuntime.RuntimeError.readinessFailed("restart failed"))
-        }
-        do {
-            localLLMStatus = "当前评估：自带模型重试中"
-            let result = try await evaluateWithBundledModel(
-                llmEvaluator,
-                task: task,
-                snapshots: snapshots,
-                visualSnapshots: visualSnapshots,
-                previousEvents: previousEvents
-            )
-            return .success(result)
-        } catch {
-            diagnosticLogger.record(
-                "model.evaluation.retry.failed",
-                fields: diagnosticFields(
-                    snapshots: visualSnapshots,
-                    extra: [
-                        "modelSource": .string("bundled"),
-                        "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
-                    ]
-                )
-            )
-            return .failure(error)
-        }
     }
 
     private func ruleBasedEvaluation(
