@@ -26,6 +26,13 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("判断依据："))
     }
 
+    func testRecognitionDebugPopoverShowsModelRunDuration() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("modelRunDurationSeconds"))
+        XCTAssertTrue(source.contains("模型运行时长："))
+    }
+
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
 

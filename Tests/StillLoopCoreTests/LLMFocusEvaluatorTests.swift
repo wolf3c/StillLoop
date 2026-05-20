@@ -2,6 +2,21 @@ import XCTest
 @testable import StillLoopCore
 
 final class LLMFocusEvaluatorTests: XCTestCase {
+    func testSuccessfulModelEvaluationRecordsRequestDuration() async throws {
+        let evaluator = LLMFocusEvaluator(engine: DelayedStubEngine(response: """
+        {"state":"distracted","confidence":0.91,"reason":"Video site is unrelated","nudge":null}
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "写产品方案",
+            recentSnapshots: [],
+            previousEvents: []
+        )
+
+        let duration = try XCTUnwrap(result.modelRunDurationSeconds)
+        XCTAssertGreaterThan(duration, 0)
+    }
+
     func testParsesStructuredModelJudgement() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"distracted","confidence":0.91,"reason":"Video site is unrelated","nudge":"先回到写方案。"}
@@ -881,6 +896,19 @@ private final class StubEngine: LocalLLMEngine {
 
     func complete(messages: [LLMMessage]) async throws -> String {
         lastMessages = messages
+        return response
+    }
+}
+
+private final class DelayedStubEngine: LocalLLMEngine {
+    let response: String
+
+    init(response: String) {
+        self.response = response
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        try await Task.sleep(for: .milliseconds(20))
         return response
     }
 }

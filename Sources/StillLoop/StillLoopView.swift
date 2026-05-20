@@ -1242,6 +1242,9 @@ private struct TimelineEventDebugPopover: View {
                         TimelineDebugText("任务：\(detail.task)")
                         TimelineDebugText("状态：\(detail.resultState.displayName) (\(detail.resultState.rawValue))")
                         TimelineDebugText(String(format: "置信度：%.2f", detail.confidence))
+                        if let duration = detail.modelRunDurationSeconds {
+                            TimelineDebugText("模型运行时长：\(FocusEventDebugDetail.formattedModelRunDuration(duration))")
+                        }
                         TimelineDebugText("原因：\(detail.reason)")
                         TimelineDebugText("触发提醒：\(detail.shouldNudge ? "是" : "否")")
                         if let nudge = detail.nudge {

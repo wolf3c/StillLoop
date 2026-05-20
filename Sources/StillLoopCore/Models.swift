@@ -356,6 +356,12 @@ public extension FocusEvent {
                 "原因：\(debugDetail.reason)",
                 "触发提醒：\(debugDetail.shouldNudge ? "是" : "否")"
             ]
+            if let duration = debugDetail.modelRunDurationSeconds {
+                resultLines.insert(
+                    "模型运行时长：\(FocusEventDebugDetail.formattedModelRunDuration(duration))",
+                    at: 4
+                )
+            }
             if let nudge = debugDetail.nudge {
                 resultLines.append("返回提醒：\(nudge)")
             }
@@ -397,6 +403,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var reason: String
     public var shouldNudge: Bool
     public var nudge: String?
+    public var modelRunDurationSeconds: TimeInterval?
     public var analysis: LLMFocusAnalysis?
 
     public init(
@@ -408,6 +415,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         reason: String,
         shouldNudge: Bool,
         nudge: String?,
+        modelRunDurationSeconds: TimeInterval? = nil,
         analysis: LLMFocusAnalysis? = nil
     ) {
         self.task = task
@@ -418,7 +426,12 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.reason = reason
         self.shouldNudge = shouldNudge
         self.nudge = nudge
+        self.modelRunDurationSeconds = modelRunDurationSeconds
         self.analysis = analysis
+    }
+
+    public static func formattedModelRunDuration(_ duration: TimeInterval) -> String {
+        String(format: "%.2f 秒", max(0, duration))
     }
 
     public static func make(
@@ -452,6 +465,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             reason: result.reason,
             shouldNudge: result.shouldNudge,
             nudge: result.nudge,
+            modelRunDurationSeconds: result.modelRunDurationSeconds,
             analysis: result.analysis
         )
     }

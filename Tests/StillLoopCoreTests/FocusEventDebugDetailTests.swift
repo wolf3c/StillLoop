@@ -25,6 +25,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
             shouldNudge: true,
             nudge: "回到：调优识别能力",
             evaluator: "自带模型",
+            modelRunDurationSeconds: 1.234,
             analysis: LLMFocusAnalysis(
                 userEngagement: "用户在场，姿态稳定。",
                 screenContent: "屏幕显示 StillLoop 相关代码。",
@@ -50,6 +51,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.nudge, "回到：调优识别能力")
         XCTAssertEqual(detail.analysis?.taskAlignment, "内容与调优识别能力相关。")
         XCTAssertEqual(detail.analysis?.decisionRationale, "任务相关但缺少明确推进信号。")
+        XCTAssertEqual(detail.modelRunDurationSeconds, 1.234)
         XCTAssertEqual(detail.capturedContext.count, 1)
         XCTAssertTrue(detail.capturedContext[0].contains("capture[1] 1970-01-01T00:00:01Z"))
         XCTAssertTrue(detail.capturedContext[0].contains("Codex · StillLoop"))
@@ -73,6 +75,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         let detail = try JSONDecoder().decode(FocusEventDebugDetail.self, from: data)
 
         XCTAssertNil(detail.analysis)
+        XCTAssertNil(detail.modelRunDurationSeconds)
         XCTAssertEqual(detail.resultState, .focused)
     }
 
@@ -137,6 +140,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 reason: "页面内容偏离当前任务",
                 shouldNudge: true,
                 nudge: "请回到发布说明",
+                modelRunDurationSeconds: 1.234,
                 analysis: LLMFocusAnalysis(
                     userEngagement: "用户在阅读页面。",
                     screenContent: "页面显示文章内容。",
@@ -156,6 +160,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("运算返回结果"))
         XCTAssertTrue(text.contains("状态：明显偏离 (distracted)"))
         XCTAssertTrue(text.contains("置信度：0.91"))
+        XCTAssertTrue(text.contains("模型运行时长：1.23 秒"))
         XCTAssertTrue(text.contains("触发提醒：是"))
         XCTAssertTrue(text.contains("模型分析"))
         XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))

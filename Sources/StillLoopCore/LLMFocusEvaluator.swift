@@ -78,6 +78,7 @@ public struct LLMEvaluationResult: Equatable {
     public var shouldNudge: Bool
     public var nudge: String?
     public var evaluator: String
+    public var modelRunDurationSeconds: TimeInterval?
     public var analysis: LLMFocusAnalysis?
     public var returnTarget: FocusReturnTarget?
 
@@ -88,6 +89,7 @@ public struct LLMEvaluationResult: Equatable {
         shouldNudge: Bool,
         nudge: String?,
         evaluator: String = "模型",
+        modelRunDurationSeconds: TimeInterval? = nil,
         analysis: LLMFocusAnalysis? = nil,
         returnTarget: FocusReturnTarget? = nil
     ) {
@@ -97,6 +99,7 @@ public struct LLMEvaluationResult: Equatable {
         self.shouldNudge = shouldNudge
         self.nudge = nudge
         self.evaluator = evaluator
+        self.modelRunDurationSeconds = modelRunDurationSeconds
         self.analysis = analysis
         self.returnTarget = returnTarget
     }
@@ -264,6 +267,7 @@ public struct LLMFocusEvaluator {
         promptMessages: [LLMMessage]
     ) async throws -> LLMEvaluationResult {
         let response: String
+        let modelStartedAt = Date()
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
             response = try await structuredEngine.complete(messages: promptMessages, responseFormat: .focusEvaluation)
         } else {
@@ -277,12 +281,14 @@ public struct LLMFocusEvaluator {
         }
         applyFocusedValidityGuards(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
+        let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
         return LLMEvaluationResult(
             state: modelResponse.state,
             confidence: modelResponse.confidence,
             reason: modelResponse.reason,
             shouldNudge: nudge != nil,
             nudge: nudge,
+            modelRunDurationSeconds: modelRunDurationSeconds,
             analysis: modelResponse.analysis,
             returnTarget: modelResponse.state == .focused ? FocusReturnTarget.make(from: textSnapshots) : nil
         )
