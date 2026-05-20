@@ -40,10 +40,125 @@ public enum FocusState: String, Codable, CaseIterable, Equatable {
     }
 }
 
+public struct FocusReturnTarget: Codable, Equatable {
+    public var appName: String
+    public var appBundleIdentifier: String?
+    public var windowTitle: String?
+    public var browserTitle: String?
+    public var browserURL: String?
+    public var capturedAt: Date
+    public var displayName: String
+
+    public init(
+        appName: String,
+        appBundleIdentifier: String?,
+        windowTitle: String?,
+        browserTitle: String?,
+        browserURL: String?,
+        capturedAt: Date,
+        displayName: String? = nil
+    ) {
+        self.appName = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.appBundleIdentifier = appBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.windowTitle = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.browserTitle = browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.capturedAt = capturedAt
+        self.displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? Self.displayName(
+                appName: self.appName,
+                windowTitle: self.windowTitle,
+                browserTitle: self.browserTitle
+            )
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let appName = try container.decode(String.self, forKey: .appName)
+        let appBundleIdentifier = try container.decodeIfPresent(String.self, forKey: .appBundleIdentifier)
+        let windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)
+        let browserTitle = try container.decodeIfPresent(String.self, forKey: .browserTitle)
+        let browserURL = try container.decodeIfPresent(String.self, forKey: .browserURL)
+        let capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        let displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        self.init(
+            appName: appName,
+            appBundleIdentifier: appBundleIdentifier,
+            windowTitle: windowTitle,
+            browserTitle: browserTitle,
+            browserURL: browserURL,
+            capturedAt: capturedAt,
+            displayName: displayName
+        )
+    }
+
+    public var subtitleText: String {
+        "点击回到 \(displayName)"
+    }
+
+    public var hasBrowserURL: Bool {
+        browserURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    public static func make(from snapshots: [ContextSnapshot]) -> FocusReturnTarget? {
+        guard let snapshot = snapshots
+            .sorted(by: { $0.timestamp < $1.timestamp })
+            .last(where: { !$0.activeAppName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        else {
+            return nil
+        }
+
+        return FocusReturnTarget(
+            appName: snapshot.activeAppName,
+            appBundleIdentifier: snapshot.activeAppBundleIdentifier,
+            windowTitle: snapshot.displayWindowTitle,
+            browserTitle: snapshot.browserTitle,
+            browserURL: snapshot.browserURL,
+            capturedAt: snapshot.timestamp
+        )
+    }
+
+    private static func displayName(appName: String, windowTitle: String?, browserTitle: String?) -> String {
+        let appDisplayName = shortenedAppName(appName)
+        let title = [browserTitle, windowTitle]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .first { !isSameDisplayText($0, appName) && !isSameDisplayText($0, appDisplayName) }
+
+        let rawDisplayName = title.map { "\(appDisplayName) · \($0)" } ?? appDisplayName
+        return truncated(rawDisplayName, maxLength: 56)
+    }
+
+    private static func shortenedAppName(_ appName: String) -> String {
+        switch appName.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "Google Chrome":
+            return "Chrome"
+        case "Google Chrome Canary":
+            return "Chrome Canary"
+        case "Microsoft Edge":
+            return "Edge"
+        case "Brave Browser":
+            return "Brave"
+        default:
+            return appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private static func isSameDisplayText(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(rhs.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
+
+    private static func truncated(_ text: String, maxLength: Int) -> String {
+        guard text.count > maxLength else { return text }
+        return "\(text.prefix(max(0, maxLength - 3)))..."
+    }
+}
+
 public struct ContextSnapshot: Codable, Equatable, Identifiable {
     public var id: UUID
     public var timestamp: Date
     public var activeAppName: String
+    public var activeAppBundleIdentifier: String?
     public var windowTitle: String
     public var browserTitle: String?
     public var browserURL: String?
@@ -64,6 +179,7 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         id: UUID = UUID(),
         timestamp: Date,
         activeAppName: String,
+        activeAppBundleIdentifier: String? = nil,
         windowTitle: String,
         browserTitle: String?,
         browserURL: String?,
@@ -83,6 +199,7 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         self.id = id
         self.timestamp = timestamp
         self.activeAppName = activeAppName
+        self.activeAppBundleIdentifier = activeAppBundleIdentifier
         self.windowTitle = windowTitle
         self.browserTitle = browserTitle
         self.browserURL = browserURL
@@ -191,6 +308,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
     public var state: FocusState
     public var context: String
     public var nudge: String?
+    public var returnTarget: FocusReturnTarget?
     public var debugDetail: FocusEventDebugDetail?
 
     public init(
@@ -199,6 +317,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
         state: FocusState,
         context: String,
         nudge: String?,
+        returnTarget: FocusReturnTarget? = nil,
         debugDetail: FocusEventDebugDetail? = nil
     ) {
         self.id = id
@@ -206,6 +325,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
         self.state = state
         self.context = context
         self.nudge = nudge
+        self.returnTarget = returnTarget
         self.debugDetail = debugDetail
     }
 }
@@ -259,6 +379,12 @@ public extension FocusEvent {
         }
 
         return sections.joined(separator: "\n\n")
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 

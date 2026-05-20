@@ -124,6 +124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func nudgeOverlayDidRequestOpenApp() {
+        if sharedAppModel.openLastFocusedReturnTarget() {
+            return
+        }
         showApp()
     }
 

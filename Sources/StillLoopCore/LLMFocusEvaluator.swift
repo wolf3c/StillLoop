@@ -79,6 +79,7 @@ public struct LLMEvaluationResult: Equatable {
     public var nudge: String?
     public var evaluator: String
     public var analysis: LLMFocusAnalysis?
+    public var returnTarget: FocusReturnTarget?
 
     public init(
         state: FocusState,
@@ -87,7 +88,8 @@ public struct LLMEvaluationResult: Equatable {
         shouldNudge: Bool,
         nudge: String?,
         evaluator: String = "模型",
-        analysis: LLMFocusAnalysis? = nil
+        analysis: LLMFocusAnalysis? = nil,
+        returnTarget: FocusReturnTarget? = nil
     ) {
         self.state = state
         self.confidence = confidence
@@ -96,6 +98,7 @@ public struct LLMEvaluationResult: Equatable {
         self.nudge = nudge
         self.evaluator = evaluator
         self.analysis = analysis
+        self.returnTarget = returnTarget
     }
 }
 
@@ -280,7 +283,8 @@ public struct LLMFocusEvaluator {
             reason: modelResponse.reason,
             shouldNudge: nudge != nil,
             nudge: nudge,
-            analysis: modelResponse.analysis
+            analysis: modelResponse.analysis,
+            returnTarget: modelResponse.state == .focused ? FocusReturnTarget.make(from: textSnapshots) : nil
         )
     }
 

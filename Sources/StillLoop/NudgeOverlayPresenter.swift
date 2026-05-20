@@ -430,7 +430,11 @@ final class NudgeOverlayPresenter {
     }
 
     func show(message: String, state: FocusState) {
-        show(message: message, intensity: Self.intensity(for: state))
+        show(message: message, subtitle: nil, state: state)
+    }
+
+    func show(message: String, subtitle: String?, state: FocusState) {
+        show(message: message, subtitle: subtitle, intensity: Self.intensity(for: state))
     }
 
     func closeAll() {
@@ -442,8 +446,14 @@ final class NudgeOverlayPresenter {
     }
 
     func show(message: String, intensity: NudgeIntensity) {
+        show(message: message, subtitle: nil, intensity: intensity)
+    }
+
+    func show(message: String, subtitle: String?, intensity: NudgeIntensity) {
+        let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let panelHeight = Self.panelHeight(for: intensity, hasSubtitle: subtitle != nil)
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: intensity.width, height: intensity.height),
+            contentRect: NSRect(x: 0, y: 0, width: intensity.width, height: panelHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -456,11 +466,12 @@ final class NudgeOverlayPresenter {
         panel.isOpaque = false
         panel.hasShadow = false
 
-        let restingOrigin = origin(for: intensity)
+        let restingOrigin = origin(width: intensity.width, height: panelHeight)
         let state = PanelState(panel: panel, restingOrigin: restingOrigin)
 
         panel.contentView = overlayView(
             message: message,
+            subtitle: subtitle,
             intensity: intensity,
             onOpen: { [weak self, weak panel] in
                 guard let self, let panel else { return }
@@ -490,6 +501,7 @@ final class NudgeOverlayPresenter {
 
     private func overlayView(
         message: String,
+        subtitle: String?,
         intensity: NudgeIntensity,
         onOpen: @escaping @MainActor () -> Void,
         onInteractionBegan: @escaping @MainActor () -> Void,
@@ -539,10 +551,28 @@ final class NudgeOverlayPresenter {
         body.lineBreakMode = .byTruncatingTail
         body.translatesAutoresizingMaskIntoConstraints = false
 
+        let textStack = NSStackView()
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = subtitle == nil ? 0 : 2
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.addArrangedSubview(body)
+
+        if let subtitle {
+            let subtitleField = NSTextField(wrappingLabelWithString: subtitle)
+            subtitleField.identifier = NSUserInterfaceItemIdentifier("nudgeSubtitle")
+            subtitleField.font = .systemFont(ofSize: 11, weight: .medium)
+            subtitleField.textColor = .secondaryLabelColor
+            subtitleField.maximumNumberOfLines = 1
+            subtitleField.lineBreakMode = .byTruncatingTail
+            subtitleField.translatesAutoresizingMaskIntoConstraints = false
+            textStack.addArrangedSubview(subtitleField)
+        }
+
         container.addSubview(glassOverlay)
         container.addSubview(topHighlight)
         container.addSubview(accent)
-        container.addSubview(body)
+        container.addSubview(textStack)
 
         NSLayoutConstraint.activate([
             glassOverlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -560,18 +590,22 @@ final class NudgeOverlayPresenter {
             accent.widthAnchor.constraint(equalToConstant: accentWidth),
             accent.heightAnchor.constraint(equalToConstant: intensity == .gentle ? 24 : 38),
 
-            body.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 18),
-            body.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
-            body.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            textStack.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 18),
+            textStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+            textStack.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
         return container
     }
 
-    private func origin(for intensity: NudgeIntensity) -> NSPoint {
+    private static func panelHeight(for intensity: NudgeIntensity, hasSubtitle: Bool) -> CGFloat {
+        intensity.height + (hasSubtitle ? 18 : 0)
+    }
+
+    private func origin(width: CGFloat, height: CGFloat) -> NSPoint {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let x = screenFrame.midX - intensity.width / 2
-        let y = screenFrame.maxY - intensity.height - 10
+        let x = screenFrame.midX - width / 2
+        let y = screenFrame.maxY - height - 10
         return NSPoint(x: x, y: y)
     }
 
@@ -730,5 +764,11 @@ final class BrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting 
     private static func noticeMessage(for appName: String) -> String {
         let displayName = appName == "Google Chrome" ? "Chrome" : appName
         return "读取 \(displayName) 当前标签标题和网址，仅用于本机判断"
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

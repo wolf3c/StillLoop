@@ -349,6 +349,28 @@ final class NudgeOverlayPresenterTests: XCTestCase {
     }
 
     @MainActor
+    func testOverlayRendersReturnTargetSubtitle() throws {
+        let app = NSApplication.shared
+        let presenter = NudgeOverlayPresenter()
+        let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
+
+        presenter.show(
+            message: "先回到：处理 Gmail 中未读邮件",
+            subtitle: "点击回到 Chrome · Inbox (3) - Gmail",
+            intensity: .noticeable
+        )
+        defer { presenter.closeAll() }
+
+        let panel = try XCTUnwrap(app.windows.first { window in
+            !existingWindows.contains(ObjectIdentifier(window)) && window is NSPanel
+        } as? NSPanel)
+        let subtitle = try XCTUnwrap(Self.textField(in: panel.contentView, matching: "点击回到 Chrome · Inbox (3) - Gmail"))
+
+        XCTAssertEqual(subtitle.identifier?.rawValue, "nudgeSubtitle")
+        XCTAssertGreaterThan(panel.frame.height, NudgeIntensity.noticeable.height)
+    }
+
+    @MainActor
     func testOverlayKeepsOriginalCrossSpaceBehavior() throws {
         let app = NSApplication.shared
         let presenter = NudgeOverlayPresenter()
@@ -404,5 +426,18 @@ final class NudgeOverlayPresenterTests: XCTestCase {
             wheel3: 0
         )
         return try XCTUnwrap(event.flatMap(NSEvent.init(cgEvent:)))
+    }
+
+    private static func textField(in view: NSView?, matching value: String) -> NSTextField? {
+        guard let view else { return nil }
+        if let textField = view as? NSTextField, textField.stringValue == value {
+            return textField
+        }
+        for subview in view.subviews {
+            if let match = textField(in: subview, matching: value) {
+                return match
+            }
+        }
+        return nil
     }
 }

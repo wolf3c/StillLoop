@@ -25,7 +25,8 @@ final class HomeNavigationTests: XCTestCase {
         userDefaults: UserDefaults? = nil,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
         withBundledModelFiles: Bool = false,
-        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil
+        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
+        returnTargetOpener: FocusReturnTargetOpening? = nil
     ) -> AppModel {
         let supportDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("StillLoopHomeTests-\(UUID().uuidString)", isDirectory: true)
@@ -47,7 +48,8 @@ final class HomeNavigationTests: XCTestCase {
             userDefaults: userDefaults ?? isolatedDefaults,
             bundledModelRuntime: bundledModelRuntime,
             supportDirectory: supportDirectory,
-            bundledLLMEngineFactory: bundledLLMEngineFactory
+            bundledLLMEngineFactory: bundledLLMEngineFactory,
+            returnTargetOpener: returnTargetOpener
         )
     }
 
@@ -733,6 +735,31 @@ final class HomeNavigationTests: XCTestCase {
             XCTAssertTrue(model.shouldShowSettingsNavigation, "Expected settings navigation visible on \(screen)")
         }
     }
+
+    func testOpenLastFocusedReturnTargetUsesInjectedOpener() {
+        let opener = RecordingFocusReturnTargetOpener(result: true)
+        let model = makeModel(returnTargetOpener: opener)
+        let target = FocusReturnTarget(
+            appName: "Codex",
+            appBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            capturedAt: Date(timeIntervalSince1970: 80)
+        )
+        model.lastFocusedReturnTarget = target
+
+        XCTAssertTrue(model.openLastFocusedReturnTarget())
+        XCTAssertEqual(opener.openedTargets, [target])
+    }
+
+    func testOpenLastFocusedReturnTargetReturnsFalseWithoutTarget() {
+        let opener = RecordingFocusReturnTargetOpener(result: true)
+        let model = makeModel(returnTargetOpener: opener)
+
+        XCTAssertFalse(model.openLastFocusedReturnTarget())
+        XCTAssertTrue(opener.openedTargets.isEmpty)
+    }
 }
 
 private final class FakeBundledRuntime: BundledModelRuntimeManaging {
@@ -783,5 +810,19 @@ private final class SequencedLLMEngine: LocalLLMEngine {
         case .failure(let error):
             throw error
         }
+    }
+}
+
+private final class RecordingFocusReturnTargetOpener: FocusReturnTargetOpening {
+    let result: Bool
+    private(set) var openedTargets: [FocusReturnTarget] = []
+
+    init(result: Bool) {
+        self.result = result
+    }
+
+    func open(_ target: FocusReturnTarget) -> Bool {
+        openedTargets.append(target)
+        return result
     }
 }

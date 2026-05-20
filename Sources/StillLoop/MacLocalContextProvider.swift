@@ -34,6 +34,7 @@ final class MacLocalContextProvider: ContextProvider {
         return ContextSnapshot(
             timestamp: Date(),
             activeAppName: appName,
+            activeAppBundleIdentifier: focusedWindow.bundleIdentifier,
             windowTitle: windowTitle,
             browserTitle: browserMetadata?.title,
             browserURL: browserMetadata?.url,
@@ -63,6 +64,7 @@ struct NoBrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
 
 struct FocusedWindow: Equatable {
     var appName: String
+    var bundleIdentifier: String?
     var title: String
 }
 
@@ -72,9 +74,11 @@ protocol FocusedWindowReading {
 
 struct CGWindowFocusedWindowReader: FocusedWindowReading {
     func bestFocusedWindow() -> FocusedWindow {
-        let frontmostApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        let frontmostApp = frontmostApplication?.localizedName ?? "Unknown"
+        let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
-            return FocusedWindow(appName: frontmostApp, title: "当前窗口")
+            return FocusedWindow(appName: frontmostApp, bundleIdentifier: frontmostBundleIdentifier, title: "当前窗口")
         }
 
         let visibleWindows = windows.compactMap { window -> FocusedWindow? in
@@ -85,25 +89,61 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
             else {
                 return nil
             }
+            let bundleIdentifier = Self.bundleIdentifier(for: window)
             let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return FocusedWindow(appName: ownerName, title: title?.isEmpty == false ? title! : "当前窗口")
+            return FocusedWindow(
+                appName: ownerName,
+                bundleIdentifier: bundleIdentifier,
+                title: title?.isEmpty == false ? title! : "当前窗口"
+            )
         }
 
         if !Self.isStillLoopAppName(frontmostApp) {
-            return visibleWindows.first { $0.appName == frontmostApp } ?? FocusedWindow(appName: frontmostApp, title: "当前窗口")
+            if var focusedWindow = visibleWindows.first(where: { $0.appName == frontmostApp }) {
+                focusedWindow.bundleIdentifier = focusedWindow.bundleIdentifier ?? frontmostBundleIdentifier
+                return focusedWindow
+            }
+            return FocusedWindow(
+                appName: frontmostApp,
+                bundleIdentifier: frontmostBundleIdentifier,
+                title: "当前窗口"
+            )
         }
 
-        return visibleWindows.first { !Self.isStillLoopAppName($0.appName) } ?? FocusedWindow(appName: frontmostApp, title: "StillLoop")
+        return visibleWindows.first { !Self.isStillLoopAppName($0.appName) } ?? FocusedWindow(
+            appName: frontmostApp,
+            bundleIdentifier: frontmostBundleIdentifier,
+            title: "StillLoop"
+        )
     }
 
     static func isStillLoopAppName(_ appName: String) -> Bool {
         appName == "StillLoop" || appName == "StillLoop Dev"
+    }
+
+    private static func bundleIdentifier(for window: [String: Any]) -> String? {
+        let rawPID = window[kCGWindowOwnerPID as String]
+        if let processIdentifier = rawPID as? pid_t {
+            return NSRunningApplication(processIdentifier: processIdentifier)?.bundleIdentifier
+        }
+        if let processIdentifier = rawPID as? Int {
+            return NSRunningApplication(processIdentifier: pid_t(processIdentifier))?.bundleIdentifier
+        }
+        if let processIdentifier = rawPID as? NSNumber {
+            return NSRunningApplication(processIdentifier: processIdentifier.int32Value)?.bundleIdentifier
+        }
+        return nil
     }
 }
 
 struct BrowserTabMetadata: Equatable {
     var title: String
     var url: String
+}
+
+enum BrowserAutomationKind {
+    case chromium
+    case safari
 }
 
 protocol BrowserTabMetadataReading {
@@ -121,7 +161,8 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
 
     private func script(for appName: String) -> String? {
         let quotedAppName = appleScriptStringLiteral(appName)
-        if Self.chromiumBrowserNames.contains(appName) {
+        switch Self.automationKind(for: appName) {
+        case .chromium:
             return """
             tell application \(quotedAppName)
                 if (count of windows) is 0 then return ""
@@ -136,9 +177,8 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
                 return pageTitle & linefeed & pageURL
             end tell
             """
-        }
 
-        if Self.safariBrowserNames.contains(appName) {
+        case .safari:
             return """
             tell application \(quotedAppName)
                 if (count of documents) is 0 then return ""
@@ -153,13 +193,24 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
                 return pageTitle & linefeed & pageURL
             end tell
             """
-        }
 
-        return nil
+        case nil:
+            return nil
+        }
     }
 
     static func supportsMetadata(for appName: String) -> Bool {
-        chromiumBrowserNames.contains(appName) || safariBrowserNames.contains(appName)
+        automationKind(for: appName) != nil
+    }
+
+    static func automationKind(for appName: String) -> BrowserAutomationKind? {
+        if chromiumBrowserNames.contains(appName) {
+            return .chromium
+        }
+        if safariBrowserNames.contains(appName) {
+            return .safari
+        }
+        return nil
     }
 
     private func metadata(from output: String?) -> BrowserTabMetadata? {
@@ -172,10 +223,6 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
         let url = lines[1]
         guard !title.isEmpty || !url.isEmpty else { return nil }
         return BrowserTabMetadata(title: title, url: url)
-    }
-
-    private func appleScriptStringLiteral(_ value: String) -> String {
-        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     private static let chromiumBrowserNames: Set<String> = [
@@ -191,6 +238,10 @@ struct AppleScriptBrowserTabMetadataReader: BrowserTabMetadataReading {
         "Safari",
         "Safari Technology Preview"
     ]
+}
+
+func appleScriptStringLiteral(_ value: String) -> String {
+    "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
 }
 
 protocol VisualCapture {

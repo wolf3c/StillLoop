@@ -220,6 +220,7 @@ final class AppModel: ObservableObject {
     @Published var currentSession: FocusSession?
     @Published var currentState: FocusState = .uncertain
     @Published var lastNudge: String = "暂无提醒"
+    @Published var lastFocusedReturnTarget: FocusReturnTarget?
     @Published var elapsed: TimeInterval = 0
     @Published var latestContext: ContextSnapshot?
     @Published var summaries: [SessionSummary] = []
@@ -279,6 +280,7 @@ final class AppModel: ObservableObject {
     private let launchAtLoginManager: LaunchAtLoginManaging
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
+    private let returnTargetOpener: FocusReturnTargetOpening
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
     private let telemetry: StillLoopTelemetryRecording
     private let diagnosticLogger: DiagnosticLogging
@@ -551,7 +553,8 @@ final class AppModel: ObservableObject {
         telemetry: StillLoopTelemetryRecording? = nil,
         diagnosticLogger overrideDiagnosticLogger: DiagnosticLogging? = nil,
         launchAtLoginManager: LaunchAtLoginManaging? = nil,
-        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil
+        bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
+        returnTargetOpener: FocusReturnTargetOpening? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
@@ -567,6 +570,7 @@ final class AppModel: ObservableObject {
         self.launchAtLoginManager = resolvedLaunchAtLoginManager
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
+        self.returnTargetOpener = returnTargetOpener ?? MacFocusReturnTargetOpener()
         self.browserAutomationNoticePresenter = BrowserAutomationNoticePresenter(
             userDefaults: userDefaults,
             overlayPresenter: nudgeOverlayPresenter
@@ -1098,6 +1102,7 @@ final class AppModel: ObservableObject {
         status = .running
         currentState = .uncertain
         lastNudge = "暂无提醒"
+        lastFocusedReturnTarget = nil
         elapsed = 0
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
@@ -1190,6 +1195,7 @@ final class AppModel: ObservableObject {
         provider = nil
         currentSession = nil
         latestContext = nil
+        lastFocusedReturnTarget = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
         taskText = ""
@@ -1218,6 +1224,7 @@ final class AppModel: ObservableObject {
         provider = nil
         currentSession = nil
         latestContext = nil
+        lastFocusedReturnTarget = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
         taskText = task
@@ -1231,6 +1238,11 @@ final class AppModel: ObservableObject {
         evaluationLoopDescription = "等待开始任务"
         analysisPhase = .idle
         startSessionAfterPermissionCheck(task: task)
+    }
+
+    func openLastFocusedReturnTarget() -> Bool {
+        guard let lastFocusedReturnTarget else { return false }
+        return returnTargetOpener.open(lastFocusedReturnTarget)
     }
 
     func setFeedback(_ feedback: SessionFeedback) {
@@ -1984,6 +1996,9 @@ final class AppModel: ObservableObject {
         )
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
+        if let returnTarget = result.returnTarget {
+            lastFocusedReturnTarget = returnTarget
+        }
         postStatusItemMode(mode(for: result.state))
         let nudge = result.nudge
         analysisPhase = .presenting(result.state, nudge)
@@ -1998,7 +2013,7 @@ final class AppModel: ObservableObject {
                     evaluator: result.evaluator
                 )
             )
-            sendNudge(nudge, state: result.state)
+            sendNudge(nudge, subtitle: lastFocusedReturnTarget?.subtitleText, state: result.state)
             diagnosticLogger.record(
                 "nudge.sent",
                 fields: [
@@ -2015,6 +2030,7 @@ final class AppModel: ObservableObject {
                 state: result.state,
                 context: context,
                 nudge: nudge,
+                returnTarget: result.returnTarget,
                 debugDetail: FocusEventDebugDetail.make(
                     task: session.task,
                     evaluator: result.evaluator,
@@ -2289,7 +2305,8 @@ final class AppModel: ObservableObject {
             reason: result.reason,
             shouldNudge: result.shouldNudge,
             nudge: result.shouldNudge ? nudges.message(for: result.state, task: task) : nil,
-            evaluator: evaluatorName
+            evaluator: evaluatorName,
+            returnTarget: result.state == .focused ? FocusReturnTarget.make(from: snapshots) : nil
         )
     }
 
@@ -2338,8 +2355,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func sendNudge(_ message: String, state: FocusState) {
-        nudgeOverlayPresenter.show(message: message, state: state)
+    private func sendNudge(_ message: String, subtitle: String?, state: FocusState) {
+        nudgeOverlayPresenter.show(message: message, subtitle: subtitle, state: state)
     }
 
     private var isRunningAsAppBundle: Bool {

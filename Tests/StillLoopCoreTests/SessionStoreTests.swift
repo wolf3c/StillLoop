@@ -68,6 +68,58 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(json.contains("screenshot=1024x640,48000B; camera=320x240,12000B"))
     }
 
+    func testFocusEventReturnTargetRoundTripsInSessionStore() throws {
+        let store = FileSessionStore(appSupportDirectory: makeSupportDirectory())
+        let target = FocusReturnTarget(
+            appName: "Google Chrome",
+            appBundleIdentifier: "com.google.Chrome",
+            windowTitle: "Gmail",
+            browserTitle: "Inbox (3) - Gmail",
+            browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            capturedAt: Date(timeIntervalSince1970: 70)
+        )
+        let session = FocusSession(
+            id: UUID(uuidString: "66666666-aaaa-4aaa-8aaa-666666666666")!,
+            task: "处理 Gmail 中未读邮件",
+            startedAt: Date(timeIntervalSince1970: 10),
+            endedAt: Date(timeIntervalSince1970: 130),
+            events: [
+                FocusEvent(
+                    id: UUID(uuidString: "77777777-aaaa-4aaa-8aaa-777777777777")!,
+                    timestamp: Date(timeIntervalSince1970: 70),
+                    state: .focused,
+                    context: "Google Chrome · Inbox (3) - Gmail",
+                    nudge: nil,
+                    returnTarget: target
+                )
+            ],
+            feedback: nil
+        )
+
+        try store.save(session: session)
+
+        let sessions = try store.loadSessions()
+        XCTAssertEqual(sessions.first?.events.first?.returnTarget, target)
+        XCTAssertEqual(sessions.first?.events.first?.returnTarget?.displayName, "Chrome · Inbox (3) - Gmail")
+        XCTAssertEqual(sessions.first?.events.first?.returnTarget?.browserURL, "https://mail.google.com/mail/u/0/#inbox")
+    }
+
+    func testDecodesLegacyFocusEventWithoutReturnTarget() throws {
+        let data = Data("""
+        {
+          "id": "88888888-aaaa-4aaa-8aaa-888888888888",
+          "timestamp": 70,
+          "state": "focused",
+          "context": "Codex",
+          "nudge": null
+        }
+        """.utf8)
+
+        let event = try JSONDecoder().decode(FocusEvent.self, from: data)
+
+        XCTAssertNil(event.returnTarget)
+    }
+
     private func makeSupportDirectory() -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("StillLoopSessionStoreTests-\(UUID().uuidString)", isDirectory: true)
