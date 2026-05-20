@@ -6,15 +6,30 @@ protocol FocusReturnTargetOpening {
     func open(_ target: FocusReturnTarget) -> Bool
 }
 
+struct AppleScriptRunResult: Equatable {
+    var output: String
+    var succeeded: Bool
+
+    static func success(output: String = "") -> AppleScriptRunResult {
+        AppleScriptRunResult(output: output, succeeded: true)
+    }
+
+    static let failure = AppleScriptRunResult(output: "", succeeded: false)
+}
+
 protocol AppleScriptRunning {
-    func run(_ source: String) -> Bool
+    func run(_ source: String) -> AppleScriptRunResult
 }
 
 struct NSAppleScriptRunner: AppleScriptRunning {
-    func run(_ source: String) -> Bool {
+    func run(_ source: String) -> AppleScriptRunResult {
         var error: NSDictionary?
-        _ = NSAppleScript(source: source)?.executeAndReturnError(&error)
-        return error == nil
+        guard let output = NSAppleScript(source: source)?.executeAndReturnError(&error),
+              error == nil
+        else {
+            return .failure
+        }
+        return .success(output: output.stringValue ?? "")
     }
 }
 
@@ -51,6 +66,13 @@ struct WorkspaceFocusReturnTargetApplicationOpener: FocusReturnTargetApplication
 }
 
 struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
+    private struct BrowserTabLocation: Equatable {
+        var windowIndex: Int
+        var tabIndex: Int
+        var isActive: Bool
+        var url: String
+    }
+
     private let scriptRunner: AppleScriptRunning
     private let applicationOpener: FocusReturnTargetApplicationOpening
 
@@ -66,10 +88,32 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         if let browserURL = target.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
            !browserURL.isEmpty,
            let browserKind = AppleScriptBrowserTabMetadataReader.automationKind(for: target.appName) {
-            return scriptRunner.run(browserScript(for: target.appName, url: browserURL, kind: browserKind))
+            return openBrowserTarget(target, url: browserURL, kind: browserKind)
         }
 
         return openApplicationTarget(target)
+    }
+
+    private func openBrowserTarget(_ target: FocusReturnTarget, url: String, kind: BrowserAutomationKind) -> Bool {
+        let inventoryResult = scriptRunner.run(browserInventoryScript(for: target.appName, kind: kind))
+        guard inventoryResult.succeeded else { return false }
+
+        let tabs = browserTabLocations(from: inventoryResult.output)
+        if let match = browserTabMatch(in: tabs, targetURL: url) {
+            let selectionResult = scriptRunner.run(browserSelectionScript(
+                for: target.appName,
+                location: match,
+                kind: kind
+            ))
+            guard scriptResult(selectionResult, hasOutput: "selected") else { return false }
+            activateBrowserApplication(target)
+            return true
+        }
+
+        let openResult = scriptRunner.run(browserOpenURLScript(for: target.appName, url: url))
+        guard scriptResult(openResult, hasOutput: "opened") else { return false }
+        activateBrowserApplication(target)
+        return true
     }
 
     private func openApplicationTarget(_ target: FocusReturnTarget) -> Bool {
@@ -86,32 +130,42 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         return applicationOpener.activateRunningApplication(named: target.appName)
     }
 
-    private func browserScript(for appName: String, url: String, kind: BrowserAutomationKind) -> String {
+    @discardableResult
+    private func activateBrowserApplication(_ target: FocusReturnTarget) -> Bool {
+        if let bundleIdentifier = target.appBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !bundleIdentifier.isEmpty {
+            return applicationOpener.activateRunningApplication(bundleIdentifier: bundleIdentifier)
+        }
+        return applicationOpener.activateRunningApplication(named: target.appName)
+    }
+
+    private func browserInventoryScript(for appName: String, kind: BrowserAutomationKind) -> String {
         switch kind {
         case .chromium:
-            return chromiumBrowserScript(appName: appName, url: url)
+            return chromiumBrowserInventoryScript(appName: appName)
         case .safari:
-            return safariBrowserScript(appName: appName, url: url)
+            return safariBrowserInventoryScript(appName: appName)
         }
     }
 
-    private func chromiumBrowserScript(appName: String, url: String) -> String {
+    private func browserSelectionScript(
+        for appName: String,
+        location: BrowserTabLocation,
+        kind: BrowserAutomationKind
+    ) -> String {
+        switch kind {
+        case .chromium:
+            return chromiumBrowserSelectionScript(appName: appName, location: location)
+        case .safari:
+            return safariBrowserSelectionScript(appName: appName, location: location)
+        }
+    }
+
+    private func browserOpenURLScript(for appName: String, url: String) -> String {
         let quotedAppName = appleScriptStringLiteral(appName)
         let quotedURL = appleScriptStringLiteral(url)
         return """
         tell application \(quotedAppName)
-            repeat with windowIndex from 1 to count of windows
-                repeat with tabIndex from 1 to count of tabs of window windowIndex
-                    try
-                        if URL of tab tabIndex of window windowIndex is \(quotedURL) then
-                            set active tab index of window windowIndex to tabIndex
-                            set index of window windowIndex to 1
-                            activate
-                            return "matched"
-                        end if
-                    end try
-                end repeat
-            end repeat
             open location \(quotedURL)
             activate
             return "opened"
@@ -119,27 +173,158 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         """
     }
 
-    private func safariBrowserScript(appName: String, url: String) -> String {
+    private func chromiumBrowserInventoryScript(appName: String) -> String {
         let quotedAppName = appleScriptStringLiteral(appName)
-        let quotedURL = appleScriptStringLiteral(url)
         return """
         tell application \(quotedAppName)
+            if (count of windows) is 0 then return ""
+            set output to ""
             repeat with windowIndex from 1 to count of windows
+                set activeIndex to 0
+                try
+                    set activeIndex to active tab index of window windowIndex
+                end try
                 repeat with tabIndex from 1 to count of tabs of window windowIndex
+                    set tabURL to ""
+                    set activeFlag to "0"
                     try
-                        if URL of tab tabIndex of window windowIndex is \(quotedURL) then
-                            set current tab of window windowIndex to tab tabIndex of window windowIndex
-                            set index of window windowIndex to 1
-                            activate
-                            return "matched"
-                        end if
+                        set tabURL to URL of tab tabIndex of window windowIndex
                     end try
+                    if windowIndex is 1 and tabIndex is activeIndex then
+                        set activeFlag to "1"
+                    end if
+                    if output is not "" then
+                        set output to output & linefeed
+                    end if
+                    set output to output & (windowIndex as text) & tab & (tabIndex as text) & tab & activeFlag & tab & tabURL
                 end repeat
             end repeat
-            open location \(quotedURL)
-            activate
-            return "opened"
+            return output
         end tell
         """
+    }
+
+    private func chromiumBrowserSelectionScript(appName: String, location: BrowserTabLocation) -> String {
+        let quotedAppName = appleScriptStringLiteral(appName)
+        return """
+        tell application \(quotedAppName)
+            try
+                set active tab index of window \(location.windowIndex) to \(location.tabIndex)
+                set index of window \(location.windowIndex) to 1
+                activate
+                return "selected"
+            on error
+                return "missing"
+            end try
+        end tell
+        """
+    }
+
+    private func safariBrowserInventoryScript(appName: String) -> String {
+        let quotedAppName = appleScriptStringLiteral(appName)
+        return """
+        tell application \(quotedAppName)
+            if (count of windows) is 0 then return ""
+            set output to ""
+            repeat with windowIndex from 1 to count of windows
+                repeat with tabIndex from 1 to count of tabs of window windowIndex
+                    set tabURL to ""
+                    set activeFlag to "0"
+                    try
+                        set tabURL to URL of tab tabIndex of window windowIndex
+                    end try
+                    try
+                        if windowIndex is 1 and tab tabIndex of window windowIndex is current tab of window windowIndex then
+                            set activeFlag to "1"
+                        end if
+                    end try
+                    if output is not "" then
+                        set output to output & linefeed
+                    end if
+                    set output to output & (windowIndex as text) & tab & (tabIndex as text) & tab & activeFlag & tab & tabURL
+                end repeat
+            end repeat
+            return output
+        end tell
+        """
+    }
+
+    private func safariBrowserSelectionScript(appName: String, location: BrowserTabLocation) -> String {
+        let quotedAppName = appleScriptStringLiteral(appName)
+        return """
+        tell application \(quotedAppName)
+            try
+                set current tab of window \(location.windowIndex) to tab \(location.tabIndex) of window \(location.windowIndex)
+                set index of window \(location.windowIndex) to 1
+                activate
+                return "selected"
+            on error
+                return "missing"
+            end try
+        end tell
+        """
+    }
+
+    private func browserTabLocations(from output: String) -> [BrowserTabLocation] {
+        output
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .compactMap { line in
+                let parts = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false)
+                guard parts.count == 4,
+                      let windowIndex = Int(parts[0]),
+                      let tabIndex = Int(parts[1]),
+                      windowIndex > 0,
+                      tabIndex > 0
+                else {
+                    return nil
+                }
+                return BrowserTabLocation(
+                    windowIndex: windowIndex,
+                    tabIndex: tabIndex,
+                    isActive: parts[2] == "1",
+                    url: String(parts[3]).trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+    }
+
+    private func browserTabMatch(in tabs: [BrowserTabLocation], targetURL: String) -> BrowserTabLocation? {
+        let comparableTargetURL = targetURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetHost = comparableHost(for: comparableTargetURL)
+
+        func isExactMatch(_ tab: BrowserTabLocation) -> Bool {
+            tab.url.trimmingCharacters(in: .whitespacesAndNewlines) == comparableTargetURL
+        }
+
+        func isHostMatch(_ tab: BrowserTabLocation) -> Bool {
+            guard let targetHost else { return false }
+            return comparableHost(for: tab.url) == targetHost
+        }
+
+        if let activeMatch = tabs.first(where: { $0.isActive && (isExactMatch($0) || isHostMatch($0)) }) {
+            return activeMatch
+        }
+        if let exactMatch = tabs.first(where: isExactMatch) {
+            return exactMatch
+        }
+        return tabs.first(where: isHostMatch)
+    }
+
+    private func comparableHost(for url: String) -> String? {
+        guard let host = URLComponents(string: url.trimmingCharacters(in: .whitespacesAndNewlines))?
+            .host?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !host.isEmpty
+        else {
+            return nil
+        }
+        if host.hasPrefix("www.") {
+            return String(host.dropFirst(4))
+        }
+        return host
+    }
+
+    private func scriptResult(_ result: AppleScriptRunResult, hasOutput expectedOutput: String) -> Bool {
+        result.succeeded && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == expectedOutput
     }
 }
