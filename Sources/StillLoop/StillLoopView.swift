@@ -1241,7 +1241,6 @@ private struct TimelineEventDebugPopover: View {
                         TimelineDebugText("评估器：\(detail.evaluator)")
                         TimelineDebugText("任务：\(detail.task)")
                         TimelineDebugText("状态：\(detail.resultState.displayName) (\(detail.resultState.rawValue))")
-                        TimelineDebugText(String(format: "置信度：%.2f", detail.confidence))
                         if let duration = detail.modelRunDurationSeconds {
                             TimelineDebugText("模型运行时长：\(FocusEventDebugDetail.formattedModelRunDuration(duration))")
                         }

@@ -94,7 +94,6 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
         struct Properties: Encodable {
             var analysis: AnalysisSchema?
             var state: StateSchema?
-            var confidence: NumberSchema?
             var reason: StringSchema?
             var nudge: NullableStringSchema?
         }
@@ -145,12 +144,6 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
             var type = "boolean"
         }
 
-        struct NumberSchema: Encodable {
-            var type = "number"
-            var minimum = 0
-            var maximum = 1
-        }
-
         struct NullableStringSchema: Encodable {
             enum CodingKeys: String, CodingKey {
                 case type
@@ -173,11 +166,10 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
                     properties: Properties(
                         analysis: .init(),
                         state: .init(),
-                        confidence: .init(),
                         reason: .init(),
                         nudge: .init()
                     ),
-                    required: ["analysis", "state", "confidence", "reason", "nudge"]
+                    required: ["analysis", "state", "reason", "nudge"]
                 )
             )
         )

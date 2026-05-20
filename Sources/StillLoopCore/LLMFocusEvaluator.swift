@@ -73,7 +73,6 @@ public struct LLMFocusAnalysis: Codable, Equatable {
 
 public struct LLMEvaluationResult: Equatable {
     public var state: FocusState
-    public var confidence: Double
     public var reason: String
     public var shouldNudge: Bool
     public var nudge: String?
@@ -84,7 +83,6 @@ public struct LLMEvaluationResult: Equatable {
 
     public init(
         state: FocusState,
-        confidence: Double,
         reason: String,
         shouldNudge: Bool,
         nudge: String?,
@@ -94,7 +92,6 @@ public struct LLMEvaluationResult: Equatable {
         returnTarget: FocusReturnTarget? = nil
     ) {
         self.state = state
-        self.confidence = confidence
         self.reason = reason
         self.shouldNudge = shouldNudge
         self.nudge = nudge
@@ -131,19 +128,15 @@ public struct LLMFocusEvaluator {
         case missing
     }
 
-    private static let minimumFocusedConfidence = 0.05
-
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
         var state: FocusState
-        var confidence: Double
         var reason: String
         var nudge: String?
 
         private enum CodingKeys: String, CodingKey {
             case analysis
             case state
-            case confidence
             case reason
             case nudge
         }
@@ -164,19 +157,6 @@ public struct LLMFocusEvaluator {
                 )
             }
             state = decodedState
-            if let numericConfidence = try? container.decode(Double.self, forKey: .confidence) {
-                confidence = numericConfidence
-            } else if
-                let stringConfidence = try? container.decode(String.self, forKey: .confidence),
-                let parsedConfidence = Double(stringConfidence.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                confidence = parsedConfidence
-            } else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .confidence,
-                    in: container,
-                    debugDescription: "Confidence must be a number"
-                )
-            }
             reason = (try? container.decode(String.self, forKey: .reason)) ?? ""
             nudge = try? container.decodeIfPresent(String.self, forKey: .nudge)
         }
@@ -284,7 +264,6 @@ public struct LLMFocusEvaluator {
         let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
         return LLMEvaluationResult(
             state: modelResponse.state,
-            confidence: modelResponse.confidence,
             reason: modelResponse.reason,
             shouldNudge: nudge != nil,
             nudge: nudge,
@@ -360,11 +339,11 @@ public struct LLMFocusEvaluator {
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
         The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge.
-        Fill the analysis object first, then choose the final state, confidence, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
+        Fill the analysis object first, then choose the final state, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"state":"focused|uncertain|distracted|stuck|resting|away","confidence":0.0,"reason":"short reason","nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"state":"focused|uncertain|distracted|stuck|resting|away","reason":"short reason","nudge":"short Chinese nudge or null"}
         """
     }
 
@@ -466,12 +445,11 @@ public struct LLMFocusEvaluator {
     ) {
         guard response.state == .focused else { return }
 
-        if var analysis = response.analysis {
+        if let analysis = response.analysis {
             if analysis.userEngaged == false {
                 downgradeFocusedResponse(
                     &response,
                     to: .away,
-                    confidenceCap: 0.72,
                     reason: "模型分析显示用户没有保持参与，因此不能判为专注。",
                     taskAligned: analysis.taskAligned,
                     taskAlignment: analysis.taskAlignment,
@@ -485,7 +463,6 @@ public struct LLMFocusEvaluator {
                 downgradeFocusedResponse(
                     &response,
                     to: .distracted,
-                    confidenceCap: 0.78,
                     reason: "用户看起来在投入操作，但模型分析显示当前内容与任务不匹配。",
                     taskAligned: false,
                     taskAlignment: "当前内容与任务不匹配，不能判为专注。",
@@ -496,7 +473,6 @@ public struct LLMFocusEvaluator {
                 downgradeFocusedResponse(
                     &response,
                     to: .uncertain,
-                    confidenceCap: 0.52,
                     reason: "模型没有给出明确的任务匹配证据，不能确认当前活动支持任务。",
                     taskAligned: false,
                     taskAlignment: "缺少明确任务匹配证据。",
@@ -508,7 +484,6 @@ public struct LLMFocusEvaluator {
                     downgradeFocusedResponse(
                         &response,
                         to: .uncertain,
-                        confidenceCap: 0.52,
                         reason: "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。",
                         taskAligned: false,
                         taskAlignment: "缺少当前任务的可观察证据。",
@@ -518,48 +493,27 @@ public struct LLMFocusEvaluator {
                 }
             }
 
-            if response.confidence <= Self.minimumFocusedConfidence {
-                analysis.taskAligned = false
-                response.analysis = analysis
-                downgradeFocusedResponse(
-                    &response,
-                    to: .uncertain,
-                    confidenceCap: 0.52,
-                    reason: "模型置信度过低，不能确认当前活动支持任务。",
-                    taskAligned: false,
-                    taskAlignment: "置信度过低，任务匹配不可确认。",
-                    decisionRationale: "focused 需要稳定的任务匹配判断；confidence 过低时降为 uncertain。"
-                )
-                return
-            }
         } else if !recentSnapshots.isEmpty {
             downgradeFocusedResponse(
                 &response,
                 to: .uncertain,
-                confidenceCap: 0.52,
                 reason: "模型没有返回任务匹配分析，不能确认当前活动支持任务。",
                 taskAligned: nil,
                 taskAlignment: "缺少任务匹配分析。",
                 decisionRationale: "focused 需要结构化分析支持。"
             )
-        } else if response.confidence <= Self.minimumFocusedConfidence {
-            response.state = .uncertain
-            response.reason = "模型置信度过低，不能确认当前活动支持任务。"
-            response.nudge = nil
         }
     }
 
     private func downgradeFocusedResponse(
         _ response: inout ModelResponse,
         to state: FocusState,
-        confidenceCap: Double,
         reason: String,
         taskAligned: Bool?,
         taskAlignment: String,
         decisionRationale: String
     ) {
         response.state = state
-        response.confidence = min(response.confidence, confidenceCap)
         response.reason = reason
         response.nudge = nil
         if var analysis = response.analysis {

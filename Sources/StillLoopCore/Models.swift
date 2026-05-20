@@ -352,7 +352,6 @@ public extension FocusEvent {
                 "评估器：\(debugDetail.evaluator)",
                 "任务：\(debugDetail.task)",
                 "状态：\(debugDetail.resultState.displayName) (\(debugDetail.resultState.rawValue))",
-                String(format: "置信度：%.2f", debugDetail.confidence),
                 "原因：\(debugDetail.reason)",
                 "触发提醒：\(debugDetail.shouldNudge ? "是" : "否")"
             ]
@@ -399,7 +398,6 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var evaluator: String
     public var capturedContext: [String]
     public var resultState: FocusState
-    public var confidence: Double
     public var reason: String
     public var shouldNudge: Bool
     public var nudge: String?
@@ -411,7 +409,6 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         evaluator: String,
         capturedContext: [String],
         resultState: FocusState,
-        confidence: Double,
         reason: String,
         shouldNudge: Bool,
         nudge: String?,
@@ -422,7 +419,6 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.evaluator = evaluator
         self.capturedContext = capturedContext
         self.resultState = resultState
-        self.confidence = confidence
         self.reason = reason
         self.shouldNudge = shouldNudge
         self.nudge = nudge
@@ -461,7 +457,6 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             evaluator: evaluator,
             capturedContext: context,
             resultState: result.state,
-            confidence: result.confidence,
             reason: result.reason,
             shouldNudge: result.shouldNudge,
             nudge: result.nudge,
@@ -515,13 +510,11 @@ public struct FocusSession: Codable, Equatable, Identifiable {
 
 public struct EvaluationResult: Equatable {
     public var state: FocusState
-    public var confidence: Double
     public var reason: String
     public var shouldNudge: Bool
 
-    public init(state: FocusState, confidence: Double, reason: String, shouldNudge: Bool) {
+    public init(state: FocusState, reason: String, shouldNudge: Bool) {
         self.state = state
-        self.confidence = confidence
         self.reason = reason
         self.shouldNudge = shouldNudge
     }

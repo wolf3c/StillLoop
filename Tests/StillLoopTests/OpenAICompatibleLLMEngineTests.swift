@@ -133,6 +133,8 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertTrue((analysis["required"] as? [String])?.contains("taskAligned") == true)
         let state = try XCTUnwrap(properties["state"] as? [String: Any])
         XCTAssertEqual(state["enum"] as? [String], ["focused", "uncertain", "distracted", "stuck", "resting", "away"])
+        XCTAssertNil(properties["confidence"])
+        XCTAssertFalse((schema["required"] as? [String])?.contains("confidence") == true)
     }
 
     func testCompletionRequestIgnoresStructuredResponseFormatByDefault() async throws {

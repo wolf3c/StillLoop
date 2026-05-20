@@ -15,7 +15,6 @@ final class FocusReturnTargetTests: XCTestCase {
             "decisionRationale": "用户参与且当前页面支持任务。"
           },
           "state": "focused",
-          "confidence": 0.88,
           "reason": "Gmail inbox matches the task.",
           "nudge": null
         }
@@ -48,7 +47,7 @@ final class FocusReturnTargetTests: XCTestCase {
 
     func testDistractedEvaluationDoesNotBuildReturnTarget() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubReturnTargetEngine(response: """
-        {"state":"distracted","confidence":0.9,"reason":"Current page is unrelated.","nudge":null}
+        {"state":"distracted","reason":"Current page is unrelated.","nudge":null}
         """))
         let snapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 20),

@@ -4,7 +4,7 @@ import XCTest
 final class LLMFocusEvaluatorTests: XCTestCase {
     func testSuccessfulModelEvaluationRecordsRequestDuration() async throws {
         let evaluator = LLMFocusEvaluator(engine: DelayedStubEngine(response: """
-        {"state":"distracted","confidence":0.91,"reason":"Video site is unrelated","nudge":null}
+        {"state":"distracted","reason":"Video site is unrelated","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -19,7 +19,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testParsesStructuredModelJudgement() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"distracted","confidence":0.91,"reason":"Video site is unrelated","nudge":"先回到写方案。"}
+        {"state":"distracted","reason":"Video site is unrelated","nudge":"先回到写方案。"}
         """))
         let snapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -38,7 +38,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .distracted)
-        XCTAssertEqual(result.confidence, 0.91)
         XCTAssertEqual(result.reason, "Video site is unrelated")
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "先回到：写产品方案")
@@ -58,7 +57,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "decisionRationale": "有明确写作进展，且应用和内容都符合任务。"
           },
           "state": "focused",
-          "confidence": 0.86,
           "reason": "WorkFlowy journaling matches the task.",
           "nudge": null
         }
@@ -80,7 +78,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.analysis?.decisionRationale, "有明确写作进展，且应用和内容都符合任务。")
     }
 
-    func testParsesLocalizedStateAndStringConfidenceFromSmallModelResponse() async throws {
+    func testParsesLocalizedStateFromSmallModelResponse() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {
           "analysis": {
@@ -89,7 +87,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "taskAlignment": "与写日记相关。"
           },
           "state": "专注中",
-          "confidence": "0.84",
           "reason": "页面内容与任务一致。",
           "nudge": null
         }
@@ -102,7 +99,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .uncertain)
-        XCTAssertEqual(result.confidence, 0.52)
         XCTAssertEqual(result.reason, "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。")
         XCTAssertEqual(result.analysis?.userEngagement, "用户在场。")
         XCTAssertEqual(result.analysis?.observedActivity, "")
@@ -111,9 +107,9 @@ final class LLMFocusEvaluatorTests: XCTestCase {
     func testParsesFinalJSONAfterTaggedThinkingWithDecoyJSON() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         <think>
-        先推理一下，也许可以返回 {"state":"focused","confidence":0.99,"reason":"只是草稿","nudge":null}
+        先推理一下，也许可以返回 {"state":"focused","reason":"只是草稿","nudge":null}
         </think>
-        {"state":"distracted","confidence":0.76,"reason":"页面内容与任务无关。","nudge":null}
+        {"state":"distracted","reason":"页面内容与任务无关。","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -123,19 +119,18 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .distracted)
-        XCTAssertEqual(result.confidence, 0.76)
         XCTAssertEqual(result.reason, "页面内容与任务无关。")
     }
 
     func testParsesFinalJSONAfterThoughtAndReasonTagsWithDecoyJSON() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         <thought>
-        Maybe this draft object: {"state":"focused","confidence":0.99,"reason":"draft thought","nudge":null}
+        Maybe this draft object: {"state":"focused","reason":"draft thought","nudge":null}
         </thought>
         <reason>
-        Another draft object: {"state":"distracted","confidence":0.88,"reason":"draft reason","nudge":null}
+        Another draft object: {"state":"distracted","reason":"draft reason","nudge":null}
         </reason>
-        {"state":"uncertain","confidence":0.52,"reason":"信号不足，需要继续观察。","nudge":null}
+        {"state":"uncertain","reason":"信号不足，需要继续观察。","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -145,17 +140,16 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .uncertain)
-        XCTAssertEqual(result.confidence, 0.52)
         XCTAssertEqual(result.reason, "信号不足，需要继续观察。")
     }
 
     func testParsesFinalJSONAfterPlainReasonSectionWithDecoyJSON() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         Reason:
-        I might output {"state":"focused","confidence":0.95,"reason":"draft reason","nudge":null}
+        I might output {"state":"focused","reason":"draft reason","nudge":null}
 
         Final Answer:
-        {"state":"away","confidence":0.81,"reason":"摄像头画面里没有看到用户。","nudge":null}
+        {"state":"away","reason":"摄像头画面里没有看到用户。","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -165,7 +159,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .away)
-        XCTAssertEqual(result.confidence, 0.81)
         XCTAssertEqual(result.reason, "摄像头画面里没有看到用户。")
     }
 
@@ -175,7 +168,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         最终判断：
         ```json
-        {"state":"stuck","confidence":"0.58","reason":"任务相关页面没有明显进展。","nudge":null}
+        {"state":"stuck","reason":"任务相关页面没有明显进展。","nudge":null}
         ```
         """))
 
@@ -186,13 +179,12 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .stuck)
-        XCTAssertEqual(result.confidence, 0.58)
         XCTAssertEqual(result.reason, "任务相关页面没有明显进展。")
     }
 
     func testBuildsPromptWithRecentHistory() async throws {
         let engine = StubEngine(response: """
-        {"state":"uncertain","confidence":0.4,"reason":"Ambiguous","nudge":null}
+        {"state":"uncertain","reason":"Ambiguous","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 
@@ -221,7 +213,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testPromptRequiresCameraAndContextJointJudgement() async throws {
         let engine = StubEngine(response: """
-        {"state":"focused","confidence":0.9,"reason":"Working","nudge":null}
+        {"state":"focused","reason":"Working","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 
@@ -278,7 +270,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testParsesAwayStateForUserLeavingScene() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"away","confidence":0.88,"reason":"No person appears in recent camera frames","nudge":"回来后继续。"}
+        {"state":"away","reason":"No person appears in recent camera frames","nudge":"回来后继续。"}
         """))
 
         let result = try await evaluator.evaluate(
@@ -303,7 +295,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testFocusedModelJudgementSuppressesNudge() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"focused","confidence":0.9,"reason":"Working","nudge":"继续保持记录进度。"}
+        {"state":"focused","reason":"Working","nudge":"继续保持记录进度。"}
         """))
 
         let result = try await evaluator.evaluate(
@@ -319,7 +311,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testFocusedJudgementFallsBackToUncertainWithoutStructuredAnalysisEvidence() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"focused","confidence":0.95,"reason":"用户看起来在专注操作。","nudge":null}
+        {"state":"focused","reason":"用户看起来在专注操作。","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -352,7 +344,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.state, .uncertain)
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "回到：写日记，回顾过去一周")
-        XCTAssertLessThan(result.confidence, 0.95)
     }
 
     func testFocusedJudgementIsRejectedWhenAnalysisSaysEngagedButNotTaskAligned() async throws {
@@ -368,7 +359,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "decisionRationale": "用户可能专注于编程，但没有看到小说正文、情节大纲或创作素材。"
           },
           "state": "focused",
-          "confidence": 0.0,
           "reason": "用户正在认真操作。",
           "nudge": null
         }
@@ -400,7 +390,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .distracted)
-        XCTAssertEqual(result.confidence, 0.0)
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "先回到：写小说")
         XCTAssertEqual(result.analysis?.userEngaged, true)
@@ -421,7 +410,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "decisionRationale": "The user appears to be drafting a novel in Codex."
           },
           "state": "focused",
-          "confidence": 1.0,
           "reason": "The user is still engaged in writing a novel.",
           "nudge": null
         }
@@ -446,7 +434,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .uncertain)
-        XCTAssertEqual(result.confidence, 0.52)
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "回到：写小说")
         XCTAssertEqual(result.analysis?.taskAligned, false)
@@ -464,7 +451,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "decisionRationale": "The visible work is not clear evidence for the stated research task."
           },
           "state": "focused",
-          "confidence": 0.0,
           "reason": "The user is engaged.",
           "nudge": null
         }
@@ -505,7 +491,6 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "decisionRationale": "The user is engaged, so the task is treated as aligned."
           },
           "state": "focused",
-          "confidence": 0.92,
           "reason": "The user is working in Codex.",
           "nudge": null
         }
@@ -543,7 +528,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testModelNudgeIsReducedToTaskReturnCue() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"uncertain","confidence":0.48,"reason":"Still related but drifting","nudge":"您正在与任务保持联系，但需要更专注地查看文档。"}
+        {"state":"uncertain","reason":"Still related but drifting","nudge":"您正在与任务保持联系，但需要更专注地查看文档。"}
         """))
 
         let result = try await evaluator.evaluate(
@@ -575,7 +560,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testUncertainModelJudgementUsesDefaultGentleNudgeWhenMissing() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"uncertain","confidence":0.48,"reason":"Activity is ambiguous","nudge":null}
+        {"state":"uncertain","reason":"Activity is ambiguous","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -591,7 +576,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testDistractedModelJudgementUsesDefaultNudgeWhenMissing() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"distracted","confidence":0.88,"reason":"Current app is unrelated","nudge":null}
+        {"state":"distracted","reason":"Current app is unrelated","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -607,7 +592,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testStuckModelJudgementUsesDefaultNudgeWhenMissing() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {"state":"stuck","confidence":0.73,"reason":"No visible progress","nudge":null}
+        {"state":"stuck","reason":"No visible progress","nudge":null}
         """))
 
         let result = try await evaluator.evaluate(
@@ -623,7 +608,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testPromptIncludesFullTextTimelineAndSampledVisualCaptures() async throws {
         let engine = StubEngine(response: """
-        {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
+        {"state":"focused","reason":"Recent captures are consistent","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 
@@ -802,7 +787,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testPromptOmitsMissingBrowserMetadata() async throws {
         let engine = StubEngine(response: """
-        {"state":"focused","confidence":0.7,"reason":"Recent captures are consistent","nudge":null}
+        {"state":"focused","reason":"Recent captures are consistent","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 
@@ -828,7 +813,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testPromptOmitsDuplicateWindowTitle() async throws {
         let engine = StubEngine(response: """
-        {"state":"focused","confidence":0.9,"reason":"Working","nudge":null}
+        {"state":"focused","reason":"Working","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 
@@ -854,7 +839,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
     func testRequestsFocusJSONSchemaWhenEngineSupportsStructuredOutput() async throws {
         let engine = StructuredStubEngine(response: """
-        {"state":"distracted","confidence":0.8,"reason":"当前页面与任务不匹配。","nudge":null}
+        {"state":"distracted","reason":"当前页面与任务不匹配。","nudge":null}
         """)
         let evaluator = LLMFocusEvaluator(engine: engine)
 

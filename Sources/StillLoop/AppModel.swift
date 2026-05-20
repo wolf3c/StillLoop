@@ -1986,7 +1986,6 @@ final class AppModel: ObservableObject {
                     "durationMS": .int(Self.durationMilliseconds(since: evaluationStartedAt)),
                     "evaluator": .string(result.evaluator),
                     "state": .string(result.state.rawValue),
-                    "confidence": .double(result.confidence),
                     "shouldNudge": .bool(result.shouldNudge),
                     "pendingCount": .int(pendingCount),
                     "textCount": .int(contextCount),
@@ -2283,8 +2282,7 @@ final class AppModel: ObservableObject {
                 snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string("bundled"),
-                    "state": .string(result.state.rawValue),
-                    "confidence": .double(result.confidence)
+                    "state": .string(result.state.rawValue)
                 ]
             )
         )
@@ -2301,7 +2299,6 @@ final class AppModel: ObservableObject {
         let result = evaluator.evaluate(task: task, recentSnapshots: snapshots, previousEvents: previousEvents)
         return LLMEvaluationResult(
             state: result.state,
-            confidence: result.confidence,
             reason: result.reason,
             shouldNudge: result.shouldNudge,
             nudge: result.shouldNudge ? nudges.message(for: result.state, task: task) : nil,

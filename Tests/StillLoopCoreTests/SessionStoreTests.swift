@@ -151,7 +151,6 @@ final class SessionStoreTests: XCTestCase {
                             """
                         ],
                         resultState: .distracted,
-                        confidence: 0.91,
                         reason: "Context drifted to unrelated browsing",
                         shouldNudge: true,
                         nudge: "回到产品方案。"

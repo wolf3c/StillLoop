@@ -31,6 +31,7 @@ final class TimelineDebugDetailTests: XCTestCase {
 
         XCTAssertTrue(source.contains("modelRunDurationSeconds"))
         XCTAssertTrue(source.contains("模型运行时长："))
+        XCTAssertFalse(source.contains("置信度："))
     }
 
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {

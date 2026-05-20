@@ -89,7 +89,6 @@ final class AppModelReviewCommentTests: XCTestCase {
                         evaluator: "基础规则",
                         capturedContext: ["capture[1] 1970-01-01T00:01:00Z\nCodex · StillLoop\nscreenshot=available; camera=unavailable"],
                         resultState: .stuck,
-                        confidence: 0.64,
                         reason: "No visible progress",
                         shouldNudge: true,
                         nudge: "先写一个测试。"

@@ -20,7 +20,6 @@ final class FocusEventDebugDetailTests: XCTestCase {
         )
         let result = LLMEvaluationResult(
             state: .uncertain,
-            confidence: 0.82,
             reason: "Context is task-adjacent but attention is split",
             shouldNudge: true,
             nudge: "回到：调优识别能力",
@@ -45,7 +44,6 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.task, "调优识别能力")
         XCTAssertEqual(detail.evaluator, "自带模型")
         XCTAssertEqual(detail.resultState, .uncertain)
-        XCTAssertEqual(detail.confidence, 0.82)
         XCTAssertEqual(detail.reason, "Context is task-adjacent but attention is split")
         XCTAssertTrue(detail.shouldNudge)
         XCTAssertEqual(detail.nudge, "回到：调优识别能力")
@@ -112,7 +110,6 @@ final class FocusEventDebugDetailTests: XCTestCase {
             snapshots: [snapshot],
             result: LLMEvaluationResult(
                 state: .focused,
-                confidence: 0.7,
                 reason: "Research context matches task",
                 shouldNudge: false,
                 nudge: nil,
@@ -136,7 +133,6 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 evaluator: "自带模型",
                 capturedContext: ["capture[1] 1970-01-01T00:00:01Z\nChrome · 文档页面\nscreenshot=available; camera=unavailable"],
                 resultState: .distracted,
-                confidence: 0.91,
                 reason: "页面内容偏离当前任务",
                 shouldNudge: true,
                 nudge: "请回到发布说明",
@@ -159,7 +155,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("采样上下文\ncapture[1] 1970-01-01T00:00:01Z"))
         XCTAssertTrue(text.contains("运算返回结果"))
         XCTAssertTrue(text.contains("状态：明显偏离 (distracted)"))
-        XCTAssertTrue(text.contains("置信度：0.91"))
+        XCTAssertFalse(text.contains("置信度"))
         XCTAssertTrue(text.contains("模型运行时长：1.23 秒"))
         XCTAssertTrue(text.contains("触发提醒：是"))
         XCTAssertTrue(text.contains("模型分析"))

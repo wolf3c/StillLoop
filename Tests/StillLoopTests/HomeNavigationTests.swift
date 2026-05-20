@@ -574,7 +574,6 @@ final class HomeNavigationTests: XCTestCase {
                 "decisionRationale": "用户参与且可见内容包含日记任务证据。"
               },
               "state":"focused",
-              "confidence":0.86,
               "reason":"Diary writing is visible",
               "nudge":null
             }
