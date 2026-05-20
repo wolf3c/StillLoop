@@ -25,7 +25,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         let arguments = BundledModelRuntime.launchArguments(
             modelURL: modelURL,
             mmprojURL: mmprojURL,
-            spec: .builtIn
+            spec: .builtIn,
+            tuning: .development
         )
 
         XCTAssertEqual(arguments, [
@@ -39,8 +40,48 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--cache-type-k", "f16",
             "--cache-type-v", "f16",
             "--no-cache-prompt",
-            "--cache-ram", "0"
+            "--cache-ram", "0",
+            "--batch-size", "4096",
+            "--ubatch-size", "1024",
+            "--metrics"
         ])
+    }
+
+    func testLaunchArgumentsUseCurrentBuildDefaultTuning() {
+        let arguments = BundledModelRuntime.launchArguments(
+            modelURL: URL(fileURLWithPath: "/tmp/model.gguf"),
+            spec: .builtIn
+        )
+
+        #if DEBUG
+        XCTAssertEqual(arguments.suffix(5), [
+            "--batch-size", "4096",
+            "--ubatch-size", "1024",
+            "--metrics"
+        ])
+        #else
+        XCTAssertFalse(arguments.contains("--batch-size"))
+        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertFalse(arguments.contains("--metrics"))
+        #endif
+    }
+
+    func testLaunchArgumentsCanUseProductionTuningWithoutDevelopmentDiagnostics() {
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+
+        let arguments = BundledModelRuntime.launchArguments(
+            modelURL: modelURL,
+            spec: .builtIn,
+            tuning: .production
+        )
+
+        XCTAssertFalse(arguments.contains("--batch-size"))
+        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertFalse(arguments.contains("--metrics"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "16384")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--n-gpu-layers")! + 1], "99")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "0")
     }
 
     func testLaunchArgumentsUseSelectedPort() {

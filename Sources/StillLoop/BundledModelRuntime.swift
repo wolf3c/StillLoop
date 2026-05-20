@@ -75,6 +75,23 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         case ready
     }
 
+    struct LaunchTuning: Equatable {
+        var metricsEnabled: Bool
+        var batchSize: Int?
+        var ubatchSize: Int?
+
+        static let development = LaunchTuning(metricsEnabled: true, batchSize: 4_096, ubatchSize: 1_024)
+        static let production = LaunchTuning(metricsEnabled: false, batchSize: nil, ubatchSize: nil)
+
+        static var `default`: LaunchTuning {
+            #if DEBUG
+            .development
+            #else
+            .production
+            #endif
+        }
+    }
+
     let modelID: String
     private(set) var activePort: Int
     private(set) var baseURL: URL
@@ -178,7 +195,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         modelURL: URL,
         mmprojURL: URL? = nil,
         spec: ModelDownloadSpec,
-        port: Int? = nil
+        port: Int? = nil,
+        tuning: LaunchTuning = .default
     ) -> [String] {
         let selectedPort = port ?? spec.localServerPort
         var arguments = [
@@ -195,6 +213,15 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
         ]
         if let mmprojURL {
             arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)
+        }
+        if let batchSize = tuning.batchSize {
+            arguments.append(contentsOf: ["--batch-size", String(batchSize)])
+        }
+        if let ubatchSize = tuning.ubatchSize {
+            arguments.append(contentsOf: ["--ubatch-size", String(ubatchSize)])
+        }
+        if tuning.metricsEnabled {
+            arguments.append("--metrics")
         }
         return arguments
     }
