@@ -61,6 +61,8 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var responseChars: Int
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
+    public var llmInputTokenCount: Int?
+    public var llmOutputTokenCount: Int?
 
     public init(
         visualCaptureCount: Int,
@@ -70,7 +72,9 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         payloadBytes: Int? = nil,
         responseChars: Int,
         inputTextCharacterCount: Int,
-        inputTextTokenCount: Int? = nil
+        inputTextTokenCount: Int? = nil,
+        llmInputTokenCount: Int? = nil,
+        llmOutputTokenCount: Int? = nil
     ) {
         self.visualCaptureCount = visualCaptureCount
         self.imageCount = imageCount
@@ -80,6 +84,8 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.responseChars = responseChars
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
+        self.llmInputTokenCount = llmInputTokenCount
+        self.llmOutputTokenCount = llmOutputTokenCount
     }
 }
 
@@ -184,12 +190,14 @@ public struct LLMFocusEvaluator {
 
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
+        var focusTarget: ModelFocusTarget?
         var state: FocusState
         var reason: String
         var nudge: String?
 
         private enum CodingKeys: String, CodingKey {
             case analysis
+            case focusTarget
             case state
             case reason
             case nudge
@@ -202,6 +210,7 @@ public struct LLMFocusEvaluator {
             } catch {
                 analysis = nil
             }
+            focusTarget = try? container.decodeIfPresent(ModelFocusTarget.self, forKey: .focusTarget)
             let rawState = try container.decode(String.self, forKey: .state)
             guard let decodedState = Self.decodeState(rawState) else {
                 throw DecodingError.dataCorruptedError(
@@ -236,6 +245,33 @@ public struct LLMFocusEvaluator {
             default:
                 return nil
             }
+        }
+    }
+
+    private struct ModelFocusTarget: Decodable, Equatable {
+        var appName: String?
+        var windowTitle: String?
+        var browserTitle: String?
+        var browserURL: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case appName
+            case windowTitle
+            case browserTitle
+            case browserURL
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            appName = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .appName))
+            windowTitle = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .windowTitle))
+            browserTitle = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .browserTitle))
+            browserURL = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .browserURL))
+        }
+
+        private static func trimmed(_ value: String?) -> String? {
+            let trimmedValue = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmedValue.isEmpty ? nil : trimmedValue
         }
     }
 
@@ -319,7 +355,7 @@ public struct LLMFocusEvaluator {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
         applyFocusedValidityGuards(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
-        applyBrowsingTaskValidityGuard(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
+        let returnTarget = resolvedReturnTarget(from: modelResponse, snapshots: textSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
         return LLMEvaluationResult(
@@ -339,7 +375,7 @@ public struct LLMFocusEvaluator {
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount
             ),
             analysis: modelResponse.analysis,
-            returnTarget: modelResponse.state == .focused ? FocusReturnTarget.make(from: textSnapshots) : nil
+            returnTarget: returnTarget
         )
     }
 
@@ -442,13 +478,20 @@ public struct LLMFocusEvaluator {
         - userEngaged: boolean, whether the user appears present and active.
         - taskAligned: boolean, whether visible work directly supports the current task.
 
+        Also choose focusTarget:
+        - If and only if state is focused, focusTarget must identify the app/window/browser page that is the actual focused task context.
+        - If state is not focused, focusTarget must be null.
+        - Use only app, window, browserTitle, and browserURL values present in the current captures. Never invent an app, title, or URL from the task or history.
+        - For browser work, include browserURL when it is present in the current capture metadata; otherwise use browserTitle.
+        - For non-browser work, set browserTitle and browserURL to null.
+
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
             The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
         Fill the analysis object first, then choose the final state, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"state":"focused|uncertain|distracted|stuck|resting|away","reason":"short reason","nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"focusTarget":{"appName":"app from current captures","windowTitle":"window title or null","browserTitle":"browser title or null","browserURL":"browser URL or null"},"state":"focused|uncertain|distracted|stuck|resting|away","reason":"short reason","nudge":"short Chinese nudge or null"}
         """
     }
 
@@ -543,6 +586,74 @@ public struct LLMFocusEvaluator {
         try LLMJSONResponseExtractor.decodeFirst(ModelResponse.self, from: text, using: decoder)
     }
 
+    private func resolvedReturnTarget(
+        from response: ModelResponse,
+        snapshots: [ContextSnapshot]
+    ) -> FocusReturnTarget? {
+        guard response.state == .focused,
+              let focusTarget = response.focusTarget,
+              let snapshot = snapshot(matching: focusTarget, in: snapshots)
+        else {
+            return nil
+        }
+        return FocusReturnTarget.make(from: snapshot)
+    }
+
+    private func snapshot(
+        matching target: ModelFocusTarget,
+        in snapshots: [ContextSnapshot]
+    ) -> ContextSnapshot? {
+        let candidates = snapshots
+            .filter { snapshot in
+                guard let appName = target.appName else { return false }
+                return normalizedText(snapshot.activeAppName) == normalizedText(appName)
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+
+        guard !candidates.isEmpty else { return nil }
+
+        if let browserURL = target.browserURL {
+            return candidates.first { snapshot in
+                snapshotBrowserURLMatches(snapshot, targetURL: browserURL)
+            }
+        }
+
+        if let browserTitle = target.browserTitle {
+            return candidates.first { snapshot in
+                normalizedText(snapshot.browserTitle) == normalizedText(browserTitle)
+            }
+        }
+
+        if let windowTitle = target.windowTitle {
+            return candidates.first { snapshot in
+                normalizedText(snapshot.displayWindowTitle ?? snapshot.windowTitle) == normalizedText(windowTitle)
+            }
+        }
+
+        return candidates.first
+    }
+
+    private func snapshotBrowserURLMatches(_ snapshot: ContextSnapshot, targetURL: String) -> Bool {
+        let target = normalizedURLText(targetURL)
+        return [
+            snapshot.browserURL,
+            snapshot.sanitizedBrowserURLText
+        ]
+            .compactMap { $0 }
+            .map(normalizedURLText)
+            .contains(target)
+    }
+
+    private func normalizedText(_ value: String?) -> String {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+    }
+
+    private func normalizedURLText(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func applyFocusedValidityGuards(
         to response: inout ModelResponse,
         task: String,
@@ -608,77 +719,6 @@ public struct LLMFocusEvaluator {
                 decisionRationale: "focused 需要结构化分析支持。"
             )
         }
-    }
-
-    private struct BrowsingTaskTarget {
-        var displayName: String
-        var hosts: [String]
-        var titleMarkers: [String]
-    }
-
-    private func applyBrowsingTaskValidityGuard(
-        to response: inout ModelResponse,
-        task: String,
-        recentSnapshots: [ContextSnapshot]
-    ) {
-        guard response.state == .distracted || response.state == .uncertain else { return }
-        guard response.analysis?.userEngaged == true else { return }
-        guard let target = browsingTaskTarget(from: task) else { return }
-        guard recentSnapshots.contains(where: { snapshot($0, matchesBrowsingTarget: target) }) else { return }
-
-        response.state = .focused
-        response.reason = "当前浏览器页面位于\(target.displayName)，与浏览任务匹配。"
-        response.nudge = nil
-        if var analysis = response.analysis {
-            analysis.taskAligned = true
-            analysis.taskAlignment = "\(target.displayName) 页面标题或 URL 与当前浏览任务匹配。"
-            analysis.decisionRationale = "浏览类任务以目标站点本身作为任务证据；当前页面仍在该站点内。"
-            response.analysis = analysis
-        }
-    }
-
-    private func browsingTaskTarget(from task: String) -> BrowsingTaskTarget? {
-        let normalized = task.lowercased()
-        guard containsAny(normalized, [
-            "浏览", "查看", "阅读", "刷", "逛",
-            "browse", "browsing", "read", "reading", "check", "use"
-        ]) else {
-            return nil
-        }
-
-        if containsAny(normalized, ["x/twitter", "twitter", "twitter.com", "x.com", "推特"]) {
-            return BrowsingTaskTarget(
-                displayName: "X/Twitter",
-                hosts: ["x.com", "twitter.com"],
-                titleMarkers: [" / x", " on x", "twitter"]
-            )
-        }
-
-        return nil
-    }
-
-    private func snapshot(_ snapshot: ContextSnapshot, matchesBrowsingTarget target: BrowsingTaskTarget) -> Bool {
-        if let browserURL = snapshot.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !browserURL.isEmpty {
-            guard let host = browserHost(from: browserURL) else { return false }
-            return target.hosts.contains { host == $0 || host.hasSuffix(".\($0)") }
-        }
-
-        guard let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-              !browserTitle.isEmpty
-        else {
-            return false
-        }
-        return target.titleMarkers.contains { browserTitle.contains($0) }
-    }
-
-    private func browserHost(from urlText: String?) -> String? {
-        guard let urlText = urlText?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !urlText.isEmpty
-        else {
-            return nil
-        }
-        return URLComponents(string: urlText)?.host?.lowercased()
     }
 
     private func downgradeFocusedResponse(

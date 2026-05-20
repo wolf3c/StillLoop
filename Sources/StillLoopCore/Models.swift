@@ -118,6 +118,17 @@ public struct FocusReturnTarget: Codable, Equatable {
         )
     }
 
+    public static func make(from snapshot: ContextSnapshot) -> FocusReturnTarget {
+        FocusReturnTarget(
+            appName: snapshot.activeAppName,
+            appBundleIdentifier: snapshot.activeAppBundleIdentifier,
+            windowTitle: snapshot.displayWindowTitle,
+            browserTitle: snapshot.browserTitle,
+            browserURL: snapshot.browserURL,
+            capturedAt: snapshot.timestamp
+        )
+    }
+
     private static func displayName(appName: String, windowTitle: String?, browserTitle: String?) -> String {
         let appDisplayName = shortenedAppName(appName)
         let title = [browserTitle, windowTitle]
@@ -434,10 +445,14 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     }
 
     public static func formattedRequestMetricLines(_ metrics: LLMRequestDebugMetrics) -> [String] {
-        [
+        var lines = [
             "请求规模：visualCaptureCount=\(metrics.visualCaptureCount), imageCount=\(metrics.imageCount), textSnapshotCount=\(metrics.textSnapshotCount), previousEventCount=\(metrics.previousEventCount)",
             "输入规模：payloadBytes=\(optionalIntText(metrics.payloadBytes)), responseChars=\(metrics.responseChars), inputTextCharacterCount=\(metrics.inputTextCharacterCount), inputTextTokenCount=\(optionalIntText(metrics.inputTextTokenCount))"
         ]
+        if metrics.llmInputTokenCount != nil || metrics.llmOutputTokenCount != nil {
+            lines.append("LLM Tokens：inputTokens=\(optionalIntText(metrics.llmInputTokenCount)), outputTokens=\(optionalIntText(metrics.llmOutputTokenCount))")
+        }
+        return lines
     }
 
     private static func optionalIntText(_ value: Int?) -> String {

@@ -96,6 +96,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
 
         struct Properties: Encodable {
             var analysis: AnalysisSchema?
+            var focusTarget: FocusTargetSchema?
             var state: StateSchema?
             var reason: StringSchema?
             var nudge: NullableStringSchema?
@@ -134,6 +135,39 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             ]
         }
 
+        struct FocusTargetProperties: Encodable {
+            var appName: StringSchema?
+            var windowTitle: NullableStringSchema?
+            var browserTitle: NullableStringSchema?
+            var browserURL: NullableStringSchema?
+        }
+
+        struct FocusTargetSchema: Encodable {
+            enum CodingKeys: String, CodingKey {
+                case type
+                case additionalProperties
+                case properties
+                case required
+            }
+
+            var additionalProperties = false
+            var properties = FocusTargetProperties(
+                appName: .init(),
+                windowTitle: .init(),
+                browserTitle: .init(),
+                browserURL: .init()
+            )
+            var required = ["appName", "windowTitle", "browserTitle", "browserURL"]
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(["object", "null"], forKey: .type)
+                try container.encode(additionalProperties, forKey: .additionalProperties)
+                try container.encode(properties, forKey: .properties)
+                try container.encode(required, forKey: .required)
+            }
+        }
+
         struct StateSchema: Encodable {
             var type = "string"
             var `enum` = ["focused", "uncertain", "distracted", "stuck", "resting", "away"]
@@ -168,11 +202,12 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                 schema: ObjectSchema(
                     properties: Properties(
                         analysis: .init(),
+                        focusTarget: .init(),
                         state: .init(),
                         reason: .init(),
                         nudge: .init()
                     ),
-                    required: ["analysis", "state", "reason", "nudge"]
+                    required: ["analysis", "focusTarget", "state", "reason", "nudge"]
                 )
             )
         )

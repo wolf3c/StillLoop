@@ -134,7 +134,16 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertTrue((analysis["required"] as? [String])?.contains("taskAligned") == true)
         let state = try XCTUnwrap(properties["state"] as? [String: Any])
         XCTAssertEqual(state["enum"] as? [String], ["focused", "uncertain", "distracted", "stuck", "resting", "away"])
+        let focusTarget = try XCTUnwrap(properties["focusTarget"] as? [String: Any])
+        XCTAssertEqual(focusTarget["type"] as? [String], ["object", "null"])
+        let focusTargetProperties = try XCTUnwrap(focusTarget["properties"] as? [String: Any])
+        XCTAssertNotNil(focusTargetProperties["appName"] as? [String: Any])
+        XCTAssertNotNil(focusTargetProperties["windowTitle"] as? [String: Any])
+        XCTAssertNotNil(focusTargetProperties["browserTitle"] as? [String: Any])
+        XCTAssertNotNil(focusTargetProperties["browserURL"] as? [String: Any])
+        XCTAssertEqual(focusTarget["required"] as? [String], ["appName", "windowTitle", "browserTitle", "browserURL"])
         XCTAssertNil(properties["confidence"])
+        XCTAssertTrue((schema["required"] as? [String])?.contains("focusTarget") == true)
         XCTAssertFalse((schema["required"] as? [String])?.contains("confidence") == true)
     }
 

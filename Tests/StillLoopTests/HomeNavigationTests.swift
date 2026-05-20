@@ -752,6 +752,69 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(opener.openedTargets, [target])
     }
 
+    func testOpenLastFocusedReturnTargetUsesLatestFocusedSessionEventTarget() {
+        let opener = RecordingFocusReturnTargetOpener(result: true)
+        let model = makeModel(returnTargetOpener: opener)
+        let staleTarget = FocusReturnTarget(
+            appName: "Codex",
+            appBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            capturedAt: Date(timeIntervalSince1970: 80)
+        )
+        let olderTarget = FocusReturnTarget(
+            appName: "Safari",
+            appBundleIdentifier: "com.apple.Safari",
+            windowTitle: "Example",
+            browserTitle: "Example",
+            browserURL: "https://example.com",
+            capturedAt: Date(timeIntervalSince1970: 90)
+        )
+        let latestTarget = FocusReturnTarget(
+            appName: "Google Chrome",
+            appBundleIdentifier: "com.google.Chrome",
+            windowTitle: "Yanhua on X",
+            browserTitle: "Yanhua on X",
+            browserURL: "https://x.com/yanhua1010/status/2056681994793447833",
+            capturedAt: Date(timeIntervalSince1970: 100)
+        )
+        model.lastFocusedReturnTarget = staleTarget
+        model.currentSession = FocusSession(
+            task: "浏览 X/twitter",
+            startedAt: Date(timeIntervalSince1970: 70),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 120),
+                    state: .distracted,
+                    context: "Zed",
+                    nudge: "先回到：浏览 X/twitter",
+                    returnTarget: nil
+                ),
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 110),
+                    state: .focused,
+                    context: "Google Chrome",
+                    nudge: nil,
+                    returnTarget: latestTarget
+                ),
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 95),
+                    state: .focused,
+                    context: "Safari",
+                    nudge: nil,
+                    returnTarget: olderTarget
+                )
+            ],
+            feedback: nil
+        )
+
+        XCTAssertTrue(model.openLastFocusedReturnTarget())
+        XCTAssertEqual(opener.openedTargets, [latestTarget])
+        XCTAssertEqual(model.lastFocusedReturnTarget, latestTarget)
+    }
+
     func testOpenLastFocusedReturnTargetReturnsFalseWithoutTarget() {
         let opener = RecordingFocusReturnTargetOpener(result: true)
         let model = makeModel(returnTargetOpener: opener)

@@ -1241,8 +1241,9 @@ final class AppModel: ObservableObject {
     }
 
     func openLastFocusedReturnTarget() -> Bool {
-        guard let lastFocusedReturnTarget else { return false }
-        return returnTargetOpener.open(lastFocusedReturnTarget)
+        guard let target = latestFocusedReturnTargetForCurrentSession() ?? lastFocusedReturnTarget else { return false }
+        lastFocusedReturnTarget = target
+        return returnTargetOpener.open(target)
     }
 
     func setFeedback(_ feedback: SessionFeedback) {
@@ -2012,7 +2013,7 @@ final class AppModel: ObservableObject {
                     evaluator: result.evaluator
                 )
             )
-            sendNudge(nudge, subtitle: lastFocusedReturnTarget?.subtitleText, state: result.state)
+            sendNudge(nudge, subtitle: latestFocusedReturnTargetForCurrentSession()?.subtitleText, state: result.state)
             diagnosticLogger.record(
                 "nudge.sent",
                 fields: [
@@ -2046,6 +2047,17 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .scheduled
         return true
+    }
+
+    private func latestFocusedReturnTargetForCurrentSession() -> FocusReturnTarget? {
+        currentSession?.events
+            .filter { $0.state == .focused }
+            .compactMap { event -> (Date, FocusReturnTarget)? in
+                guard let returnTarget = event.returnTarget else { return nil }
+                return (event.timestamp, returnTarget)
+            }
+            .max { lhs, rhs in lhs.0 < rhs.0 }?
+            .1
     }
 
     private func removeAnalyzedSnapshots(_ snapshots: [ContextSnapshot]) {
