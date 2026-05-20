@@ -1701,6 +1701,9 @@ private struct SettingsPrivacySection: View {
             Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
             Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
             Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
+            if !model.diagnosticLogPath.isEmpty {
+                Label("开发诊断日志：\(model.diagnosticLogPath)", systemImage: "doc.text.magnifyingglass")
+            }
             Label(model.modelReadiness.title, systemImage: "cpu")
             Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
             Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
@@ -1785,6 +1788,9 @@ private struct PrivacySettingsView: View {
             Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
             Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
             Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
+            if !model.diagnosticLogPath.isEmpty {
+                Label("开发诊断日志：\(model.diagnosticLogPath)", systemImage: "doc.text.magnifyingglass")
+            }
             Label(model.modelReadiness.title, systemImage: "cpu")
             Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
             Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")

@@ -247,6 +247,7 @@ final class AppModel: ObservableObject {
     @Published var isAdvancedModelConfigExpanded = false
     @Published var contextSourceDescription = "上下文来源：真实本机"
     @Published var evaluationLoopDescription = "每轮完成后按耗时安排下一次采集"
+    @Published private(set) var diagnosticLogPath = ""
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
     @Published private(set) var launchAtLoginEnabled = true
@@ -271,6 +272,7 @@ final class AppModel: ObservableObject {
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
     private let telemetry: StillLoopTelemetryRecording
+    private let diagnosticLogger: DiagnosticLogging
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
@@ -527,6 +529,7 @@ final class AppModel: ObservableObject {
         supportDirectory overrideSupportDirectory: URL? = nil,
         reviewCommentGenerator: SessionReviewCommentGenerating? = nil,
         telemetry: StillLoopTelemetryRecording? = nil,
+        diagnosticLogger overrideDiagnosticLogger: DiagnosticLogging? = nil,
         launchAtLoginManager: LaunchAtLoginManaging? = nil,
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil
     ) {
@@ -592,6 +595,18 @@ final class AppModel: ObservableObject {
                 .appendingPathComponent("StillLoop", isDirectory: true)
         let supportDirectory = support ?? URL(fileURLWithPath: NSTemporaryDirectory())
         store = FileSessionStore(appSupportDirectory: supportDirectory)
+        diagnosticLogger = overrideDiagnosticLogger ?? Self.defaultDiagnosticLogger(
+            appSupportDirectory: supportDirectory,
+            hasOverrideSupportDirectory: overrideSupportDirectory != nil
+        )
+        diagnosticLogPath = diagnosticLogger.fileURL?.path ?? ""
+        diagnosticLogger.record(
+            "app.initialized",
+            fields: [
+                "supportDirectory": .string(supportDirectory.path),
+                "bundleIdentifier": .string(Bundle.main.bundleIdentifier ?? "unknown")
+            ]
+        )
         let modelDirectory = supportDirectory.appendingPathComponent("Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", isDirectory: true)
         modelDownloader = ModelDownloadManager(
             spec: .builtIn,
@@ -606,6 +621,16 @@ final class AppModel: ObservableObject {
         refreshModelStatus()
         routeInitialLaunch()
         updateLaunchAtLoginStatusText()
+    }
+
+    private nonisolated static func defaultDiagnosticLogger(
+        appSupportDirectory: URL,
+        hasOverrideSupportDirectory: Bool
+    ) -> DiagnosticLogging {
+        if Bundle.main.bundleIdentifier == "com.apple.dt.xctest.tool", !hasOverrideSupportDirectory {
+            return NoopDiagnosticLogger()
+        }
+        return FileDiagnosticLogger(appSupportDirectory: appSupportDirectory)
     }
 
     func openHome() {
@@ -1796,6 +1821,16 @@ final class AppModel: ObservableObject {
         latestContext = snapshot
         unanalyzedSnapshots.append(snapshot)
         unanalyzedCaptureCount = unanalyzedSnapshots.count
+        diagnosticLogger.record(
+            "capture.enqueued",
+            fields: diagnosticFields(
+                sessionID: sessionID,
+                snapshots: [snapshot],
+                extra: [
+                    "unanalyzedCount": .int(unanalyzedSnapshots.count)
+                ]
+            )
+        )
         contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 \(unanalyzedSnapshots.count) 条"
         if unanalyzedSnapshots.count == 1 {
             analysisPhase = .contextReady
@@ -1813,6 +1848,17 @@ final class AppModel: ObservableObject {
         let pendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
         let pendingCount = pendingSnapshots.count
         let snapshots = SnapshotSampler.select(pendingSnapshots)
+        diagnosticLogger.record(
+            "evaluation.selected",
+            fields: diagnosticFields(
+                sessionID: sessionID,
+                snapshots: snapshots,
+                extra: [
+                    "pendingCount": .int(pendingCount),
+                    "selectedCount": .int(snapshots.count)
+                ]
+            )
+        )
         analysisPhase = .contextReady
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
@@ -1820,7 +1866,22 @@ final class AppModel: ObservableObject {
         evaluationLoopDescription = snapshots.count == pendingCount
             ? "正在分析 \(snapshots.count) 条未分析采集"
             : "正在抽样分析 \(snapshots.count)/\(pendingCount) 条未分析采集"
+        let evaluationStartedAt = Date()
         let result = await evaluateFocus(task: session.task, snapshots: snapshots, previousEvents: session.events)
+        diagnosticLogger.record(
+            "evaluation.completed",
+            fields: diagnosticFields(
+                sessionID: sessionID,
+                snapshots: snapshots,
+                extra: [
+                    "durationMS": .int(Self.durationMilliseconds(since: evaluationStartedAt)),
+                    "evaluator": .string(result.evaluator),
+                    "state": .string(result.state.rawValue),
+                    "confidence": .double(result.confidence),
+                    "shouldNudge": .bool(result.shouldNudge)
+                ]
+            )
+        )
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
         postStatusItemMode(mode(for: result.state))
@@ -1838,6 +1899,14 @@ final class AppModel: ObservableObject {
                 )
             )
             sendNudge(nudge, state: result.state)
+            diagnosticLogger.record(
+                "nudge.sent",
+                fields: [
+                    "sessionID": .string(sessionID.uuidString),
+                    "state": .string(result.state.rawValue),
+                    "evaluator": .string(result.evaluator)
+                ]
+            )
         }
         let context = snapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
@@ -1871,11 +1940,73 @@ final class AppModel: ObservableObject {
         contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 \(unanalyzedSnapshots.count) 条"
     }
 
+    private func diagnosticFields(
+        sessionID: UUID? = nil,
+        snapshots: [ContextSnapshot],
+        extra: [String: DiagnosticLogValue] = [:]
+    ) -> [String: DiagnosticLogValue] {
+        var fields = extra
+        if let sessionID {
+            fields["sessionID"] = .string(sessionID.uuidString)
+        }
+        fields["snapshotCount"] = .int(snapshots.count)
+        fields["screenshotCount"] = .int(snapshots.filter(\.screenshotAvailable).count)
+        fields["cameraCount"] = .int(snapshots.filter(\.cameraFrameAvailable).count)
+        fields["screenshotBytes"] = .int(snapshots.compactMap(\.screenshotCompressedBytes).reduce(0, +))
+        fields["cameraBytes"] = .int(snapshots.compactMap(\.cameraCompressedBytes).reduce(0, +))
+        fields["activeApps"] = .string(Self.uniqueActiveAppsText(for: snapshots))
+        fields["browserHosts"] = .string(Self.uniqueBrowserHostsText(for: snapshots))
+        return fields
+    }
+
+    private static func durationMilliseconds(since startDate: Date) -> Int {
+        max(0, Int(Date().timeIntervalSince(startDate) * 1_000))
+    }
+
+    private static func uniqueActiveAppsText(for snapshots: [ContextSnapshot]) -> String {
+        snapshots
+            .map { $0.activeAppName.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { apps, app in
+                if !apps.contains(app) {
+                    apps.append(app)
+                }
+            }
+            .joined(separator: " -> ")
+    }
+
+    private static func uniqueBrowserHostsText(for snapshots: [ContextSnapshot]) -> String {
+        snapshots
+            .compactMap { snapshot -> String? in
+                guard let browserURL = snapshot.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !browserURL.isEmpty
+                else { return nil }
+                return URLComponents(string: browserURL)?.host
+            }
+            .reduce(into: [String]()) { hosts, host in
+                if !hosts.contains(host) {
+                    hosts.append(host)
+                }
+            }
+            .joined(separator: " -> ")
+    }
+
     func evaluateFocus(
         task: String,
         snapshots: [ContextSnapshot],
         previousEvents: [FocusEvent]
     ) async -> LLMEvaluationResult {
+        diagnosticLogger.record(
+            "model.evaluation.started",
+            fields: diagnosticFields(
+                snapshots: snapshots,
+                extra: [
+                    "modelSource": .string(modelSetupSelection.source.rawValue),
+                    "previousEventCount": .int(previousEvents.count),
+                    "taskLength": .int(task.count)
+                ]
+            )
+        )
         if modelSetupSelection.source == .bundled {
             let canUseBundledModel = await prepareBundledModelForEvaluation()
             if canUseBundledModel, let llmEvaluator {
@@ -1888,6 +2019,16 @@ final class AppModel: ObservableObject {
                         previousEvents: previousEvents
                     )
                 } catch {
+                    diagnosticLogger.record(
+                        "model.evaluation.failed",
+                        fields: diagnosticFields(
+                            snapshots: snapshots,
+                            extra: [
+                                "modelSource": .string("bundled"),
+                                "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
+                            ]
+                        )
+                    )
                     let retryResult = await retryBundledEvaluationAfterFailure(
                         task: task,
                         snapshots: snapshots,
@@ -1900,6 +2041,17 @@ final class AppModel: ObservableObject {
                         return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
                     }
                     let failure = Self.modelInferenceFailurePresentation(for: finalError)
+                    diagnosticLogger.record(
+                        "model.evaluation.fallback",
+                        fields: diagnosticFields(
+                            snapshots: snapshots,
+                            extra: [
+                                "modelSource": .string("bundled"),
+                                "fallback": .string("ruleBased"),
+                                "failureKind": .string(failure.debugText)
+                            ]
+                        )
+                    )
                     localLLMStatus = "当前评估：基础规则（自带模型：\(failure.statusText)）"
                     bundledModelRuntimeStatus = "自带模型：推理失败（\(failure.debugText)）"
                     telemetry.record(
@@ -1920,6 +2072,17 @@ final class AppModel: ObservableObject {
             }
             if let status = bundledModelRuntimeUnavailableStatus ?? bundledModelRuntimeFailureStatus {
                 let reason = Self.bundledRuntimeFallbackReason(from: status)
+                diagnosticLogger.record(
+                    "model.evaluation.fallback",
+                    fields: diagnosticFields(
+                        snapshots: snapshots,
+                        extra: [
+                            "modelSource": .string("bundled"),
+                            "fallback": .string("ruleBased"),
+                            "failureKind": .string(reason)
+                        ]
+                    )
+                )
                 return ruleBasedEvaluation(
                     task: task,
                     snapshots: snapshots,
@@ -1940,6 +2103,17 @@ final class AppModel: ObservableObject {
                 return result
             } catch {
                 let failure = Self.modelInferenceFailurePresentation(for: error)
+                diagnosticLogger.record(
+                    "model.evaluation.fallback",
+                    fields: diagnosticFields(
+                        snapshots: snapshots,
+                        extra: [
+                            "modelSource": .string("manual"),
+                            "fallback": .string("ruleBased"),
+                            "failureKind": .string(failure.debugText)
+                        ]
+                    )
+                )
                 localLLMStatus = "当前评估：基础规则（手动模型：\(failure.statusText)）"
                 telemetry.record(
                     .modelIssueDetected(
@@ -1958,6 +2132,17 @@ final class AppModel: ObservableObject {
             }
         }
 
+        diagnosticLogger.record(
+            "model.evaluation.fallback",
+            fields: diagnosticFields(
+                snapshots: snapshots,
+                extra: [
+                    "modelSource": .string(modelSetupSelection.source.rawValue),
+                    "fallback": .string("ruleBased"),
+                    "failureKind": .string("modelUnavailable")
+                ]
+            )
+        )
         return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
     }
 
@@ -1973,6 +2158,17 @@ final class AppModel: ObservableObject {
             previousEvents: previousEvents
         )
         result.evaluator = "自带模型"
+        diagnosticLogger.record(
+            "model.evaluation.succeeded",
+            fields: diagnosticFields(
+                snapshots: snapshots,
+                extra: [
+                    "modelSource": .string("bundled"),
+                    "state": .string(result.state.rawValue),
+                    "confidence": .double(result.confidence)
+                ]
+            )
+        )
         localLLMStatus = "当前评估：自带模型已连接"
         return result
     }
@@ -1985,7 +2181,23 @@ final class AppModel: ObservableObject {
         bundledModelRuntime.stop()
         llmEngine = nil
         llmEvaluator = nil
+        diagnosticLogger.record(
+            "model.evaluation.retry.started",
+            fields: diagnosticFields(
+                snapshots: snapshots,
+                extra: [
+                    "modelSource": .string("bundled")
+                ]
+            )
+        )
         guard await prepareBundledModelForEvaluation(), let llmEvaluator else {
+            diagnosticLogger.record(
+                "model.evaluation.retry.failed",
+                fields: [
+                    "modelSource": .string("bundled"),
+                    "failureKind": .string("restartFailed")
+                ]
+            )
             return .failure(BundledModelRuntime.RuntimeError.readinessFailed("restart failed"))
         }
         do {
@@ -1998,6 +2210,16 @@ final class AppModel: ObservableObject {
             )
             return .success(result)
         } catch {
+            diagnosticLogger.record(
+                "model.evaluation.retry.failed",
+                fields: diagnosticFields(
+                    snapshots: snapshots,
+                    extra: [
+                        "modelSource": .string("bundled"),
+                        "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
+                    ]
+                )
+            )
             return .failure(error)
         }
     }
