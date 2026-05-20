@@ -50,7 +50,7 @@ final class EvaluatorTests: XCTestCase {
         XCTAssertTrue(result.shouldNudge)
     }
 
-    func testEvaluateMarksDeveloperToolingDistractedForDiaryTask() {
+    func testEvaluateDoesNotSpecialCaseDeveloperToolingForDiaryTask() {
         let evaluator = FocusEvaluator()
         let context = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 25),
@@ -70,8 +70,8 @@ final class EvaluatorTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(result.state, .distracted)
-        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertFalse(result.shouldNudge)
     }
 
     func testEvaluateDoesNotTreatPRReviewAsDiaryTask() {
