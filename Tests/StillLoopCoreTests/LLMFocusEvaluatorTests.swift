@@ -347,6 +347,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
         XCTAssertTrue(prompt.contains("userEngaged=true and taskAligned=false -> distracted"))
         XCTAssertTrue(prompt.contains("Do not infer task alignment from the application category alone"))
+        XCTAssertTrue(prompt.contains("matching page title, URL, or browser metadata for that site/app is positive task-specific evidence"))
         XCTAssertTrue(prompt.contains("taskAligned=true requires positive evidence"))
         XCTAssertTrue(prompt.contains("do not invent task-specific content"))
         XCTAssertTrue(prompt.contains("Fill the analysis object first, then choose the final state"))
@@ -618,6 +619,174 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.state, .uncertain)
         XCTAssertTrue(result.shouldNudge)
         XCTAssertEqual(result.nudge, "回到：研究 Matt Pocock公开的.claude")
+    }
+
+    func testSiteBrowsingTaskTreatsMatchingXBrowserContextAsFocused() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": false,
+            "userEngagement": "High engagement is present as the user appears attentive and focused on the screen.",
+            "screenContent": "A Twitter page with posts, timeline, and sidebar navigation.",
+            "observedActivity": "The user is actively viewing a Twitter post and X home in Google Chrome.",
+            "taskAlignment": "The visible content does not directly support the task of browsing X.",
+            "decisionRationale": "The browser tab title shows Home / X, indicating a different webpage."
+          },
+          "state": "distracted",
+          "reason": "用户正在浏览Twitter，但当前屏幕显示为另一个网页。",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "浏览 x/twitter",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "meng shao on X",
+                    browserTitle: "meng shao on X: Kimi K2.6 终于有高速推理平台了",
+                    browserURL: "https://x.com/shao__meng/status/2056893761108713669",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "当前窗口",
+                    browserTitle: "Home / X",
+                    browserURL: "https://x.com/home",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+        XCTAssertEqual(result.analysis?.taskAligned, true)
+    }
+
+    func testSiteBrowsingGuardDoesNotForceFocusedWithoutExplicitUserEngagement() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "taskAligned": false,
+            "userEngagement": "用户状态不明确。",
+            "screenContent": "浏览器显示 X 页面。",
+            "observedActivity": "页面停留在 X。",
+            "taskAlignment": "当前页面可能相关，但用户参与状态缺少明确证据。",
+            "decisionRationale": "focused 需要明确的用户参与和任务匹配。"
+          },
+          "state": "distracted",
+          "reason": "用户参与状态不明确。",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "浏览 x/twitter",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "Home / X",
+                    browserTitle: "Home / X",
+                    browserURL: "https://x.com/home",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "先回到：浏览 x/twitter")
+        XCTAssertEqual(result.analysis?.taskAligned, false)
+    }
+
+    func testSiteBrowsingGuardDoesNotUseTwitterTitleWhenURLHostIsDifferent() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": false,
+            "userEngagement": "用户在场并看着屏幕。",
+            "screenContent": "浏览器显示搜索结果页。",
+            "observedActivity": "页面标题提到了 Twitter。",
+            "taskAlignment": "当前 URL 不在 X/Twitter 站点内。",
+            "decisionRationale": "页面标题提及 Twitter 不能替代站点 URL 匹配。"
+          },
+          "state": "distracted",
+          "reason": "当前页面不是 X/Twitter。",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "浏览 x/twitter",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "Twitter - Google Search",
+                    browserTitle: "Twitter - Google Search",
+                    browserURL: "https://www.google.com/search?q=twitter",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "先回到：浏览 x/twitter")
+        XCTAssertEqual(result.analysis?.taskAligned, false)
+    }
+
+    func testSiteBrowsingGuardAllowsXTitleFallbackWhenURLIsMissing() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": false,
+            "userEngagement": "用户在场并看着屏幕。",
+            "screenContent": "浏览器标题显示 Home / X。",
+            "observedActivity": "用户停留在 X 首页。",
+            "taskAlignment": "模型没有使用标题作为浏览任务证据。",
+            "decisionRationale": "标题显示 Home / X，但模型误判为不匹配。"
+          },
+          "state": "uncertain",
+          "reason": "URL 缺失导致任务匹配不明确。",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "浏览 x/twitter",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "当前窗口",
+                    browserTitle: "Home / X",
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+        XCTAssertEqual(result.analysis?.taskAligned, true)
     }
 
     func testModelNudgeIsReducedToTaskReturnCue() async throws {

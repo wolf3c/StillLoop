@@ -319,6 +319,7 @@ public struct LLMFocusEvaluator {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
         applyFocusedValidityGuards(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
+        applyBrowsingTaskValidityGuard(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
         return LLMEvaluationResult(
@@ -424,6 +425,7 @@ public struct LLMFocusEvaluator {
 
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
         Do not infer task alignment from the application category alone. taskAligned=true requires positive evidence that the visible content directly supports the task, such as task-specific document text, outline text, project names, filenames, page titles, or browser metadata.
+        When the task is to browse, read, check, or use a named website or app, matching page title, URL, or browser metadata for that site/app is positive task-specific evidence; do not require the page topic to match the generic browsing verb.
         High user engagement is not task alignment. If the user appears active in a tool but the observable work is for a different subject, taskAligned=false.
         In screenContent and observedActivity, name the observable task-specific evidence you saw. If you cannot name that evidence, taskAligned must not be true and state must not be focused.
         If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence and choose uncertain or distracted instead of focused.
@@ -606,6 +608,77 @@ public struct LLMFocusEvaluator {
                 decisionRationale: "focused 需要结构化分析支持。"
             )
         }
+    }
+
+    private struct BrowsingTaskTarget {
+        var displayName: String
+        var hosts: [String]
+        var titleMarkers: [String]
+    }
+
+    private func applyBrowsingTaskValidityGuard(
+        to response: inout ModelResponse,
+        task: String,
+        recentSnapshots: [ContextSnapshot]
+    ) {
+        guard response.state == .distracted || response.state == .uncertain else { return }
+        guard response.analysis?.userEngaged == true else { return }
+        guard let target = browsingTaskTarget(from: task) else { return }
+        guard recentSnapshots.contains(where: { snapshot($0, matchesBrowsingTarget: target) }) else { return }
+
+        response.state = .focused
+        response.reason = "当前浏览器页面位于\(target.displayName)，与浏览任务匹配。"
+        response.nudge = nil
+        if var analysis = response.analysis {
+            analysis.taskAligned = true
+            analysis.taskAlignment = "\(target.displayName) 页面标题或 URL 与当前浏览任务匹配。"
+            analysis.decisionRationale = "浏览类任务以目标站点本身作为任务证据；当前页面仍在该站点内。"
+            response.analysis = analysis
+        }
+    }
+
+    private func browsingTaskTarget(from task: String) -> BrowsingTaskTarget? {
+        let normalized = task.lowercased()
+        guard containsAny(normalized, [
+            "浏览", "查看", "阅读", "刷", "逛",
+            "browse", "browsing", "read", "reading", "check", "use"
+        ]) else {
+            return nil
+        }
+
+        if containsAny(normalized, ["x/twitter", "twitter", "twitter.com", "x.com", "推特"]) {
+            return BrowsingTaskTarget(
+                displayName: "X/Twitter",
+                hosts: ["x.com", "twitter.com"],
+                titleMarkers: [" / x", " on x", "twitter"]
+            )
+        }
+
+        return nil
+    }
+
+    private func snapshot(_ snapshot: ContextSnapshot, matchesBrowsingTarget target: BrowsingTaskTarget) -> Bool {
+        if let browserURL = snapshot.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !browserURL.isEmpty {
+            guard let host = browserHost(from: browserURL) else { return false }
+            return target.hosts.contains { host == $0 || host.hasSuffix(".\($0)") }
+        }
+
+        guard let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !browserTitle.isEmpty
+        else {
+            return false
+        }
+        return target.titleMarkers.contains { browserTitle.contains($0) }
+    }
+
+    private func browserHost(from urlText: String?) -> String? {
+        guard let urlText = urlText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !urlText.isEmpty
+        else {
+            return nil
+        }
+        return URLComponents(string: urlText)?.host?.lowercased()
     }
 
     private func downgradeFocusedResponse(
