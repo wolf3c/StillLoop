@@ -86,9 +86,9 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .focused)
-        XCTAssertEqual(result.confidence, 0.84)
-        XCTAssertEqual(result.reason, "页面内容与任务一致。")
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertEqual(result.confidence, 0.52)
+        XCTAssertEqual(result.reason, "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。")
         XCTAssertEqual(result.analysis?.userEngagement, "用户在场。")
         XCTAssertEqual(result.analysis?.observedActivity, "")
     }
@@ -302,7 +302,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertNil(result.nudge)
     }
 
-    func testFocusedJudgementIsRejectedWhenDeveloperToolingConflictsWithDiaryTask() async throws {
+    func testFocusedJudgementFallsBackToUncertainWithoutStructuredAnalysisEvidence() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"focused","confidence":0.95,"reason":"用户看起来在专注操作。","nudge":null}
         """))
@@ -334,9 +334,9 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(result.state, .distracted)
+        XCTAssertEqual(result.state, .uncertain)
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "先回到：写日记，回顾过去一周")
+        XCTAssertEqual(result.nudge, "回到：写日记，回顾过去一周")
         XCTAssertLessThan(result.confidence, 0.95)
     }
 
@@ -393,7 +393,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(result.reason.contains("任务不匹配"))
     }
 
-    func testFocusedNovelJudgementIsRejectedWhenOnlyGenericToolMetadataIsVisible() async throws {
+    func testFocusedNovelJudgementFallsBackToUncertainWhenOnlyGenericToolMetadataIsVisible() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {
           "analysis": {
@@ -430,12 +430,100 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .distracted)
-        XCTAssertEqual(result.confidence, 0.78)
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertEqual(result.confidence, 0.52)
         XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "先回到：写小说")
+        XCTAssertEqual(result.nudge, "回到：写小说")
         XCTAssertEqual(result.analysis?.taskAligned, false)
-        XCTAssertTrue(result.reason.contains("没有看到与写作任务直接相关的证据"))
+        XCTAssertTrue(result.reason.contains("可观察内容没有出现当前任务的明确证据"))
+    }
+
+    func testFocusedJudgementIsRejectedWhenTextualAnalysisSaysTaskIsNotAligned() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngagement": "high",
+            "screenContent": "Codex shows work on a Stable Diffusion app for StillLoop.",
+            "observedActivity": "The user is actively typing in Codex.",
+            "taskAlignment": "distracted|uncertain",
+            "decisionRationale": "The visible work is not clear evidence for the stated research task."
+          },
+          "state": "focused",
+          "confidence": 0.0,
+          "reason": "The user is engaged.",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "研究 Matt Pocock公开的.claude专属工作流",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "Codex",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "先回到：研究 Matt Pocock公开的.claude")
+        XCTAssertEqual(result.analysis?.taskAligned, false)
+    }
+
+    func testFocusedJudgementRequiresObservableEvidenceForResearchTask() async throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": true,
+            "userEngagement": "The user is present and actively typing.",
+            "screenContent": "Codex shows work on a Stable Diffusion app for StillLoop.",
+            "observedActivity": "The user is editing implementation notes and app behavior.",
+            "taskAlignment": "The work is claimed to support the research task.",
+            "decisionRationale": "The user is engaged, so the task is treated as aligned."
+          },
+          "state": "focused",
+          "confidence": 0.92,
+          "reason": "The user is working in Codex.",
+          "nudge": null
+        }
+        """))
+
+        let result = try await evaluator.evaluate(
+            task: "研究 Matt Pocock公开的.claude专属工作流",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "Codex",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    activeAppName: "Codex",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertTrue(result.shouldNudge)
+        XCTAssertEqual(result.nudge, "回到：研究 Matt Pocock公开的.claude")
     }
 
     func testModelNudgeIsReducedToTaskReturnCue() async throws {

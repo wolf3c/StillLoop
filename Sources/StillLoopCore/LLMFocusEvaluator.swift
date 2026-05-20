@@ -118,6 +118,15 @@ public struct LLMFocusEvaluationError: Error, Equatable {
 }
 
 public struct LLMFocusEvaluator {
+    private enum AlignmentSignal {
+        case aligned
+        case weak
+        case misaligned
+        case missing
+    }
+
+    private static let minimumFocusedConfidence = 0.05
+
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
         var state: FocusState
@@ -263,8 +272,7 @@ public struct LLMFocusEvaluator {
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
-        applyFocusedMismatchGuard(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
-        applyAnalysisConsistencyGuard(to: &modelResponse)
+        applyFocusedValidityGuards(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         return LLMEvaluationResult(
             state: modelResponse.state,
@@ -312,7 +320,7 @@ public struct LLMFocusEvaluator {
         - userEngaged=false because the user appears intentionally pausing -> resting.
 
         State definitions (choose exactly one):
-        - focused: the user is engaged and the visible content clearly supports the current task.
+        - focused: the user is engaged and the visible content clearly supports the current task with observable evidence.
         - uncertain: temporary, recoverable attention drift; engagement or task-match is weaker, but signals are not clearly off-task and task intent still appears plausible.
         - distracted: one of:
           a) engagement is present but content is clearly unrelated to the task;
@@ -324,6 +332,8 @@ public struct LLMFocusEvaluator {
 
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
         Do not infer task alignment from the application category alone. taskAligned=true requires positive evidence that the visible content directly supports the task, such as task-specific document text, outline text, project names, filenames, page titles, or browser metadata.
+        High user engagement is not task alignment. If the user appears active in a tool but the observable work is for a different subject, taskAligned=false.
+        In screenContent and observedActivity, name the observable task-specific evidence you saw. If you cannot name that evidence, taskAligned must not be true and state must not be focused.
         If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence and choose uncertain or distracted instead of focused.
         If app/window/browser metadata only names an unrelated tool and has no task-relevant evidence, do not choose focused.
         "uncertain" is the state that represents mild deviation.
@@ -439,45 +449,204 @@ public struct LLMFocusEvaluator {
         try LLMJSONResponseExtractor.decodeFirst(ModelResponse.self, from: text, using: decoder)
     }
 
-    private func applyFocusedMismatchGuard(
+    private func applyFocusedValidityGuards(
         to response: inout ModelResponse,
         task: String,
         recentSnapshots: [ContextSnapshot]
     ) {
-        guard response.state == .focused,
-              FocusTaskAlignment.developerToolingDominatesWithoutTaskEvidence(
-                task: task,
-                snapshots: recentSnapshots
-              )
-        else {
-            return
-        }
+        guard response.state == .focused else { return }
 
-        response.state = .distracted
-        response.confidence = min(response.confidence, 0.78)
-        response.reason = "当前上下文主要是开发工具，没有看到与写作任务直接相关的证据。"
+        if var analysis = response.analysis {
+            if analysis.userEngaged == false {
+                downgradeFocusedResponse(
+                    &response,
+                    to: .away,
+                    confidenceCap: 0.72,
+                    reason: "模型分析显示用户没有保持参与，因此不能判为专注。",
+                    taskAligned: analysis.taskAligned,
+                    taskAlignment: analysis.taskAlignment,
+                    decisionRationale: "focused 需要 userEngaged=true；当前分析未满足该条件。"
+                )
+                return
+            }
+
+            switch taskAlignmentSignal(from: analysis) {
+            case .misaligned:
+                downgradeFocusedResponse(
+                    &response,
+                    to: .distracted,
+                    confidenceCap: 0.78,
+                    reason: "用户看起来在投入操作，但模型分析显示当前内容与任务不匹配。",
+                    taskAligned: false,
+                    taskAlignment: "当前内容与任务不匹配，不能判为专注。",
+                    decisionRationale: "focused 需要 taskAligned=true；当前分析显示任务不匹配。"
+                )
+                return
+            case .weak, .missing:
+                downgradeFocusedResponse(
+                    &response,
+                    to: .uncertain,
+                    confidenceCap: 0.52,
+                    reason: "模型没有给出明确的任务匹配证据，不能确认当前活动支持任务。",
+                    taskAligned: false,
+                    taskAlignment: "缺少明确任务匹配证据。",
+                    decisionRationale: "focused 需要明确的 taskAligned=true 和可观察任务证据。"
+                )
+                return
+            case .aligned:
+                if !hasObservableTaskEvidence(task: task, analysis: analysis, snapshots: recentSnapshots) {
+                    downgradeFocusedResponse(
+                        &response,
+                        to: .uncertain,
+                        confidenceCap: 0.52,
+                        reason: "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。",
+                        taskAligned: false,
+                        taskAlignment: "缺少当前任务的可观察证据。",
+                        decisionRationale: "focused 不能只依据用户投入程度；需要在可见内容中看到任务相关证据。"
+                    )
+                    return
+                }
+            }
+
+            if response.confidence <= Self.minimumFocusedConfidence {
+                analysis.taskAligned = false
+                response.analysis = analysis
+                downgradeFocusedResponse(
+                    &response,
+                    to: .uncertain,
+                    confidenceCap: 0.52,
+                    reason: "模型置信度过低，不能确认当前活动支持任务。",
+                    taskAligned: false,
+                    taskAlignment: "置信度过低，任务匹配不可确认。",
+                    decisionRationale: "focused 需要稳定的任务匹配判断；confidence 过低时降为 uncertain。"
+                )
+                return
+            }
+        } else if !recentSnapshots.isEmpty {
+            downgradeFocusedResponse(
+                &response,
+                to: .uncertain,
+                confidenceCap: 0.52,
+                reason: "模型没有返回任务匹配分析，不能确认当前活动支持任务。",
+                taskAligned: nil,
+                taskAlignment: "缺少任务匹配分析。",
+                decisionRationale: "focused 需要结构化分析支持。"
+            )
+        } else if response.confidence <= Self.minimumFocusedConfidence {
+            response.state = .uncertain
+            response.reason = "模型置信度过低，不能确认当前活动支持任务。"
+            response.nudge = nil
+        }
+    }
+
+    private func downgradeFocusedResponse(
+        _ response: inout ModelResponse,
+        to state: FocusState,
+        confidenceCap: Double,
+        reason: String,
+        taskAligned: Bool?,
+        taskAlignment: String,
+        decisionRationale: String
+    ) {
+        response.state = state
+        response.confidence = min(response.confidence, confidenceCap)
+        response.reason = reason
         response.nudge = nil
         if var analysis = response.analysis {
-            analysis.taskAligned = false
-            analysis.taskAlignment = "当前上下文主要是开发工具，没有看到写作任务相关证据。"
-            analysis.decisionRationale = "用户可能在认真操作，但内容与当前任务不一致，因此不能判为专注。"
+            analysis.taskAligned = taskAligned
+            analysis.taskAlignment = taskAlignment
+            analysis.decisionRationale = decisionRationale
             response.analysis = analysis
         }
     }
 
-    private func applyAnalysisConsistencyGuard(to response: inout ModelResponse) {
-        guard response.state == .focused,
-              response.analysis?.taskAligned == false
-        else {
-            return
+    private func taskAlignmentSignal(from analysis: LLMFocusAnalysis) -> AlignmentSignal {
+        if analysis.taskAligned == true { return .aligned }
+        if analysis.taskAligned == false { return .misaligned }
+
+        let text = [analysis.taskAlignment, analysis.decisionRationale]
+            .joined(separator: " ")
+            .lowercased()
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .missing
         }
 
-        response.state = .distracted
-        response.reason = "用户看起来在投入操作，但模型分析显示当前内容与任务不匹配。"
-        response.nudge = nil
-        if var analysis = response.analysis {
-            analysis.decisionRationale = "用户可能在认真操作，但 taskAligned=false，因此不能判为专注。"
-            response.analysis = analysis
+        if containsAny(text, [
+            "distracted", "misaligned", "not aligned", "not task", "off-task", "unrelated",
+            "irrelevant", "不匹配", "不符合", "无关", "不相关", "偏离", "跑偏", "不支持", "没有看到", "缺少"
+        ]) {
+            return .misaligned
         }
+        if containsAny(text, [
+            "uncertain", "unclear", "ambiguous", "weak", "not clear",
+            "不明确", "不确定", "不足", "无法确认", "不清楚", "可能", "较弱"
+        ]) {
+            return .weak
+        }
+        if containsAny(text, [
+            "aligned", "matches", "match", "supports", "relevant", "related",
+            "符合", "匹配", "相关", "支持", "一致", "直接"
+        ]) {
+            return .aligned
+        }
+        return .missing
+    }
+
+    private func hasObservableTaskEvidence(
+        task: String,
+        analysis: LLMFocusAnalysis,
+        snapshots: [ContextSnapshot]
+    ) -> Bool {
+        let terms = distinctiveTaskTerms(from: task)
+        guard !terms.isEmpty else { return true }
+
+        let observableText = (
+            snapshots.map(\.combinedText)
+                + [analysis.screenContent, analysis.observedActivity]
+        )
+            .joined(separator: " ")
+            .lowercased()
+
+        guard !observableText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return terms.contains { observableText.contains($0) }
+    }
+
+    private func distinctiveTaskTerms(from task: String) -> [String] {
+        let normalized = task.lowercased()
+        var terms = regexMatches("[a-z0-9][a-z0-9._-]{2,}", in: normalized)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "._-")) }
+            .filter { $0.count >= 3 }
+
+        let cjkChunks = regexMatches("[\\p{Han}]{2,}", in: normalized)
+        for chunk in cjkChunks {
+            var reduced = chunk
+            for stopword in [
+                "研究", "学习", "了解", "查看", "整理", "优化", "修复", "实现",
+                "编写", "撰写", "写", "做", "公开", "专属", "当前", "任务", "今天", "过去", "的"
+            ] {
+                reduced = reduced.replacingOccurrences(of: stopword, with: " ")
+            }
+            terms += reduced
+                .components(separatedBy: .whitespacesAndNewlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { $0.count >= 2 && $0.count <= 12 }
+        }
+
+        return Array(Set(terms))
+    }
+
+    private func regexMatches(_ pattern: String, in text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: text) else { return nil }
+            return String(text[matchRange])
+        }
+    }
+
+    private func containsAny(_ text: String, _ needles: [String]) -> Bool {
+        needles.contains { text.contains($0) }
     }
 }

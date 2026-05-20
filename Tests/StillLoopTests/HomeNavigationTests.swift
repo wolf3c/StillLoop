@@ -549,7 +549,21 @@ final class HomeNavigationTests: XCTestCase {
         let engine = SequencedLLMEngine(outcomes: [
             .failure(URLError(.timedOut)),
             .success("""
-            {"state":"focused","confidence":0.86,"reason":"Diary writing is visible","nudge":null}
+            {
+              "analysis": {
+                "userEngaged": true,
+                "taskAligned": true,
+                "userEngagement": "用户在场并操作电脑。",
+                "screenContent": "WorkFlowy Today 页面显示日记内容。",
+                "observedActivity": "用户正在查看当天日记页面。",
+                "taskAlignment": "页面内容与写日记任务匹配。",
+                "decisionRationale": "用户参与且可见内容包含日记任务证据。"
+              },
+              "state":"focused",
+              "confidence":0.86,
+              "reason":"Diary writing is visible",
+              "nudge":null
+            }
             """)
         ])
         let model = makeModel(
