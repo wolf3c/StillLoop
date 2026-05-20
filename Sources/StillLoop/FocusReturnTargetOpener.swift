@@ -179,6 +179,7 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         tell application \(quotedAppName)
             if (count of windows) is 0 then return ""
             set output to ""
+            set delimiter to ASCII character 9
             repeat with windowIndex from 1 to count of windows
                 set activeIndex to 0
                 try
@@ -196,7 +197,7 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
                     if output is not "" then
                         set output to output & linefeed
                     end if
-                    set output to output & (windowIndex as text) & tab & (tabIndex as text) & tab & activeFlag & tab & tabURL
+                    set output to output & (windowIndex as text) & delimiter & (tabIndex as text) & delimiter & activeFlag & delimiter & tabURL
                 end repeat
             end repeat
             return output
@@ -226,6 +227,7 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         tell application \(quotedAppName)
             if (count of windows) is 0 then return ""
             set output to ""
+            set delimiter to ASCII character 9
             repeat with windowIndex from 1 to count of windows
                 repeat with tabIndex from 1 to count of tabs of window windowIndex
                     set tabURL to ""
@@ -241,7 +243,7 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
                     if output is not "" then
                         set output to output & linefeed
                     end if
-                    set output to output & (windowIndex as text) & tab & (tabIndex as text) & tab & activeFlag & tab & tabURL
+                    set output to output & (windowIndex as text) & delimiter & (tabIndex as text) & delimiter & activeFlag & delimiter & tabURL
                 end repeat
             end repeat
             return output

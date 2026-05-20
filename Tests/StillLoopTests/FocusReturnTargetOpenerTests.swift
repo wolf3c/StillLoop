@@ -31,6 +31,50 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         XCTAssertEqual(appOpener.actions, ["activateBundle:com.google.Chrome"])
     }
 
+    func testBrowserInventoryScriptUsesRealTabCharacterDelimiter() {
+        let runner = RecordingAppleScriptRunner(results: [
+            .success(output: tabLine(window: 1, tab: 1, isActive: true, url: "https://x.com/home")),
+            .success(output: "selected")
+        ])
+        let appOpener = RecordingReturnTargetApplicationOpener(activateBundleResult: true)
+        let opener = MacFocusReturnTargetOpener(scriptRunner: runner, applicationOpener: appOpener)
+        let target = FocusReturnTarget(
+            appName: "Google Chrome",
+            appBundleIdentifier: "com.google.Chrome",
+            windowTitle: "Home / X",
+            browserTitle: "Home / X",
+            browserURL: "https://x.com/home",
+            capturedAt: Date(timeIntervalSince1970: 76)
+        )
+
+        XCTAssertTrue(opener.open(target))
+
+        XCTAssertTrue(runner.sources[0].contains("ASCII character 9"))
+        XCTAssertFalse(runner.sources[0].contains("& tab &"))
+    }
+
+    func testSafariInventoryScriptUsesRealTabCharacterDelimiter() {
+        let runner = RecordingAppleScriptRunner(results: [
+            .success(output: tabLine(window: 1, tab: 1, isActive: true, url: "https://x.com/home")),
+            .success(output: "selected")
+        ])
+        let appOpener = RecordingReturnTargetApplicationOpener(activateBundleResult: true)
+        let opener = MacFocusReturnTargetOpener(scriptRunner: runner, applicationOpener: appOpener)
+        let target = FocusReturnTarget(
+            appName: "Safari",
+            appBundleIdentifier: "com.apple.Safari",
+            windowTitle: "Home / X",
+            browserTitle: "Home / X",
+            browserURL: "https://x.com/home",
+            capturedAt: Date(timeIntervalSince1970: 77)
+        )
+
+        XCTAssertTrue(opener.open(target))
+
+        XCTAssertTrue(runner.sources[0].contains("ASCII character 9"))
+        XCTAssertFalse(runner.sources[0].contains("& tab &"))
+    }
+
     func testBrowserTargetSelectsExactURLBeforeHostFallback() {
         let runner = RecordingAppleScriptRunner(results: [
             .success(output: [
