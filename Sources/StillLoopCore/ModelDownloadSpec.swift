@@ -66,7 +66,7 @@ public struct ModelDownloadSpec: Equatable {
         localSubdirectory: "Qwen3.5VL-0.8B-ImageExplainer-GGUF",
         localServerModelID: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
         localServerPort: 17_631,
-        recommendedContextSize: 32_768,
+        recommendedContextSize: 16_384,
         recommendedCacheTypeK: "f16",
         recommendedCacheTypeV: "f16",
         downloadByteCounts: [

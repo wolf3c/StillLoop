@@ -1,7 +1,10 @@
 import Foundation
 import StillLoopCore
 
-final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
+final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting {
+    private static let defaultMaxTokens = 900
+    private static let focusEvaluationMaxTokens = 420
+
     enum VisualCapability: Equatable {
         case supported
         case notAdvertised
@@ -196,12 +199,24 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
         var data: [ModelInfo]
     }
 
+    private struct TokenizeRequest: Encodable {
+        var content: String
+        var add_special = false
+        var parse_special = true
+        var with_pieces = false
+    }
+
+    private struct TokenizeResponse: Decodable {
+        var tokens: [Int]
+    }
+
     private let baseURL: URL
     private let model: String
     private let apiKey: String?
     private let session: URLSession
     private let disablesReasoning: Bool
     private let usesResponseFormat: Bool
+    private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
 
     init(
         baseURL: URL,
@@ -283,32 +298,33 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
     }
 
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        lastRequestTransportMetrics = nil
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuthentication(to: &request)
-        request.httpBody = try JSONEncoder().encode(
-            RequestBody(
-                model: model,
-                messages: messages.map { message in
-                    .init(role: message.role.rawValue, content: content(for: message.content))
-                },
-                temperature: 0.7,
-                top_p: 0.8,
-                top_k: 20,
-                presence_penalty: 1.5,
-                max_tokens: 900,
-                stream: false,
-                chat_template_kwargs: disablesReasoning
-                    ? .init(enable_thinking: false)
-                    : nil,
-                response_format: usesResponseFormat
-                    ? Self.openAIResponseFormat(for: responseFormat)
-                    : nil
-            )
+        let requestBody = RequestBody(
+            model: model,
+            messages: messages.map { message in
+                .init(role: message.role.rawValue, content: content(for: message.content))
+            },
+            temperature: 0.7,
+            top_p: 0.8,
+            top_k: 20,
+            presence_penalty: 1.5,
+            max_tokens: responseFormat == .focusEvaluation ? Self.focusEvaluationMaxTokens : Self.defaultMaxTokens,
+            stream: false,
+            chat_template_kwargs: disablesReasoning
+                ? .init(enable_thinking: false)
+                : nil,
+            response_format: usesResponseFormat
+                ? Self.openAIResponseFormat(for: responseFormat)
+                : nil
         )
+        let payload = try JSONEncoder().encode(requestBody)
+        request.httpBody = payload
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -318,7 +334,49 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine {
         guard let content = body.choices.first?.message.content else {
             throw URLError(.cannotParseResponse)
         }
+        lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: payload.count,
+            responseChars: content.count,
+            inputTextTokenCount: nil
+        )
         return content
+    }
+
+    func inputTextTokenCount(for text: String) async -> Int? {
+        guard !text.isEmpty, isLocalBaseURL else {
+            return nil
+        }
+
+        do {
+            var request = URLRequest(url: tokenizeEndpoint)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 2
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(TokenizeRequest(content: text))
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return nil
+            }
+            return try JSONDecoder().decode(TokenizeResponse.self, from: data).tokens.count
+        } catch {
+            return nil
+        }
+    }
+
+    private var isLocalBaseURL: Bool {
+        guard let host = baseURL.host?.lowercased() else {
+            return false
+        }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    private var tokenizeEndpoint: URL {
+        guard baseURL.lastPathComponent == "v1" else {
+            return baseURL.appendingPathComponent("tokenize")
+        }
+        return baseURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("tokenize")
     }
 
     private static func openAIResponseFormat(for responseFormat: LLMResponseFormat?) -> FocusResponseFormat? {

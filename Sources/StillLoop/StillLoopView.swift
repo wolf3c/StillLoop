@@ -1244,6 +1244,11 @@ private struct TimelineEventDebugPopover: View {
                         if let duration = detail.modelRunDurationSeconds {
                             TimelineDebugText("模型运行时长：\(FocusEventDebugDetail.formattedModelRunDuration(duration))")
                         }
+                        if let metrics = detail.requestDebugMetrics {
+                            ForEach(FocusEventDebugDetail.formattedRequestMetricLines(metrics), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
                         TimelineDebugText("原因：\(detail.reason)")
                         TimelineDebugText("触发提醒：\(detail.shouldNudge ? "是" : "否")")
                         if let nudge = detail.nudge {

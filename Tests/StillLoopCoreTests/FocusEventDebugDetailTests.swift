@@ -25,6 +25,16 @@ final class FocusEventDebugDetailTests: XCTestCase {
             nudge: "回到：调优识别能力",
             evaluator: "自带模型",
             modelRunDurationSeconds: 1.234,
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 1,
+                imageCount: 2,
+                textSnapshotCount: 3,
+                previousEventCount: 4,
+                payloadBytes: 5_678,
+                responseChars: 901,
+                inputTextCharacterCount: 234,
+                inputTextTokenCount: 56
+            ),
             analysis: LLMFocusAnalysis(
                 userEngagement: "用户在场，姿态稳定。",
                 screenContent: "屏幕显示 StillLoop 相关代码。",
@@ -50,6 +60,9 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.analysis?.taskAlignment, "内容与调优识别能力相关。")
         XCTAssertEqual(detail.analysis?.decisionRationale, "任务相关但缺少明确推进信号。")
         XCTAssertEqual(detail.modelRunDurationSeconds, 1.234)
+        XCTAssertEqual(detail.requestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(detail.requestDebugMetrics?.payloadBytes, 5_678)
+        XCTAssertEqual(detail.requestDebugMetrics?.inputTextTokenCount, 56)
         XCTAssertEqual(detail.capturedContext.count, 1)
         XCTAssertTrue(detail.capturedContext[0].contains("capture[1] 1970-01-01T00:00:01Z"))
         XCTAssertTrue(detail.capturedContext[0].contains("Codex · StillLoop"))
@@ -74,6 +87,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
 
         XCTAssertNil(detail.analysis)
         XCTAssertNil(detail.modelRunDurationSeconds)
+        XCTAssertNil(detail.requestDebugMetrics)
         XCTAssertEqual(detail.resultState, .focused)
     }
 
@@ -137,6 +151,16 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 shouldNudge: true,
                 nudge: "请回到发布说明",
                 modelRunDurationSeconds: 1.234,
+                requestDebugMetrics: LLMRequestDebugMetrics(
+                    visualCaptureCount: 1,
+                    imageCount: 2,
+                    textSnapshotCount: 3,
+                    previousEventCount: 4,
+                    payloadBytes: 5_678,
+                    responseChars: 901,
+                    inputTextCharacterCount: 234,
+                    inputTextTokenCount: 56
+                ),
                 analysis: LLMFocusAnalysis(
                     userEngagement: "用户在阅读页面。",
                     screenContent: "页面显示文章内容。",
@@ -157,6 +181,8 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("状态：明显偏离 (distracted)"))
         XCTAssertFalse(text.contains("置信度"))
         XCTAssertTrue(text.contains("模型运行时长：1.23 秒"))
+        XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=2, textSnapshotCount=3, previousEventCount=4"))
+        XCTAssertTrue(text.contains("输入规模：payloadBytes=5678, responseChars=901, inputTextCharacterCount=234, inputTextTokenCount=56"))
         XCTAssertTrue(text.contains("触发提醒：是"))
         XCTAssertTrue(text.contains("模型分析"))
         XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))

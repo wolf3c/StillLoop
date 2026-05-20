@@ -117,6 +117,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         )
 
         let responseFormat = try XCTUnwrap(requestBody?["response_format"] as? [String: Any])
+        XCTAssertEqual(requestBody?["max_tokens"] as? Int, 420)
         XCTAssertEqual(responseFormat["type"] as? String, "json_schema")
         let jsonSchema = try XCTUnwrap(responseFormat["json_schema"] as? [String: Any])
         XCTAssertEqual(jsonSchema["name"] as? String, "focus_evaluation")
@@ -168,6 +169,73 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         )
 
         XCTAssertNil(requestBody?["response_format"])
+    }
+
+    func testCompletionRecordsActualPayloadAndResponseDebugMetrics() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var capturedPayloadBytes: Int?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                capturedPayloadBytes = data.count
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"focused"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "manual-model",
+            session: session
+        )
+
+        let response = try await engine.complete(messages: [
+            LLMMessage(role: .user, content: [.text("status")])
+        ])
+
+        let metrics = try XCTUnwrap(engine.lastRequestTransportMetrics)
+        XCTAssertEqual(metrics.payloadBytes, capturedPayloadBytes)
+        XCTAssertEqual(metrics.responseChars, response.count)
+        XCTAssertNil(metrics.inputTextTokenCount)
+    }
+
+    func testLocalLlamaInputTextTokenCountUsesTokenizeEndpoint() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var tokenizeBody: [String: Any]?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/tokenize" {
+                let data = try XCTUnwrap(request.bodyData)
+                tokenizeBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"tokens":[101,102,103]}
+                """.utf8))
+            }
+            if request.url?.path == "/v1/chat/completions" {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "manual-model",
+            session: session
+        )
+
+        let tokenCount = await engine.inputTextTokenCount(for: "system\nstatus")
+
+        XCTAssertEqual(tokenizeBody?["content"] as? String, "system\nstatus")
+        XCTAssertEqual(tokenCount, 3)
     }
 
     func testReadinessProbeRequiresImageInputWhenRequested() async throws {

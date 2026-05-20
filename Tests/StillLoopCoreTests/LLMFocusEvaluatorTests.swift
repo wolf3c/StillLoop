@@ -17,6 +17,100 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertGreaterThan(duration, 0)
     }
 
+    func testSuccessfulModelEvaluationRecordsRequestDebugMetrics() async throws {
+        let response = """
+        {"state":"uncertain","reason":"Ambiguous context","nudge":null}
+        """
+        let engine = InstrumentedStubEngine(
+            response: response,
+            payloadBytes: 12_345,
+            inputTextTokenCount: 678
+        )
+        let evaluator = LLMFocusEvaluator(engine: engine)
+        let textSnapshots = [
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1),
+                activeAppName: "Codex",
+                windowTitle: "StillLoop",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: false,
+                cameraFrameAvailable: false
+            ),
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 2),
+                activeAppName: "Safari",
+                windowTitle: "Docs",
+                browserTitle: "Docs",
+                browserURL: "https://example.com/docs",
+                screenshotAvailable: false,
+                cameraFrameAvailable: false
+            )
+        ]
+        let visualSnapshots = [
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 3),
+                activeAppName: "Xcode",
+                windowTitle: "StillLoop",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: true,
+                cameraFrameAvailable: true,
+                screenshotMimeType: "image/jpeg",
+                screenshotData: Data(repeating: 1, count: 4),
+                cameraMimeType: "image/jpeg",
+                cameraData: Data(repeating: 2, count: 3)
+            )
+        ]
+
+        let result = try await evaluator.evaluate(
+            task: "分析模型运行时长调试信息",
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .focused, context: "Codex", nudge: nil)
+            ]
+        )
+
+        let metrics = try XCTUnwrap(result.requestDebugMetrics)
+        XCTAssertEqual(metrics.visualCaptureCount, 1)
+        XCTAssertEqual(metrics.imageCount, 2)
+        XCTAssertEqual(metrics.textSnapshotCount, 2)
+        XCTAssertEqual(metrics.previousEventCount, 1)
+        XCTAssertEqual(metrics.payloadBytes, 12_345)
+        XCTAssertEqual(metrics.responseChars, response.count)
+        XCTAssertEqual(metrics.inputTextTokenCount, 678)
+        XCTAssertEqual(metrics.inputTextCharacterCount, engine.inputTextCharacterCount)
+        XCTAssertGreaterThan(metrics.inputTextCharacterCount, 0)
+    }
+
+    func testInputTextTokenCountingDoesNotInflateModelRunDuration() async throws {
+        let evaluator = LLMFocusEvaluator(engine: SlowTokenCountingEngine(response: """
+        {"state":"uncertain","reason":"Ambiguous context","nudge":null}
+        """))
+        let startedAt = Date()
+
+        let result = try await evaluator.evaluate(
+            task: "分析模型运行时长调试信息",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.requestDebugMetrics?.inputTextTokenCount, 42)
+        XCTAssertGreaterThan(Date().timeIntervalSince(startedAt), 0.18)
+        XCTAssertLessThan(try XCTUnwrap(result.modelRunDurationSeconds), 0.10)
+    }
+
     func testParsesStructuredModelJudgement() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"distracted","reason":"Video site is unrelated","nudge":"先回到写方案。"}
@@ -895,6 +989,59 @@ private final class DelayedStubEngine: LocalLLMEngine {
     func complete(messages: [LLMMessage]) async throws -> String {
         try await Task.sleep(for: .milliseconds(20))
         return response
+    }
+}
+
+private final class InstrumentedStubEngine: LocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting {
+    let response: String
+    private(set) var lastMessages: [LLMMessage] = []
+    private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+    private let inputTextTokens: Int
+    var inputTextCharacterCount: Int {
+        lastMessages
+            .flatMap(\.content)
+            .reduce(0) { total, content in
+                if case .text(let text) = content {
+                    return total + text.count
+                }
+                return total
+            }
+    }
+
+    init(response: String, payloadBytes: Int, inputTextTokenCount: Int) {
+        self.response = response
+        self.inputTextTokens = inputTextTokenCount
+        self.lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: payloadBytes,
+            responseChars: response.count,
+            inputTextTokenCount: nil
+        )
+    }
+
+    func inputTextTokenCount(for text: String) async -> Int? {
+        inputTextTokens
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        lastMessages = messages
+        return response
+    }
+}
+
+private final class SlowTokenCountingEngine: LocalLLMEngine, LLMInputTextTokenCounting {
+    let response: String
+
+    init(response: String) {
+        self.response = response
+    }
+
+    func inputTextTokenCount(for text: String) async -> Int? {
+        try? await Task.sleep(for: .milliseconds(200))
+        return 42
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        response
     }
 }
 

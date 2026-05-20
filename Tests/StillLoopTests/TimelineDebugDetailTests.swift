@@ -13,6 +13,7 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("public struct FocusEventDebugDetail: Codable, Equatable"))
         XCTAssertTrue(source.contains("public var debugDetail: FocusEventDebugDetail?"))
         XCTAssertTrue(source.contains("public var analysis: LLMFocusAnalysis?"))
+        XCTAssertTrue(source.contains("public var requestDebugMetrics: LLMRequestDebugMetrics?"))
     }
 
     func testRecognitionDebugPopoverShowsModelAnalysis() throws {
@@ -32,6 +33,16 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("modelRunDurationSeconds"))
         XCTAssertTrue(source.contains("模型运行时长："))
         XCTAssertFalse(source.contains("置信度："))
+    }
+
+    func testRecognitionDebugPopoverShowsRequestDebugMetrics() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let coreSource = try String(contentsOfFile: "Sources/StillLoopCore/Models.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("requestDebugMetrics"))
+        XCTAssertTrue(source.contains("formattedRequestMetricLines"))
+        XCTAssertTrue(coreSource.contains("请求规模："))
+        XCTAssertTrue(coreSource.contains("输入规模："))
     }
 
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {

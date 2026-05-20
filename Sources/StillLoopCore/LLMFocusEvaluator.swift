@@ -12,6 +12,26 @@ public protocol StructuredLocalLLMEngine: LocalLLMEngine {
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String
 }
 
+public struct LLMRequestTransportMetrics: Equatable {
+    public var payloadBytes: Int?
+    public var responseChars: Int?
+    public var inputTextTokenCount: Int?
+
+    public init(payloadBytes: Int? = nil, responseChars: Int? = nil, inputTextTokenCount: Int? = nil) {
+        self.payloadBytes = payloadBytes
+        self.responseChars = responseChars
+        self.inputTextTokenCount = inputTextTokenCount
+    }
+}
+
+public protocol LLMRequestTransportMetricsProviding: AnyObject {
+    var lastRequestTransportMetrics: LLMRequestTransportMetrics? { get }
+}
+
+public protocol LLMInputTextTokenCounting: AnyObject {
+    func inputTextTokenCount(for text: String) async -> Int?
+}
+
 public struct LLMMessage: Equatable {
     public enum Role: String, Equatable {
         case system
@@ -29,6 +49,37 @@ public struct LLMMessage: Equatable {
     public init(role: Role, content: [Content]) {
         self.role = role
         self.content = content
+    }
+}
+
+public struct LLMRequestDebugMetrics: Codable, Equatable {
+    public var visualCaptureCount: Int
+    public var imageCount: Int
+    public var textSnapshotCount: Int
+    public var previousEventCount: Int
+    public var payloadBytes: Int?
+    public var responseChars: Int
+    public var inputTextCharacterCount: Int
+    public var inputTextTokenCount: Int?
+
+    public init(
+        visualCaptureCount: Int,
+        imageCount: Int,
+        textSnapshotCount: Int,
+        previousEventCount: Int,
+        payloadBytes: Int? = nil,
+        responseChars: Int,
+        inputTextCharacterCount: Int,
+        inputTextTokenCount: Int? = nil
+    ) {
+        self.visualCaptureCount = visualCaptureCount
+        self.imageCount = imageCount
+        self.textSnapshotCount = textSnapshotCount
+        self.previousEventCount = previousEventCount
+        self.payloadBytes = payloadBytes
+        self.responseChars = responseChars
+        self.inputTextCharacterCount = inputTextCharacterCount
+        self.inputTextTokenCount = inputTextTokenCount
     }
 }
 
@@ -78,6 +129,7 @@ public struct LLMEvaluationResult: Equatable {
     public var nudge: String?
     public var evaluator: String
     public var modelRunDurationSeconds: TimeInterval?
+    public var requestDebugMetrics: LLMRequestDebugMetrics?
     public var analysis: LLMFocusAnalysis?
     public var returnTarget: FocusReturnTarget?
 
@@ -88,6 +140,7 @@ public struct LLMEvaluationResult: Equatable {
         nudge: String?,
         evaluator: String = "模型",
         modelRunDurationSeconds: TimeInterval? = nil,
+        requestDebugMetrics: LLMRequestDebugMetrics? = nil,
         analysis: LLMFocusAnalysis? = nil,
         returnTarget: FocusReturnTarget? = nil
     ) {
@@ -97,6 +150,7 @@ public struct LLMEvaluationResult: Equatable {
         self.nudge = nudge
         self.evaluator = evaluator
         self.modelRunDurationSeconds = modelRunDurationSeconds
+        self.requestDebugMetrics = requestDebugMetrics
         self.analysis = analysis
         self.returnTarget = returnTarget
     }
@@ -246,6 +300,10 @@ public struct LLMFocusEvaluator {
         previousEvents: [FocusEvent],
         promptMessages: [LLMMessage]
     ) async throws -> LLMEvaluationResult {
+        let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
+        let imageCount = imageCount(in: promptMessages)
+        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
+            .inputTextTokenCount(for: inputText(in: promptMessages))
         let response: String
         let modelStartedAt = Date()
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
@@ -253,6 +311,7 @@ public struct LLMFocusEvaluator {
         } else {
             response = try await engine.complete(messages: promptMessages)
         }
+        let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
         var modelResponse: ModelResponse
         do {
             modelResponse = try decodeModelResponse(from: response)
@@ -268,9 +327,53 @@ public struct LLMFocusEvaluator {
             shouldNudge: nudge != nil,
             nudge: nudge,
             modelRunDurationSeconds: modelRunDurationSeconds,
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: visualSnapshots.count,
+                imageCount: imageCount,
+                textSnapshotCount: textSnapshots.count,
+                previousEventCount: previousEvents.count,
+                payloadBytes: transportMetrics?.payloadBytes,
+                responseChars: response.count,
+                inputTextCharacterCount: inputTextCharacterCount,
+                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount
+            ),
             analysis: modelResponse.analysis,
             returnTarget: modelResponse.state == .focused ? FocusReturnTarget.make(from: textSnapshots) : nil
         )
+    }
+
+    private func inputTextCharacterCount(in messages: [LLMMessage]) -> Int {
+        messages.reduce(0) { total, message in
+            total + message.content.reduce(0) { subtotal, content in
+                if case .text(let text) = content {
+                    return subtotal + text.count
+                }
+                return subtotal
+            }
+        }
+    }
+
+    private func inputText(in messages: [LLMMessage]) -> String {
+        messages
+            .flatMap(\.content)
+            .compactMap { content -> String? in
+                if case .text(let text) = content {
+                    return text
+                }
+                return nil
+            }
+            .joined(separator: "\n")
+    }
+
+    private func imageCount(in messages: [LLMMessage]) -> Int {
+        messages.reduce(0) { total, message in
+            total + message.content.filter { content in
+                if case .image = content {
+                    return true
+                }
+                return false
+            }.count
+        }
     }
 
     private func normalizedNudge(from response: ModelResponse, task: String) -> String? {
@@ -338,7 +441,7 @@ public struct LLMFocusEvaluator {
         - taskAligned: boolean, whether visible work directly supports the current task.
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
-        The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge.
+            The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
         Fill the analysis object first, then choose the final state, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.

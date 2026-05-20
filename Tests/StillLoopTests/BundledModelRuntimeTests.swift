@@ -33,7 +33,7 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--mmproj", "/tmp/StillLoop Models/mmproj.gguf",
             "--host", "127.0.0.1",
             "--port", "17631",
-            "--ctx-size", "32768",
+            "--ctx-size", "16384",
             "--parallel", "1",
             "--n-gpu-layers", "99",
             "--cache-type-k", "f16",
