@@ -223,7 +223,9 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         }
 
         var choices: [Choice]
+        var created: Int?
         var usage: LLMUsageValue?
+        var timings: LLMUsageValue?
     }
 
     private struct ModelsResponse: Decodable {
@@ -374,7 +376,9 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             payloadBytes: payload.count,
             responseChars: content.count,
             inputTextTokenCount: nil,
-            usage: body.usage
+            created: body.created,
+            usage: body.usage,
+            timings: body.timings
         )
         return content
     }

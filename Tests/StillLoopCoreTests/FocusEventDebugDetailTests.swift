@@ -147,6 +147,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
           "responseChars": 901,
           "inputTextCharacterCount": 234,
           "inputTextTokenCount": 56,
+          "created": 1779341711,
           "usage": {
             "completion_tokens": 8,
             "prompt_tokens": 21,
@@ -154,6 +155,12 @@ final class FocusEventDebugDetailTests: XCTestCase {
             "prompt_tokens_details": {
               "cached_tokens": 0
             }
+          },
+          "timings": {
+            "prompt_n": 15,
+            "prompt_ms": 521.25,
+            "predicted_n": 8,
+            "predicted_ms": 1188.5
           }
         }
         """.utf8)
@@ -162,6 +169,8 @@ final class FocusEventDebugDetailTests: XCTestCase {
         let lines = FocusEventDebugDetail.formattedRequestMetricLines(metrics)
 
         XCTAssertTrue(lines.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
+        XCTAssertTrue(lines.contains("LLM created：1779341711"))
+        XCTAssertTrue(lines.contains(#"LLM timings：{"predicted_ms":1188.5,"predicted_n":8,"prompt_ms":521.25,"prompt_n":15}"#))
     }
 
     func testFormattedRequestMetricLinesOmitsLLMUsageWhenMissing() {
@@ -179,6 +188,8 @@ final class FocusEventDebugDetailTests: XCTestCase {
         let lines = FocusEventDebugDetail.formattedRequestMetricLines(metrics)
 
         XCTAssertFalse(lines.contains { $0.hasPrefix("LLM usage：") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("LLM created：") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("LLM timings：") })
     }
 
     func testRecognitionDebugClipboardTextIncludesEveryVisibleSection() {
@@ -214,6 +225,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     responseChars: 901,
                     inputTextCharacterCount: 234,
                     inputTextTokenCount: 56,
+                    created: 1_779_341_711,
                     usage: .object([
                         "completion_tokens": .int(8),
                         "prompt_tokens": .int(21),
@@ -221,6 +233,12 @@ final class FocusEventDebugDetailTests: XCTestCase {
                         "prompt_tokens_details": .object([
                             "cached_tokens": .int(0)
                         ])
+                    ]),
+                    timings: .object([
+                        "prompt_n": .int(15),
+                        "prompt_ms": .double(521.25),
+                        "predicted_n": .int(8),
+                        "predicted_ms": .double(1_188.5)
                     ])
                 ),
                 analysis: LLMFocusAnalysis(
@@ -246,6 +264,8 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=2, textSnapshotCount=3, previousEventCount=4"))
         XCTAssertTrue(text.contains("输入规模：payloadBytes=5678, responseChars=901, inputTextCharacterCount=234, inputTextTokenCount=56"))
         XCTAssertTrue(text.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
+        XCTAssertTrue(text.contains("LLM created：1779341711"))
+        XCTAssertTrue(text.contains(#"LLM timings：{"predicted_ms":1188.5,"predicted_n":8,"prompt_ms":521.25,"prompt_n":15}"#))
         XCTAssertTrue(text.contains("触发提醒：是"))
         XCTAssertTrue(text.contains("返回目标：Codex · StillLoop"))
         XCTAssertTrue(text.contains("窗口：StillLoop"))

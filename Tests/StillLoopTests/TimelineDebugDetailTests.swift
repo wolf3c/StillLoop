@@ -43,6 +43,8 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("formattedRequestMetricLines"))
         XCTAssertTrue(coreSource.contains("请求规模："))
         XCTAssertTrue(coreSource.contains("输入规模："))
+        XCTAssertTrue(coreSource.contains("LLM created："))
+        XCTAssertTrue(coreSource.contains("LLM timings："))
     }
 
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {

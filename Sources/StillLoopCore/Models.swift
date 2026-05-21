@@ -481,6 +481,12 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         if let usage = metrics.usage?.compactJSONString {
             lines.append("LLM usage：\(usage)")
         }
+        if let created = metrics.created {
+            lines.append("LLM created：\(created)")
+        }
+        if let timings = metrics.timings?.compactJSONString {
+            lines.append("LLM timings：\(timings)")
+        }
         return lines
     }
 

@@ -214,7 +214,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertNil(metrics.usage)
     }
 
-    func testCompletionRecordsFullUsageDebugMetrics() async throws {
+    func testCompletionRecordsFullUsageAndTimingDebugMetrics() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
         let session = URLSession(configuration: configuration)
@@ -222,7 +222,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         URLProtocolStub.requestHandler = { request in
             if request.url?.path == "/v1/chat/completions" {
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
-                {"choices":[{"message":{"content":"focused"}}],"usage":{"completion_tokens":8,"prompt_tokens":21,"total_tokens":29,"prompt_tokens_details":{"cached_tokens":0}}}
+                {"choices":[{"message":{"content":"focused"}}],"created":1779341711,"usage":{"completion_tokens":8,"prompt_tokens":21,"total_tokens":29,"prompt_tokens_details":{"cached_tokens":0}},"timings":{"prompt_n":15,"prompt_ms":521.25,"predicted_n":8,"predicted_ms":1188.5}}
                 """.utf8))
             }
             return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
@@ -239,9 +239,14 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         ])
 
         let metrics = try XCTUnwrap(engine.lastRequestTransportMetrics)
+        XCTAssertEqual(metrics.created, 1_779_341_711)
         XCTAssertEqual(
             metrics.usage?.compactJSONString,
             #"{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#
+        )
+        XCTAssertEqual(
+            metrics.timings?.compactJSONString,
+            #"{"predicted_ms":1188.5,"predicted_n":8,"prompt_ms":521.25,"prompt_n":15}"#
         )
     }
 

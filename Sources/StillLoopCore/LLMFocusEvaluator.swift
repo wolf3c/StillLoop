@@ -77,18 +77,24 @@ public struct LLMRequestTransportMetrics: Equatable {
     public var payloadBytes: Int?
     public var responseChars: Int?
     public var inputTextTokenCount: Int?
+    public var created: Int?
     public var usage: LLMUsageValue?
+    public var timings: LLMUsageValue?
 
     public init(
         payloadBytes: Int? = nil,
         responseChars: Int? = nil,
         inputTextTokenCount: Int? = nil,
-        usage: LLMUsageValue? = nil
+        created: Int? = nil,
+        usage: LLMUsageValue? = nil,
+        timings: LLMUsageValue? = nil
     ) {
         self.payloadBytes = payloadBytes
         self.responseChars = responseChars
         self.inputTextTokenCount = inputTextTokenCount
+        self.created = created
         self.usage = usage
+        self.timings = timings
     }
 }
 
@@ -129,7 +135,9 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var responseChars: Int
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
+    public var created: Int?
     public var usage: LLMUsageValue?
+    public var timings: LLMUsageValue?
 
     public init(
         visualCaptureCount: Int,
@@ -140,7 +148,9 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         responseChars: Int,
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
-        usage: LLMUsageValue? = nil
+        created: Int? = nil,
+        usage: LLMUsageValue? = nil,
+        timings: LLMUsageValue? = nil
     ) {
         self.visualCaptureCount = visualCaptureCount
         self.imageCount = imageCount
@@ -150,7 +160,9 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.responseChars = responseChars
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
+        self.created = created
         self.usage = usage
+        self.timings = timings
     }
 }
 
@@ -430,7 +442,9 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
-                usage: transportMetrics?.usage
+                created: transportMetrics?.created,
+                usage: transportMetrics?.usage,
+                timings: transportMetrics?.timings
             ),
             analysis: modelResponse.analysis,
             returnTarget: returnTarget
