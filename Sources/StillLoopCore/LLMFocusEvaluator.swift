@@ -246,13 +246,6 @@ public struct LLMFocusEvaluationError: Error, Equatable {
 }
 
 public struct LLMFocusEvaluator {
-    private enum AlignmentSignal {
-        case aligned
-        case weak
-        case misaligned
-        case missing
-    }
-
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
         var focusTarget: ModelFocusTarget?
@@ -419,7 +412,6 @@ public struct LLMFocusEvaluator {
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
-        applyFocusedValidityGuards(to: &modelResponse, task: task, recentSnapshots: textSnapshots)
         let returnTarget = resolvedReturnTarget(from: modelResponse, snapshots: textSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
@@ -497,63 +489,41 @@ public struct LLMFocusEvaluator {
         You are a focus-session evaluator.
         Your job is to judge whether the user's current visible activity supports the stated session goal.
 
-        Decision rule:
-        1) First infer userEngaged from camera snapshots: whether the user is physically present and actively operating or watching the computer.
-        2) Then infer taskAligned from screenshot/app/window/browser context: whether the visible work directly supports the current task.
-        3) The final state must follow the decision table below. Never use userEngaged alone to choose focused.
-
-        Important distinction:
-        - userEngaged means the user appears present, attentive, and active.
-        - taskAligned means the visible work content directly supports the current task.
-        - A user can be highly engaged and still be distracted if the visible content is for another task.
-
-        Final state rule:
-        - userEngaged=true and taskAligned=true -> focused.
-        - userEngaged=true and taskAligned=false -> distracted.
-        - userEngaged=true and taskAligned is unclear or weak -> uncertain.
-        - userEngaged=false because the user appears absent -> away.
-        - userEngaged=false because the user appears intentionally pausing -> resting.
+        Choose the single state that best describes the current situation.
+        Consider the screenshot, camera image, app/window/browser metadata, current task, and recent state log together.
 
         State definitions (choose exactly one):
-        - focused: the user is engaged and the visible content clearly supports the current task with observable evidence.
-        - uncertain: temporary, recoverable attention drift; engagement or task-match is weaker, but signals are not clearly off-task and task intent still appears plausible.
+        - focused: current activity appears to support the task.
+        - uncertain: signals are ambiguous or only weakly connected to the task.
         - distracted: one of:
-          a) engagement is present but content is clearly unrelated to the task;
-          b) engagement is clearly lost while content shows unrelated task-unrelated activity;
-          c) attention appears repeatedly split without clear task progress.
-        - stuck: on-task engagement and task context stay present, but no visible forward progress signals.
-        - resting: intentional short break; camera or context suggests rest (eyes closed, leaning away, or non-task pause) without distress signals.
+          a) current content is clearly unrelated to the task;
+          b) attention appears repeatedly split without clear task progress.
+        - stuck: task context is present, but there are no visible forward progress signals.
+        - resting: intentional short break or non-task pause.
         - away: user appears to have left the computer or is not physically present.
 
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
-        Do not infer task alignment from the application category alone. taskAligned=true requires positive evidence that the visible content directly supports the task, such as task-specific document text, outline text, project names, filenames, page titles, or browser metadata.
-        When the task is to browse, read, check, or use a named website or app, matching page title, URL, or browser metadata for that site/app is positive task-specific evidence; do not require the page topic to match the generic browsing verb.
-        High user engagement is not task alignment. If the user appears active in a tool but the observable work is for a different subject, taskAligned=false.
-        In screenContent and observedActivity, name the observable task-specific evidence you saw. If you cannot name that evidence, taskAligned must not be true and state must not be focused.
-        If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence and choose uncertain or distracted instead of focused.
-        If app/window/browser metadata only names an unrelated tool and has no task-relevant evidence, do not choose focused.
-        "uncertain" is the state that represents mild deviation.
-        "focused" requires both userEngaged=true and taskAligned=true.
+        User engagement alone is not enough; judge whether the visible activity appears to support the task.
+        If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence.
 
-        Before the final judgement, write brief observable analysis fields:
+        Use the analysis object to briefly explain the judgement:
         - userEngagement: whether the user is present and appears attentive.
         - screenContent: high-level summary of visible page/app content.
         - observedActivity: visible operation or progress signals across captures.
         - taskAlignment: whether visible content matches the current task.
         - decisionRationale: why the final state follows from the observations.
-        - userEngaged: boolean, whether the user appears present and active.
-        - taskAligned: boolean, whether visible work directly supports the current task.
+        - userEngaged: boolean, whether the user appears present and active, or null if unclear.
+        - taskAligned: boolean, whether visible work appears to support the current task, or null if unclear.
 
         Also choose focusTarget:
-        - If and only if state is focused, focusTarget must identify the app/window/browser page that is the actual focused task context.
+        - If state is focused, focusTarget should identify the app/window/browser page that is the actual focused task context.
         - If state is not focused, focusTarget must be null.
         - Use only app, window, browserTitle, and browserURL values present in the current captures. Never invent an app, title, or URL from the task or history.
         - For browser work, include browserURL when it is present in the current capture metadata; otherwise use browserTitle.
         - For non-browser work, set browserTitle and browserURL to null.
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
-            The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
-        Fill the analysis object first, then choose the final state, reason, and nudge from that analysis. Do not let the final state contradict userEngaged or taskAligned.
+        The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
@@ -718,181 +688,5 @@ public struct LLMFocusEvaluator {
 
     private func normalizedURLText(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func applyFocusedValidityGuards(
-        to response: inout ModelResponse,
-        task: String,
-        recentSnapshots: [ContextSnapshot]
-    ) {
-        guard response.state == .focused else { return }
-
-        if let analysis = response.analysis {
-            if analysis.userEngaged == false {
-                downgradeFocusedResponse(
-                    &response,
-                    to: .away,
-                    reason: "模型分析显示用户没有保持参与，因此不能判为专注。",
-                    taskAligned: analysis.taskAligned,
-                    taskAlignment: analysis.taskAlignment,
-                    decisionRationale: "focused 需要 userEngaged=true；当前分析未满足该条件。"
-                )
-                return
-            }
-
-            switch taskAlignmentSignal(from: analysis) {
-            case .misaligned:
-                downgradeFocusedResponse(
-                    &response,
-                    to: .distracted,
-                    reason: "用户看起来在投入操作，但模型分析显示当前内容与任务不匹配。",
-                    taskAligned: false,
-                    taskAlignment: "当前内容与任务不匹配，不能判为专注。",
-                    decisionRationale: "focused 需要 taskAligned=true；当前分析显示任务不匹配。"
-                )
-                return
-            case .weak, .missing:
-                downgradeFocusedResponse(
-                    &response,
-                    to: .uncertain,
-                    reason: "模型没有给出明确的任务匹配证据，不能确认当前活动支持任务。",
-                    taskAligned: false,
-                    taskAlignment: "缺少明确任务匹配证据。",
-                    decisionRationale: "focused 需要明确的 taskAligned=true 和可观察任务证据。"
-                )
-                return
-            case .aligned:
-                if !hasObservableTaskEvidence(task: task, analysis: analysis, snapshots: recentSnapshots) {
-                    downgradeFocusedResponse(
-                        &response,
-                        to: .uncertain,
-                        reason: "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。",
-                        taskAligned: false,
-                        taskAlignment: "缺少当前任务的可观察证据。",
-                        decisionRationale: "focused 不能只依据用户投入程度；需要在可见内容中看到任务相关证据。"
-                    )
-                    return
-                }
-            }
-
-        } else if !recentSnapshots.isEmpty {
-            downgradeFocusedResponse(
-                &response,
-                to: .uncertain,
-                reason: "模型没有返回任务匹配分析，不能确认当前活动支持任务。",
-                taskAligned: nil,
-                taskAlignment: "缺少任务匹配分析。",
-                decisionRationale: "focused 需要结构化分析支持。"
-            )
-        }
-    }
-
-    private func downgradeFocusedResponse(
-        _ response: inout ModelResponse,
-        to state: FocusState,
-        reason: String,
-        taskAligned: Bool?,
-        taskAlignment: String,
-        decisionRationale: String
-    ) {
-        response.state = state
-        response.reason = reason
-        response.nudge = nil
-        if var analysis = response.analysis {
-            analysis.taskAligned = taskAligned
-            analysis.taskAlignment = taskAlignment
-            analysis.decisionRationale = decisionRationale
-            response.analysis = analysis
-        }
-    }
-
-    private func taskAlignmentSignal(from analysis: LLMFocusAnalysis) -> AlignmentSignal {
-        if analysis.taskAligned == true { return .aligned }
-        if analysis.taskAligned == false { return .misaligned }
-
-        let text = [analysis.taskAlignment, analysis.decisionRationale]
-            .joined(separator: " ")
-            .lowercased()
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .missing
-        }
-
-        if containsAny(text, [
-            "distracted", "misaligned", "not aligned", "not task", "off-task", "unrelated",
-            "irrelevant", "不匹配", "不符合", "无关", "不相关", "偏离", "跑偏", "不支持", "没有看到", "缺少"
-        ]) {
-            return .misaligned
-        }
-        if containsAny(text, [
-            "uncertain", "unclear", "ambiguous", "weak", "not clear",
-            "不明确", "不确定", "不足", "无法确认", "不清楚", "可能", "较弱"
-        ]) {
-            return .weak
-        }
-        if containsAny(text, [
-            "aligned", "matches", "match", "supports", "relevant", "related",
-            "符合", "匹配", "相关", "支持", "一致", "直接"
-        ]) {
-            return .aligned
-        }
-        return .missing
-    }
-
-    private func hasObservableTaskEvidence(
-        task: String,
-        analysis: LLMFocusAnalysis,
-        snapshots: [ContextSnapshot]
-    ) -> Bool {
-        let terms = distinctiveTaskTerms(from: task)
-        guard !terms.isEmpty else { return true }
-
-        let observableText = (
-            snapshots.map(\.combinedText)
-                + [analysis.screenContent, analysis.observedActivity]
-        )
-            .joined(separator: " ")
-            .lowercased()
-
-        guard !observableText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        return terms.contains { observableText.contains($0) }
-    }
-
-    private func distinctiveTaskTerms(from task: String) -> [String] {
-        let normalized = task.lowercased()
-        var terms = regexMatches("[a-z0-9][a-z0-9._-]{2,}", in: normalized)
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "._-")) }
-            .filter { $0.count >= 3 }
-
-        let cjkChunks = regexMatches("[\\p{Han}]{2,}", in: normalized)
-        for chunk in cjkChunks {
-            var reduced = chunk
-            for stopword in [
-                "研究", "学习", "了解", "查看", "整理", "优化", "修复", "实现",
-                "编写", "撰写", "写", "做", "公开", "专属", "当前", "任务", "今天", "过去", "的"
-            ] {
-                reduced = reduced.replacingOccurrences(of: stopword, with: " ")
-            }
-            terms += reduced
-                .components(separatedBy: .whitespacesAndNewlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { $0.count >= 2 && $0.count <= 12 }
-        }
-
-        return Array(Set(terms))
-    }
-
-    private func regexMatches(_ pattern: String, in text: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return regex.matches(in: text, range: range).compactMap { match in
-            guard let matchRange = Range(match.range, in: text) else { return nil }
-            return String(text[matchRange])
-        }
-    }
-
-    private func containsAny(_ text: String, _ needles: [String]) -> Bool {
-        needles.contains { text.contains($0) }
     }
 }

@@ -204,8 +204,8 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .uncertain)
-        XCTAssertEqual(result.reason, "可观察内容没有出现当前任务的明确证据，不能确认任务匹配。")
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertEqual(result.reason, "页面内容与任务一致。")
         XCTAssertEqual(result.analysis?.userEngagement, "用户在场。")
         XCTAssertEqual(result.analysis?.observedActivity, "")
     }
@@ -317,7 +317,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("Notion"))
     }
 
-    func testPromptRequiresCameraAndContextJointJudgement() async throws {
+    func testPromptAsksModelForDirectStateJudgement() async throws {
         let engine = StubEngine(response: """
         {"state":"focused","reason":"Working","nudge":null}
         """)
@@ -342,8 +342,8 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         let prompt = engine.flattenedPrompt
         XCTAssertTrue(prompt.contains("You are a focus-session evaluator."))
         XCTAssertTrue(prompt.contains("Your job is to judge whether the user's current visible activity supports the stated session goal."))
-        XCTAssertTrue(prompt.contains("Decision rule:"))
-        XCTAssertTrue(prompt.contains("Before the final judgement, write brief observable analysis fields"))
+        XCTAssertTrue(prompt.contains("Choose the single state that best describes the current situation."))
+        XCTAssertTrue(prompt.contains("Use the analysis object to briefly explain the judgement"))
         XCTAssertTrue(prompt.contains("Do not quote or transcribe private page text verbatim"))
         XCTAssertTrue(prompt.contains("\"analysis\""))
         XCTAssertTrue(prompt.contains("\"userEngaged\""))
@@ -353,25 +353,21 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"observedActivity\""))
         XCTAssertTrue(prompt.contains("\"taskAlignment\""))
         XCTAssertTrue(prompt.contains("\"decisionRationale\""))
-        XCTAssertTrue(prompt.contains("infer userEngaged from camera snapshots"))
-        XCTAssertTrue(prompt.contains("infer taskAligned from screenshot/app/window/browser context"))
-        XCTAssertTrue(prompt.contains("Never use userEngaged alone to choose focused"))
-        XCTAssertTrue(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
-        XCTAssertTrue(prompt.contains("userEngaged=true and taskAligned=false -> distracted"))
-        XCTAssertTrue(prompt.contains("Do not infer task alignment from the application category alone"))
-        XCTAssertTrue(prompt.contains("matching page title, URL, or browser metadata for that site/app is positive task-specific evidence"))
-        XCTAssertTrue(prompt.contains("taskAligned=true requires positive evidence"))
+        XCTAssertTrue(prompt.contains("Current captures are the source of truth"))
+        XCTAssertTrue(prompt.contains("User engagement alone is not enough"))
+        XCTAssertTrue(prompt.contains("visible activity appears to support the task"))
         XCTAssertTrue(prompt.contains("do not invent task-specific content"))
-        XCTAssertTrue(prompt.contains("Fill the analysis object first, then choose the final state"))
-        XCTAssertTrue(prompt.contains("Do not let the final state contradict userEngaged or taskAligned"))
         XCTAssertFalse(prompt.contains("Developer tools such as Codex"))
         XCTAssertFalse(prompt.contains("Example:"))
-        XCTAssertTrue(prompt.contains("- focused: the user is engaged and the visible content clearly supports the current task"))
-        XCTAssertTrue(prompt.contains("- uncertain: temporary, recoverable attention drift; engagement or task-match is weaker"))
-        XCTAssertTrue(prompt.contains("task intent still appears plausible"))
+        XCTAssertTrue(prompt.contains("- focused: current activity appears to support the task."))
+        XCTAssertTrue(prompt.contains("- uncertain: signals are ambiguous or only weakly connected to the task."))
         XCTAssertTrue(prompt.contains("- distracted: one of:"))
         XCTAssertTrue(prompt.contains("content is clearly unrelated to the task"))
-        XCTAssertTrue(prompt.contains("uncertain\" is the state that represents mild deviation"))
+        XCTAssertFalse(prompt.contains("Decision rule:"))
+        XCTAssertFalse(prompt.contains("Never use userEngaged alone to choose focused"))
+        XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
+        XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=false -> distracted"))
+        XCTAssertFalse(prompt.contains("Do not let the final state contradict userEngaged or taskAligned"))
         XCTAssertTrue(prompt.contains("\"decisionRationale\":\"short rationale\",\"userEngaged\":true,\"taskAligned\":true"))
     }
 
@@ -416,7 +412,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertNil(result.nudge)
     }
 
-    func testFocusedJudgementFallsBackToUncertainWithoutStructuredAnalysisEvidence() async throws {
+    func testFocusedJudgementPassesThroughWithoutStructuredAnalysisEvidence() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {"state":"focused","reason":"用户看起来在专注操作。","nudge":null}
         """))
@@ -448,12 +444,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(result.state, .uncertain)
-        XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：写日记，回顾过去一周")
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+        XCTAssertEqual(result.reason, "用户看起来在专注操作。")
     }
 
-    func testFocusedJudgementIsRejectedWhenAnalysisSaysEngagedButNotTaskAligned() async throws {
+    func testFocusedJudgementPassesThroughWhenAnalysisSaysEngagedButNotTaskAligned() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {
           "analysis": {
@@ -496,15 +493,15 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .distracted)
-        XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "先回到：写小说")
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
         XCTAssertEqual(result.analysis?.userEngaged, true)
         XCTAssertEqual(result.analysis?.taskAligned, false)
-        XCTAssertTrue(result.reason.contains("任务不匹配"))
+        XCTAssertEqual(result.reason, "用户正在认真操作。")
     }
 
-    func testFocusedNovelJudgementFallsBackToUncertainWhenOnlyGenericToolMetadataIsVisible() async throws {
+    func testFocusedJudgementPassesThroughWithoutLocalTaskKeywordEvidence() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {
           "analysis": {
@@ -540,14 +537,14 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .uncertain)
-        XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：写小说")
-        XCTAssertEqual(result.analysis?.taskAligned, false)
-        XCTAssertTrue(result.reason.contains("可观察内容没有出现当前任务的明确证据"))
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+        XCTAssertEqual(result.analysis?.taskAligned, true)
+        XCTAssertEqual(result.reason, "The user is still engaged in writing a novel.")
     }
 
-    func testFocusedJudgementIsRejectedWhenTextualAnalysisSaysTaskIsNotAligned() async throws {
+    func testFocusedJudgementPassesThroughWithoutTextualAlignmentKeywords() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
         {
           "analysis": {
@@ -579,58 +576,11 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.state, .distracted)
-        XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "先回到：研究 Matt Pocock公开的.claude")
-        XCTAssertEqual(result.analysis?.taskAligned, false)
-    }
-
-    func testFocusedJudgementRequiresObservableEvidenceForResearchTask() async throws {
-        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: """
-        {
-          "analysis": {
-            "userEngaged": true,
-            "taskAligned": true,
-            "userEngagement": "The user is present and actively typing.",
-            "screenContent": "Codex shows work on a Stable Diffusion app for StillLoop.",
-            "observedActivity": "The user is editing implementation notes and app behavior.",
-            "taskAlignment": "The work is claimed to support the research task.",
-            "decisionRationale": "The user is engaged, so the task is treated as aligned."
-          },
-          "state": "focused",
-          "reason": "The user is working in Codex.",
-          "nudge": null
-        }
-        """))
-
-        let result = try await evaluator.evaluate(
-            task: "研究 Matt Pocock公开的.claude专属工作流",
-            recentSnapshots: [
-                ContextSnapshot(
-                    timestamp: Date(timeIntervalSince1970: 1),
-                    activeAppName: "Codex",
-                    windowTitle: "Codex",
-                    browserTitle: nil,
-                    browserURL: nil,
-                    screenshotAvailable: true,
-                    cameraFrameAvailable: true
-                ),
-                ContextSnapshot(
-                    timestamp: Date(timeIntervalSince1970: 2),
-                    activeAppName: "Codex",
-                    windowTitle: "StillLoop",
-                    browserTitle: nil,
-                    browserURL: nil,
-                    screenshotAvailable: true,
-                    cameraFrameAvailable: true
-                )
-            ],
-            previousEvents: []
-        )
-
-        XCTAssertEqual(result.state, .uncertain)
-        XCTAssertTrue(result.shouldNudge)
-        XCTAssertEqual(result.nudge, "回到：研究 Matt Pocock公开的.claude")
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertNil(result.nudge)
+        XCTAssertNil(result.analysis?.taskAligned)
+        XCTAssertEqual(result.reason, "The user is engaged.")
     }
 
     func testModelDistractedBrowsingPageIsNotOverriddenByHardcodedSiteGuard() async throws {
