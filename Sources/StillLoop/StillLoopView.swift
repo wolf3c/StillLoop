@@ -1267,7 +1267,6 @@ private struct TimelineEventDebugPopover: View {
                             TimelineDebugText("页面内容：\(analysis.screenContent)")
                             TimelineDebugText("可见操作：\(analysis.observedActivity)")
                             TimelineDebugText("任务匹配：\(analysis.taskAlignment)")
-                            TimelineDebugText("判断依据：\(analysis.decisionRationale)")
                         }
                     }
                 } else {

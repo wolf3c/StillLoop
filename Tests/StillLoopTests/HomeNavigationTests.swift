@@ -759,7 +759,7 @@ final class HomeNavigationTests: XCTestCase {
             "recent-now"
         ])
         XCTAssertEqual(visualSnapshots.map(\.activeAppName), [
-            "recent-60",
+            "recent-30",
             "recent-15",
             "recent-now"
         ])

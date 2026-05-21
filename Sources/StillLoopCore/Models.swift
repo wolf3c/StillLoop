@@ -412,8 +412,7 @@ public extension FocusEvent {
                     "用户状态：\(analysis.userEngagement)",
                     "页面内容：\(analysis.screenContent)",
                     "可见操作：\(analysis.observedActivity)",
-                    "任务匹配：\(analysis.taskAlignment)",
-                    "判断依据：\(analysis.decisionRationale)"
+                    "任务匹配：\(analysis.taskAlignment)"
                 ].joined(separator: "\n"))
             }
         } else {
@@ -478,6 +477,11 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             "请求规模：visualCaptureCount=\(metrics.visualCaptureCount), imageCount=\(metrics.imageCount), textSnapshotCount=\(metrics.textSnapshotCount), previousEventCount=\(metrics.previousEventCount)",
             "输入规模：payloadBytes=\(optionalIntText(metrics.payloadBytes)), responseChars=\(metrics.responseChars), inputTextCharacterCount=\(metrics.inputTextCharacterCount), inputTextTokenCount=\(optionalIntText(metrics.inputTextTokenCount))"
         ]
+        if metrics.powerStatus != nil || metrics.visualSampleLimit != nil {
+            lines.append(
+                "设备状态：powerSource=\(metrics.powerStatus?.powerSource.rawValue ?? "-"), lowPowerMode=\(optionalBoolText(metrics.powerStatus?.lowPowerMode)), thermalState=\(metrics.powerStatus?.thermalState.rawValue ?? "-"), visualSampleLimit=\(optionalIntText(metrics.visualSampleLimit))"
+            )
+        }
         if let usage = metrics.usage?.compactJSONString {
             lines.append("LLM usage：\(usage)")
         }
@@ -492,6 +496,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
 
     private static func optionalIntText(_ value: Int?) -> String {
         value.map(String.init) ?? "-"
+    }
+
+    private static func optionalBoolText(_ value: Bool?) -> String {
+        value.map { $0 ? "true" : "false" } ?? "-"
     }
 
     public static func make(

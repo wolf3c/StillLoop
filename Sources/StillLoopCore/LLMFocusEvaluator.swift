@@ -181,6 +181,8 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var responseChars: Int
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
+    public var powerStatus: DevicePowerStatus?
+    public var visualSampleLimit: Int?
     public var created: Int?
     public var usage: LLMUsageValue?
     public var timings: LLMUsageValue?
@@ -194,6 +196,8 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         responseChars: Int,
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
+        powerStatus: DevicePowerStatus? = nil,
+        visualSampleLimit: Int? = nil,
         created: Int? = nil,
         usage: LLMUsageValue? = nil,
         timings: LLMUsageValue? = nil
@@ -206,6 +210,8 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.responseChars = responseChars
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
+        self.powerStatus = powerStatus
+        self.visualSampleLimit = visualSampleLimit
         self.created = created
         self.usage = usage
         self.timings = timings
@@ -213,41 +219,46 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
 }
 
 public struct LLMFocusAnalysis: Codable, Equatable {
-    public var userEngaged: Bool?
-    public var taskAligned: Bool?
     public var userEngagement: String
+    public var userEngaged: Bool?
     public var screenContent: String
     public var observedActivity: String
     public var taskAlignment: String
-    public var decisionRationale: String
+    public var taskAligned: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case userEngagement
+        case userEngaged
+        case screenContent
+        case observedActivity
+        case taskAlignment
+        case taskAligned
+    }
 
     public init(
-        userEngaged: Bool? = nil,
-        taskAligned: Bool? = nil,
         userEngagement: String,
+        userEngaged: Bool? = nil,
         screenContent: String,
         observedActivity: String,
         taskAlignment: String,
-        decisionRationale: String
+        taskAligned: Bool? = nil
     ) {
-        self.userEngaged = userEngaged
-        self.taskAligned = taskAligned
         self.userEngagement = userEngagement
+        self.userEngaged = userEngaged
         self.screenContent = screenContent
         self.observedActivity = observedActivity
         self.taskAlignment = taskAlignment
-        self.decisionRationale = decisionRationale
+        self.taskAligned = taskAligned
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        userEngaged = try? container.decodeIfPresent(Bool.self, forKey: .userEngaged)
-        taskAligned = try? container.decodeIfPresent(Bool.self, forKey: .taskAligned)
         userEngagement = (try? container.decode(String.self, forKey: .userEngagement)) ?? ""
+        userEngaged = try? container.decodeIfPresent(Bool.self, forKey: .userEngaged)
         screenContent = (try? container.decode(String.self, forKey: .screenContent)) ?? ""
         observedActivity = (try? container.decode(String.self, forKey: .observedActivity)) ?? ""
         taskAlignment = (try? container.decode(String.self, forKey: .taskAlignment)) ?? ""
-        decisionRationale = (try? container.decode(String.self, forKey: .decisionRationale)) ?? ""
+        taskAligned = try? container.decodeIfPresent(Bool.self, forKey: .taskAligned)
     }
 }
 
@@ -304,6 +315,8 @@ public struct LLMFocusEvaluationError: Error, Equatable {
 }
 
 public struct LLMFocusEvaluator {
+    private static let promptCacheWarmupPaddingLineCount = 39
+
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
         var focusTarget: ModelFocusTarget?
@@ -411,7 +424,7 @@ public struct LLMFocusEvaluator {
         try await prewarmingEngine.prewarmFocusEvaluationPrompt(
             messages: [
                 LLMMessage(role: .system, content: [.text(systemPrompt)]),
-                LLMMessage(role: .user, content: [.text("Warm up the focus evaluator.")])
+                LLMMessage(role: .user, content: [.text(promptCacheWarmupUserPrompt)])
             ],
             responseFormat: .focusEvaluation
         )
@@ -420,7 +433,7 @@ public struct LLMFocusEvaluator {
     public func promptCacheProbeRequests() -> [LLMFocusPromptCacheProbeRequest] {
         let warmupMessages = [
             LLMMessage(role: .system, content: [.text(systemPrompt)]),
-            LLMMessage(role: .user, content: [.text("Warm up the focus evaluator.")])
+            LLMMessage(role: .user, content: [.text(promptCacheWarmupUserPrompt)])
         ]
         let changedUserMessages = [
             LLMMessage(role: .system, content: [.text(systemPrompt)]),
@@ -490,7 +503,9 @@ public struct LLMFocusEvaluator {
     public func evaluate(
         task: String,
         recentSnapshots: [ContextSnapshot],
-        previousEvents: [FocusEvent]
+        previousEvents: [FocusEvent],
+        powerStatus: DevicePowerStatus? = nil,
+        visualSampleLimit: Int? = nil
     ) async throws -> LLMEvaluationResult {
         let promptMessages = messages(
             task: task,
@@ -503,6 +518,8 @@ public struct LLMFocusEvaluator {
             textSnapshots: recentSnapshots,
             visualSnapshots: recentSnapshots,
             previousEvents: previousEvents,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit,
             promptMessages: promptMessages
         )
     }
@@ -511,7 +528,9 @@ public struct LLMFocusEvaluator {
         task: String,
         textSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
-        previousEvents: [FocusEvent]
+        previousEvents: [FocusEvent],
+        powerStatus: DevicePowerStatus? = nil,
+        visualSampleLimit: Int? = nil
     ) async throws -> LLMEvaluationResult {
         let promptMessages = messages(
             task: task,
@@ -524,6 +543,8 @@ public struct LLMFocusEvaluator {
             textSnapshots: textSnapshots,
             visualSnapshots: visualSnapshots,
             previousEvents: previousEvents,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit,
             promptMessages: promptMessages
         )
     }
@@ -533,6 +554,8 @@ public struct LLMFocusEvaluator {
         textSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?,
         promptMessages: [LLMMessage]
     ) async throws -> LLMEvaluationResult {
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
@@ -571,6 +594,8 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings
@@ -654,7 +679,6 @@ public struct LLMFocusEvaluator {
         - screenContent: high-level summary of visible page/app content.
         - observedActivity: visible operation or progress signals across captures.
         - taskAlignment: whether visible content matches the current task.
-        - decisionRationale: why the final state follows from the observations.
         - userEngaged: boolean, whether the user appears present and active, or null if unclear.
         - taskAligned: boolean, whether visible work appears to support the current task, or null if unclear.
 
@@ -670,8 +694,16 @@ public struct LLMFocusEvaluator {
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","decisionRationale":"short rationale","userEngaged":true,"taskAligned":true},"focusTarget":{"appName":"app from current captures","windowTitle":"window title or null","browserTitle":"browser title or null","browserURL":"browser URL or null"},"state":"focused|uncertain|distracted|stuck|resting|away","reason":"short reason","nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","userEngaged":true,"screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","taskAligned":true},"reason":"short reason","state":"focused|uncertain|distracted|stuck|resting|away","focusTarget":{"appName":"app from current captures","windowTitle":"window title or null","browserTitle":"browser title or null","browserURL":"browser URL or null"},"nudge":"short Chinese nudge or null"}
         """
+    }
+
+    private var promptCacheWarmupUserPrompt: String {
+        // Tuned for llama-server prompt cache: keep the first checkpoint near the end of the stable system prompt.
+        let padding = (0..<Self.promptCacheWarmupPaddingLineCount)
+            .map { "padding token group \($0): deterministic warmup suffix." }
+            .joined(separator: "\n")
+        return "Warm up the focus evaluator.\n\(padding)"
     }
 
     private func messages(
@@ -695,7 +727,10 @@ public struct LLMFocusEvaluator {
             """)])
         ]
 
-        let orderedTextSnapshots = textSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
+        let orderedTextSnapshots = textSnapshots
+            .filter { !visualSnapshotIDs.contains($0.id) }
+            .sorted { $0.timestamp < $1.timestamp }
         if !orderedTextSnapshots.isEmpty {
             messages.append(LLMMessage(role: .user, content: [.text(textTimeline(for: orderedTextSnapshots))]))
         }
@@ -731,8 +766,6 @@ public struct LLMFocusEvaluator {
         for (index, snapshot) in snapshots.enumerated() {
             lines.append("")
             lines.append(contentsOf: captureMetadataLines(for: snapshot, label: "timeline[\(index + 1)]"))
-            lines.append("screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))")
-            lines.append("camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))")
         }
         return lines.joined(separator: "\n")
     }

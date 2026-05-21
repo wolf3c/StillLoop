@@ -23,6 +23,9 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
             supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
             bundledLLMEngineFactory: { _, _ in engine }
         )
         model.selectModelSource(.bundled)
@@ -72,6 +75,9 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
             supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
             bundledLLMEngineFactory: { _, _ in engine }
         )
         model.selectModelSource(.bundled)
@@ -121,6 +127,108 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(succeeded["llmPromptMS"] as? Double), 5_877.439, accuracy: 0.001)
         XCTAssertEqual(succeeded["llmPredictedN"] as? Int, 336)
         XCTAssertEqual(try XCTUnwrap(succeeded["llmPredictedMS"] as? Double), 6_763.672, accuracy: 0.001)
+        XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
+        XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
+        XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
+        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 3)
+    }
+
+    func testBatteryPowerLimitsBundledEvaluationToLatestVisualSampleButKeepsTextContext() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = SuccessfulDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .battery, lowPowerMode: false, thermalState: .fair)
+            ),
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "测试电池模式采样",
+            snapshots: makeDiagnosticSnapshots(count: 4),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 2)
+        XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
+        XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .battery)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
+        XCTAssertFalse(engine.flattenedPrompt.contains("visual sample[1]\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
+
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(started["powerSource"] as? String, "battery")
+        XCTAssertEqual(started["lowPowerMode"] as? Bool, false)
+        XCTAssertEqual(started["thermalState"] as? String, "fair")
+        XCTAssertEqual(started["visualSampleLimit"] as? Int, 1)
+        XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 4)
+        XCTAssertEqual(succeeded["powerSource"] as? String, "battery")
+        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
+    }
+
+    func testLowPowerModeLimitsVisualSamplesEvenOnACPower() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = SuccessfulDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: true, thermalState: .serious)
+            ),
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "测试低电量模式采样",
+            snapshots: makeDiagnosticSnapshots(count: 4),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .acPower)
+        XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.lowPowerMode, true)
+        XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.thermalState, .serious)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
+    }
+
+    func testUnknownPowerSourceKeepsDefaultVisualSampleLimitUnlessLowPowerModeIsEnabled() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = SuccessfulDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .unknown, lowPowerMode: false, thermalState: .unknown)
+            ),
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "测试未知电源",
+            snapshots: makeDiagnosticSnapshots(count: 4),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 6)
+        XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
+        XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .unknown)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 3)
     }
 
     func testBundledPromptCacheProbeWritesScalarDiagnosticsWhenEnabled() async throws {
@@ -212,6 +320,24 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         return supportDirectory
     }
 
+    private func makeDiagnosticSnapshots(count: Int) -> [ContextSnapshot] {
+        (1...count).map { index in
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
+                activeAppName: "app-\(index)",
+                windowTitle: "window-\(index)",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: true,
+                cameraFrameAvailable: true,
+                screenshotMimeType: "image/jpeg",
+                screenshotData: Data([0xFF, 0xD8, UInt8(index)]),
+                cameraMimeType: "image/jpeg",
+                cameraData: Data([0xFF, 0xD8, UInt8(100 + index)])
+            )
+        }
+    }
+
     private func diagnosticEvents(at fileURL: URL) throws -> [[String: Any]] {
         try String(contentsOf: fileURL, encoding: .utf8)
             .split(separator: "\n")
@@ -269,12 +395,25 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
     """
 
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+    private(set) var lastMessages: [LLMMessage] = []
+    var flattenedPrompt: String {
+        lastMessages
+            .flatMap(\.content)
+            .compactMap { content -> String? in
+                if case .text(let text) = content {
+                    return text
+                }
+                return nil
+            }
+            .joined(separator: "\n")
+    }
 
     func complete(messages: [LLMMessage]) async throws -> String {
         try await complete(messages: messages, responseFormat: nil)
     }
 
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        lastMessages = messages
         lastRequestTransportMetrics = LLMRequestTransportMetrics(
             payloadBytes: 452_010,
             responseChars: response.count,
@@ -297,6 +436,14 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             ])
         )
         return response
+    }
+}
+
+private struct StubDevicePowerStatusProvider: DevicePowerStatusProviding {
+    var status: DevicePowerStatus
+
+    func currentDevicePowerStatus() -> DevicePowerStatus {
+        status
     }
 }
 

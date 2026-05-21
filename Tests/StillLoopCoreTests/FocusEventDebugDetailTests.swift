@@ -2,6 +2,19 @@ import XCTest
 @testable import StillLoopCore
 
 final class FocusEventDebugDetailTests: XCTestCase {
+    func testDevicePowerStatusRoundTripsThroughJSON() throws {
+        let status = DevicePowerStatus(
+            powerSource: .battery,
+            lowPowerMode: true,
+            thermalState: .fair
+        )
+
+        let data = try JSONEncoder().encode(status)
+        let decoded = try JSONDecoder().decode(DevicePowerStatus.self, from: data)
+
+        XCTAssertEqual(decoded, status)
+    }
+
     func testMakeCapturesSampledContextAndEvaluationResult() {
         let snapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -33,14 +46,19 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 payloadBytes: 5_678,
                 responseChars: 901,
                 inputTextCharacterCount: 234,
-                inputTextTokenCount: 56
+                inputTextTokenCount: 56,
+                powerStatus: DevicePowerStatus(
+                    powerSource: .battery,
+                    lowPowerMode: true,
+                    thermalState: .fair
+                ),
+                visualSampleLimit: 1
             ),
             analysis: LLMFocusAnalysis(
                 userEngagement: "用户在场，姿态稳定。",
                 screenContent: "屏幕显示 StillLoop 相关代码。",
                 observedActivity: "采样期间上下文保持在同一工程。",
-                taskAlignment: "内容与调优识别能力相关。",
-                decisionRationale: "任务相关但缺少明确推进信号。"
+                taskAlignment: "内容与调优识别能力相关。"
             )
         )
 
@@ -58,11 +76,12 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(detail.shouldNudge)
         XCTAssertEqual(detail.nudge, "回到：调优识别能力")
         XCTAssertEqual(detail.analysis?.taskAlignment, "内容与调优识别能力相关。")
-        XCTAssertEqual(detail.analysis?.decisionRationale, "任务相关但缺少明确推进信号。")
         XCTAssertEqual(detail.modelRunDurationSeconds, 1.234)
         XCTAssertEqual(detail.requestDebugMetrics?.visualCaptureCount, 1)
         XCTAssertEqual(detail.requestDebugMetrics?.payloadBytes, 5_678)
         XCTAssertEqual(detail.requestDebugMetrics?.inputTextTokenCount, 56)
+        XCTAssertEqual(detail.requestDebugMetrics?.powerStatus?.powerSource, .battery)
+        XCTAssertEqual(detail.requestDebugMetrics?.visualSampleLimit, 1)
         XCTAssertEqual(detail.capturedContext.count, 1)
         XCTAssertTrue(detail.capturedContext[0].contains("capture[1] 1970-01-01T00:00:01Z"))
         XCTAssertTrue(detail.capturedContext[0].contains("Codex · StillLoop"))
@@ -192,6 +211,47 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.hasPrefix("LLM timings：") })
     }
 
+    func testFormattedRequestMetricLinesIncludesDeviceStatusWhenPresent() {
+        let metrics = LLMRequestDebugMetrics(
+            visualCaptureCount: 1,
+            imageCount: 2,
+            textSnapshotCount: 3,
+            previousEventCount: 4,
+            payloadBytes: 5_678,
+            responseChars: 901,
+            inputTextCharacterCount: 234,
+            inputTextTokenCount: 56,
+            powerStatus: DevicePowerStatus(
+                powerSource: .battery,
+                lowPowerMode: true,
+                thermalState: .fair
+            ),
+            visualSampleLimit: 1
+        )
+
+        let lines = FocusEventDebugDetail.formattedRequestMetricLines(metrics)
+
+        XCTAssertTrue(lines.contains("设备状态：powerSource=battery, lowPowerMode=true, thermalState=fair, visualSampleLimit=1"))
+    }
+
+    func testLegacyRequestMetricsDecodeWithoutDeviceStatus() throws {
+        let data = Data("""
+        {
+          "visualCaptureCount": 1,
+          "imageCount": 2,
+          "textSnapshotCount": 3,
+          "previousEventCount": 4,
+          "responseChars": 901,
+          "inputTextCharacterCount": 234
+        }
+        """.utf8)
+
+        let metrics = try JSONDecoder().decode(LLMRequestDebugMetrics.self, from: data)
+
+        XCTAssertNil(metrics.powerStatus)
+        XCTAssertNil(metrics.visualSampleLimit)
+    }
+
     func testRecognitionDebugClipboardTextIncludesEveryVisibleSection() {
         let nudgeTarget = FocusReturnTarget(
             appName: "Codex",
@@ -225,6 +285,12 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     responseChars: 901,
                     inputTextCharacterCount: 234,
                     inputTextTokenCount: 56,
+                    powerStatus: DevicePowerStatus(
+                        powerSource: .battery,
+                        lowPowerMode: true,
+                        thermalState: .fair
+                    ),
+                    visualSampleLimit: 1,
                     created: 1_779_341_711,
                     usage: .object([
                         "completion_tokens": .int(8),
@@ -245,8 +311,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     userEngagement: "用户在阅读页面。",
                     screenContent: "页面显示文章内容。",
                     observedActivity: "连续停留在浏览器。",
-                    taskAlignment: "内容与发布说明无关。",
-                    decisionRationale: "当前内容不支持任务推进。"
+                    taskAlignment: "内容与发布说明无关。"
                 )
             )
         )
@@ -263,6 +328,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("模型运行时长：1.23 秒"))
         XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=2, textSnapshotCount=3, previousEventCount=4"))
         XCTAssertTrue(text.contains("输入规模：payloadBytes=5678, responseChars=901, inputTextCharacterCount=234, inputTextTokenCount=56"))
+        XCTAssertTrue(text.contains("设备状态：powerSource=battery, lowPowerMode=true, thermalState=fair, visualSampleLimit=1"))
         XCTAssertTrue(text.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
         XCTAssertTrue(text.contains("LLM created：1779341711"))
         XCTAssertTrue(text.contains(#"LLM timings：{"predicted_ms":1188.5,"predicted_n":8,"prompt_ms":521.25,"prompt_n":15}"#))
@@ -270,7 +336,7 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("返回目标：Codex · StillLoop"))
         XCTAssertTrue(text.contains("窗口：StillLoop"))
         XCTAssertTrue(text.contains("模型分析"))
-        XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))
+        XCTAssertFalse(text.contains("判断依据：当前内容不支持任务推进。"))
     }
 
     func testRecognitionDebugClipboardTextOmitsReturnTargetWhenMissing() {

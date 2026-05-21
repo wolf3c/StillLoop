@@ -279,6 +279,7 @@ final class AppModel: ObservableObject {
     private let bundledModelRuntime: BundledModelRuntimeManaging
     private let bundledLLMEngineFactory: (URL, String) -> LocalLLMEngine
     private let launchAtLoginManager: LaunchAtLoginManaging
+    private let devicePowerStatusProvider: DevicePowerStatusProviding
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
     private let browserAutomationNoticePresenter: BrowserAutomationNoticePresenter
     private let returnTargetOpener: FocusReturnTargetOpening
@@ -556,6 +557,7 @@ final class AppModel: ObservableObject {
         telemetry: StillLoopTelemetryRecording? = nil,
         diagnosticLogger overrideDiagnosticLogger: DiagnosticLogging? = nil,
         launchAtLoginManager: LaunchAtLoginManaging? = nil,
+        devicePowerStatusProvider: DevicePowerStatusProviding? = nil,
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         returnTargetOpener: FocusReturnTargetOpening? = nil
@@ -573,6 +575,7 @@ final class AppModel: ObservableObject {
         }
         let resolvedLaunchAtLoginManager = launchAtLoginManager ?? LaunchAtLoginManagerFactory.defaultManager()
         self.launchAtLoginManager = resolvedLaunchAtLoginManager
+        self.devicePowerStatusProvider = devicePowerStatusProvider ?? MacDevicePowerStatusProvider()
         let nudgeOverlayPresenter = NudgeOverlayPresenter()
         self.nudgeOverlayPresenter = nudgeOverlayPresenter
         self.returnTargetOpener = returnTargetOpener ?? MacFocusReturnTargetOpener()
@@ -2076,7 +2079,13 @@ final class AppModel: ObservableObject {
         let pendingCount = allPendingSnapshots.count
         let contextSnapshots = Self.evaluationContextSnapshots(from: allPendingSnapshots)
         let contextCount = contextSnapshots.count
-        let visualSnapshots = SnapshotSampler.select(contextSnapshots)
+        let powerStatus = devicePowerStatusProvider.currentDevicePowerStatus()
+        let visualSampleLimit = powerStatus.visualSampleLimit(defaultLimit: SnapshotSampler.defaultLimit)
+        let powerFields = Self.devicePowerDiagnosticFields(
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit
+        )
+        let visualSnapshots = SnapshotSampler.select(contextSnapshots, limit: visualSampleLimit)
         diagnosticLogger.record(
             "evaluation.selected",
             fields: diagnosticFields(
@@ -2087,7 +2096,7 @@ final class AppModel: ObservableObject {
                     "textCount": .int(contextCount),
                     "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds)),
                     "selectedCount": .int(visualSnapshots.count)
-                ]
+                ].merging(powerFields) { current, _ in current }
             )
         )
         analysisPhase = .contextReady
@@ -2102,6 +2111,8 @@ final class AppModel: ObservableObject {
             task: session.task,
             snapshots: contextSnapshots,
             visualSnapshots: visualSnapshots,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit,
             previousEvents: session.events
         )
         diagnosticLogger.record(
@@ -2117,7 +2128,7 @@ final class AppModel: ObservableObject {
                     "pendingCount": .int(pendingCount),
                     "textCount": .int(contextCount),
                     "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds))
-                ]
+                ].merging(powerFields) { current, _ in current }
             )
         )
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
@@ -2240,6 +2251,12 @@ final class AppModel: ObservableObject {
         if let inputTextTokenCount = metrics.inputTextTokenCount {
             fields["llmInputTextTokenCount"] = .int(inputTextTokenCount)
         }
+        fields.merge(
+            devicePowerDiagnosticFields(
+                powerStatus: metrics.powerStatus,
+                visualSampleLimit: metrics.visualSampleLimit
+            )
+        ) { current, _ in current }
         if let created = metrics.created {
             fields["llmCreated"] = .int(created)
         }
@@ -2274,6 +2291,22 @@ final class AppModel: ObservableObject {
             if let predictedPerSecond = timings.diagnosticDouble(at: ["predicted_per_second"]) {
                 fields["llmPredictedPerSecond"] = .double(predictedPerSecond)
             }
+        }
+        return fields
+    }
+
+    private static func devicePowerDiagnosticFields(
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) -> [String: DiagnosticLogValue] {
+        var fields: [String: DiagnosticLogValue] = [:]
+        if let powerStatus {
+            fields["powerSource"] = .string(powerStatus.powerSource.rawValue)
+            fields["lowPowerMode"] = .bool(powerStatus.lowPowerMode)
+            fields["thermalState"] = .string(powerStatus.thermalState.rawValue)
+        }
+        if let visualSampleLimit {
+            fields["visualSampleLimit"] = .int(visualSampleLimit)
         }
         return fields
     }
@@ -2355,9 +2388,18 @@ final class AppModel: ObservableObject {
         task: String,
         snapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot]? = nil,
+        powerStatus: DevicePowerStatus? = nil,
+        visualSampleLimit: Int? = nil,
         previousEvents: [FocusEvent]
     ) async -> LLMEvaluationResult {
-        let visualSnapshots = visualSnapshots ?? snapshots
+        let resolvedPowerStatus = powerStatus ?? devicePowerStatusProvider.currentDevicePowerStatus()
+        let resolvedVisualSampleLimit = visualSampleLimit
+            ?? resolvedPowerStatus.visualSampleLimit(defaultLimit: SnapshotSampler.defaultLimit)
+        let visualSnapshots = visualSnapshots ?? SnapshotSampler.select(snapshots, limit: resolvedVisualSampleLimit)
+        let powerFields = Self.devicePowerDiagnosticFields(
+            powerStatus: resolvedPowerStatus,
+            visualSampleLimit: resolvedVisualSampleLimit
+        )
         diagnosticLogger.record(
             "model.evaluation.started",
             fields: diagnosticFields(
@@ -2366,7 +2408,7 @@ final class AppModel: ObservableObject {
                     "modelSource": .string(modelSetupSelection.source.rawValue),
                     "previousEventCount": .int(previousEvents.count),
                     "taskLength": .int(task.count)
-                ]
+                ].merging(powerFields) { current, _ in current }
             )
         )
         if modelSetupSelection.source == .bundled, isCurrentSessionUsingRuleBasedModelFallback {
@@ -2387,6 +2429,8 @@ final class AppModel: ObservableObject {
                         task: task,
                         snapshots: snapshots,
                         visualSnapshots: visualSnapshots,
+                        powerStatus: resolvedPowerStatus,
+                        visualSampleLimit: resolvedVisualSampleLimit,
                         previousEvents: previousEvents
                     )
                 } catch {
@@ -2457,7 +2501,9 @@ final class AppModel: ObservableObject {
                     task: task,
                     textSnapshots: snapshots,
                     visualSnapshots: visualSnapshots,
-                    previousEvents: previousEvents
+                    previousEvents: previousEvents,
+                    powerStatus: resolvedPowerStatus,
+                    visualSampleLimit: resolvedVisualSampleLimit
                 )
                 result.evaluator = "手动模型"
                 localLLMStatus = "当前评估：手动模型已连接"
@@ -2512,13 +2558,17 @@ final class AppModel: ObservableObject {
         task: String,
         snapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
+        powerStatus: DevicePowerStatus,
+        visualSampleLimit: Int,
         previousEvents: [FocusEvent]
     ) async throws -> LLMEvaluationResult {
         var result = try await llmEvaluator.evaluate(
             task: task,
             textSnapshots: snapshots,
             visualSnapshots: visualSnapshots,
-            previousEvents: previousEvents
+            previousEvents: previousEvents,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit
         )
         result.evaluator = "自带模型"
         diagnosticLogger.record(

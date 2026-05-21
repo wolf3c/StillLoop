@@ -24,7 +24,7 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("页面内容："))
         XCTAssertTrue(source.contains("可见操作："))
         XCTAssertTrue(source.contains("任务匹配："))
-        XCTAssertTrue(source.contains("判断依据："))
+        XCTAssertFalse(source.contains("判断依据："))
     }
 
     func testRecognitionDebugPopoverShowsModelRunDuration() throws {

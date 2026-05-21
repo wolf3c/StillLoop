@@ -10,12 +10,20 @@ final class SnapshotSamplingTests: XCTestCase {
         XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-2", "app-3"])
     }
 
-    func testSamplesFirstAndRecentSnapshotsWhenBacklogExceedsLimit() {
+    func testSamplesMostRecentSnapshotsWhenBacklogExceedsLimit() {
         let snapshots = makeSnapshots(count: 18)
 
         let selected = SnapshotSampler.select(snapshots)
 
-        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-17", "app-18"])
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-16", "app-17", "app-18"])
+    }
+
+    func testLimitOneSelectsOnlyMostRecentSnapshot() {
+        let snapshots = makeSnapshots(count: 5)
+
+        let selected = SnapshotSampler.select(snapshots, limit: 1)
+
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-5"])
     }
 
     func testPreservesCompleteSnapshotContentsWhenSampling() throws {

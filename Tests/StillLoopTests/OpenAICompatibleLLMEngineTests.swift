@@ -90,10 +90,12 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         configuration.protocolClasses = [URLProtocolStub.self]
         let session = URLSession(configuration: configuration)
         var requestBody: [String: Any]?
+        var requestBodyText = ""
 
         URLProtocolStub.requestHandler = { request in
             if request.url?.path == "/v1/chat/completions" {
                 let data = try XCTUnwrap(request.bodyData)
+                requestBodyText = String(decoding: data, as: UTF8.self)
                 requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
                 {"choices":[{"message":{"content":"{}"}}]}
@@ -123,15 +125,42 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(jsonSchema["name"] as? String, "focus_evaluation")
         XCTAssertEqual(jsonSchema["strict"] as? Bool, true)
         let schema = try XCTUnwrap(jsonSchema["schema"] as? [String: Any])
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""analysis":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""reason":{"#)?.lowerBound)
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""reason":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""state":{"#)?.lowerBound)
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""state":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""focusTarget":{"#)?.lowerBound)
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""focusTarget":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""nudge":{"#)?.lowerBound)
+        )
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
         let analysis = try XCTUnwrap(properties["analysis"] as? [String: Any])
         let analysisProperties = try XCTUnwrap(analysis["properties"] as? [String: Any])
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""userEngagement":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""userEngaged":{"#)?.lowerBound)
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(requestBodyText.range(of: #""userEngaged":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""screenContent":{"#)?.lowerBound)
+        )
         let userEngaged = try XCTUnwrap(analysisProperties["userEngaged"] as? [String: Any])
         let taskAligned = try XCTUnwrap(analysisProperties["taskAligned"] as? [String: Any])
         XCTAssertEqual(userEngaged["type"] as? String, "boolean")
         XCTAssertEqual(taskAligned["type"] as? String, "boolean")
-        XCTAssertTrue((analysis["required"] as? [String])?.contains("userEngaged") == true)
-        XCTAssertTrue((analysis["required"] as? [String])?.contains("taskAligned") == true)
+        XCTAssertEqual(
+            analysis["required"] as? [String],
+            ["userEngagement", "userEngaged", "screenContent", "observedActivity", "taskAlignment", "taskAligned"]
+        )
+        XCTAssertNil(analysisProperties["decisionRationale"])
         let state = try XCTUnwrap(properties["state"] as? [String: Any])
         XCTAssertEqual(state["enum"] as? [String], ["focused", "uncertain", "distracted", "stuck", "resting", "away"])
         let focusTarget = try XCTUnwrap(properties["focusTarget"] as? [String: Any])
@@ -143,7 +172,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertNotNil(focusTargetProperties["browserURL"] as? [String: Any])
         XCTAssertEqual(focusTarget["required"] as? [String], ["appName", "windowTitle", "browserTitle", "browserURL"])
         XCTAssertNil(properties["confidence"])
-        XCTAssertTrue((schema["required"] as? [String])?.contains("focusTarget") == true)
+        XCTAssertEqual(schema["required"] as? [String], ["analysis", "reason", "state", "focusTarget", "nudge"])
         XCTAssertFalse((schema["required"] as? [String])?.contains("confidence") == true)
     }
 
