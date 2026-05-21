@@ -19,6 +19,13 @@ public protocol LLMFocusPromptCachePrewarming: AnyObject {
     ) async throws
 }
 
+public protocol LLMFocusPromptCacheProbing: AnyObject {
+    func runFocusPromptCacheProbe(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws -> LLMRequestTransportMetrics
+}
+
 public enum LLMUsageValue: Codable, Equatable {
     case object([String: LLMUsageValue])
     case array([LLMUsageValue])
@@ -130,6 +137,38 @@ public struct LLMMessage: Equatable {
     public init(role: Role, content: [Content]) {
         self.role = role
         self.content = content
+    }
+}
+
+public enum LLMFocusPromptCacheProbeCase: String, CaseIterable, Equatable {
+    case warmupA
+    case warmupB
+    case userChangedNoImage
+    case focusShapeNoImage
+}
+
+public struct LLMFocusPromptCacheProbeRequest: Equatable {
+    public var probeCase: LLMFocusPromptCacheProbeCase
+    public var messages: [LLMMessage]
+    public var responseFormat: LLMResponseFormat?
+    public var visualCaptureCount: Int
+    public var textSnapshotCount: Int
+    public var previousEventCount: Int
+
+    public init(
+        probeCase: LLMFocusPromptCacheProbeCase,
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?,
+        visualCaptureCount: Int = 0,
+        textSnapshotCount: Int = 0,
+        previousEventCount: Int = 0
+    ) {
+        self.probeCase = probeCase
+        self.messages = messages
+        self.responseFormat = responseFormat
+        self.visualCaptureCount = visualCaptureCount
+        self.textSnapshotCount = textSnapshotCount
+        self.previousEventCount = previousEventCount
     }
 }
 
@@ -376,6 +415,76 @@ public struct LLMFocusEvaluator {
             ],
             responseFormat: .focusEvaluation
         )
+    }
+
+    public func promptCacheProbeRequests() -> [LLMFocusPromptCacheProbeRequest] {
+        let warmupMessages = [
+            LLMMessage(role: .system, content: [.text(systemPrompt)]),
+            LLMMessage(role: .user, content: [.text("Warm up the focus evaluator.")])
+        ]
+        let changedUserMessages = [
+            LLMMessage(role: .system, content: [.text(systemPrompt)]),
+            LLMMessage(role: .user, content: [.text("Prompt cache probe changed user message.")])
+        ]
+        let textSnapshots = [
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1),
+                activeAppName: "Codex",
+                windowTitle: "StillLoop",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: false,
+                cameraFrameAvailable: false
+            ),
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 2),
+                activeAppName: "Google Chrome",
+                windowTitle: "TraceMind",
+                browserTitle: "TraceMind",
+                browserURL: "https://tracemind.sandbox.galaxycloud.app/",
+                screenshotAvailable: false,
+                cameraFrameAvailable: false
+            )
+        ]
+        let previousEvents = [
+            FocusEvent(
+                timestamp: Date(timeIntervalSince1970: 0),
+                state: .focused,
+                context: "Codex -> Google Chrome · TraceMind",
+                nudge: nil
+            )
+        ]
+        let focusShapeMessages = messages(
+            task: "优化 tracemind",
+            textSnapshots: textSnapshots,
+            visualSnapshots: [],
+            previousEvents: previousEvents
+        )
+        return [
+            LLMFocusPromptCacheProbeRequest(
+                probeCase: .warmupA,
+                messages: warmupMessages,
+                responseFormat: .focusEvaluation
+            ),
+            LLMFocusPromptCacheProbeRequest(
+                probeCase: .warmupB,
+                messages: warmupMessages,
+                responseFormat: .focusEvaluation
+            ),
+            LLMFocusPromptCacheProbeRequest(
+                probeCase: .userChangedNoImage,
+                messages: changedUserMessages,
+                responseFormat: .focusEvaluation
+            ),
+            LLMFocusPromptCacheProbeRequest(
+                probeCase: .focusShapeNoImage,
+                messages: focusShapeMessages,
+                responseFormat: .focusEvaluation,
+                visualCaptureCount: 0,
+                textSnapshotCount: textSnapshots.count,
+                previousEventCount: previousEvents.count
+            )
+        ]
     }
 
     public func evaluate(

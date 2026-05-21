@@ -49,6 +49,58 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.lastMessages.isEmpty)
     }
 
+    func testPromptCacheProbeRequestsUseStableSystemPromptAndExpectedCases() throws {
+        let evaluator = LLMFocusEvaluator(engine: StubEngine(response: "{}"))
+
+        let requests = evaluator.promptCacheProbeRequests()
+
+        XCTAssertEqual(requests.map(\.probeCase), [.warmupA, .warmupB, .userChangedNoImage, .focusShapeNoImage])
+        XCTAssertEqual(requests.map(\.responseFormat), [.focusEvaluation, .focusEvaluation, .focusEvaluation, .focusEvaluation])
+        XCTAssertEqual(requests[0].messages, requests[1].messages)
+        let systemPrompts = try requests.map { request in
+            let firstMessage = try XCTUnwrap(request.messages.first)
+            XCTAssertEqual(firstMessage.role, .system)
+            guard case .text(let systemPrompt)? = firstMessage.content.first else {
+                XCTFail("Expected system prompt text")
+                return ""
+            }
+            return systemPrompt
+        }
+        XCTAssertEqual(Set(systemPrompts).count, 1)
+        XCTAssertTrue(systemPrompts[0].contains("You are a focus-session evaluator."))
+        XCTAssertTrue(systemPrompts[0].contains("Return only strict JSON:"))
+        XCTAssertFalse(requests.contains { request in
+            request.messages.contains { message in
+                message.content.contains { content in
+                    if case .image = content {
+                        return true
+                    }
+                    return false
+                }
+            }
+        })
+
+        let warmupText = try XCTUnwrap(requests[0].messages.last?.content.compactMap { content -> String? in
+            if case .text(let text) = content { return text }
+            return nil
+        }.joined(separator: "\n"))
+        XCTAssertEqual(warmupText, "Warm up the focus evaluator.")
+
+        let changedUserText = requests[2].messages.flatMap(\.content).compactMap { content -> String? in
+            if case .text(let text) = content { return text }
+            return nil
+        }.joined(separator: "\n")
+        XCTAssertTrue(changedUserText.contains("Prompt cache probe changed user message."))
+
+        let focusShapeText = requests[3].messages.flatMap(\.content).compactMap { content -> String? in
+            if case .text(let text) = content { return text }
+            return nil
+        }.joined(separator: "\n")
+        XCTAssertTrue(focusShapeText.contains("Current task:"))
+        XCTAssertTrue(focusShapeText.contains("Recent state log"))
+        XCTAssertTrue(focusShapeText.contains("Text timeline:"))
+    }
+
     func testSuccessfulModelEvaluationRecordsRequestDebugMetrics() async throws {
         let response = """
         {"state":"uncertain","reason":"Ambiguous context","nudge":null}

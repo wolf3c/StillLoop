@@ -1,7 +1,7 @@
 import Foundation
 import StillLoopCore
 
-final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming {
+final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
     private static let defaultMaxTokens = 900
     private static let focusEvaluationMaxTokens = 420
 
@@ -343,6 +343,29 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             messages: messages,
             responseFormat: responseFormat,
             maxTokens: 1
+        )
+    }
+
+    func runFocusPromptCacheProbe(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws -> LLMRequestTransportMetrics {
+        let result = try await sendChatCompletion(
+            messages: messages,
+            responseFormat: responseFormat,
+            maxTokens: 1
+        )
+        let body = try JSONDecoder().decode(ResponseBody.self, from: result.data)
+        guard let content = body.choices.first?.message.content else {
+            throw URLError(.cannotParseResponse)
+        }
+        return LLMRequestTransportMetrics(
+            payloadBytes: result.payloadBytes,
+            responseChars: content.count,
+            inputTextTokenCount: nil,
+            created: body.created,
+            usage: body.usage,
+            timings: body.timings
         )
     }
 

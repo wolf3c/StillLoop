@@ -195,6 +195,66 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertNil(engine.lastRequestTransportMetrics)
     }
 
+    func testPromptCacheProbeUsesSingleTokenStructuredRequestAndReturnsMetrics() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestPath: String?
+        var requestBody: [String: Any]?
+        var payloadBytes: Int?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                requestPath = request.url?.path
+                let data = try XCTUnwrap(request.bodyData)
+                payloadBytes = data.count
+                requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{"}}],"created":1779348997,"usage":{"completion_tokens":1,"prompt_tokens":3699,"prompt_tokens_details":{"cached_tokens":221},"total_tokens":3700},"timings":{"cache_n":221,"prompt_n":3478,"prompt_ms":5877.439,"predicted_n":1,"predicted_ms":20.5}}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+            disablesReasoning: true,
+            usesResponseFormat: true,
+            session: session
+        )
+
+        let metrics = try await engine.runFocusPromptCacheProbe(
+            messages: [
+                LLMMessage(role: .system, content: [.text("Stable system prompt")]),
+                LLMMessage(role: .user, content: [.text("Warm up the focus evaluator.")])
+            ],
+            responseFormat: .focusEvaluation
+        )
+
+        XCTAssertEqual(requestPath, "/v1/chat/completions")
+        XCTAssertEqual(requestBody?["max_tokens"] as? Int, 1)
+        XCTAssertEqual(requestBody?["stream"] as? Bool, false)
+        let kwargs = try XCTUnwrap(requestBody?["chat_template_kwargs"] as? [String: Any])
+        XCTAssertEqual(kwargs["enable_thinking"] as? Bool, false)
+        let responseFormat = try XCTUnwrap(requestBody?["response_format"] as? [String: Any])
+        XCTAssertEqual(responseFormat["type"] as? String, "json_schema")
+        let jsonSchema = try XCTUnwrap(responseFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(jsonSchema["name"] as? String, "focus_evaluation")
+        XCTAssertEqual(metrics.payloadBytes, payloadBytes)
+        XCTAssertEqual(metrics.responseChars, 1)
+        XCTAssertEqual(metrics.created, 1_779_348_997)
+        XCTAssertEqual(
+            metrics.usage?.compactJSONString,
+            #"{"completion_tokens":1,"prompt_tokens":3699,"prompt_tokens_details":{"cached_tokens":221},"total_tokens":3700}"#
+        )
+        XCTAssertEqual(
+            metrics.timings?.compactJSONString,
+            #"{"cache_n":221,"predicted_ms":20.5,"predicted_n":1,"prompt_ms":5877.439,"prompt_n":3478}"#
+        )
+        XCTAssertNil(engine.lastRequestTransportMetrics)
+    }
+
     func testCompletionRequestIgnoresStructuredResponseFormatByDefault() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]

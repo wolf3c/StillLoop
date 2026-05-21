@@ -285,6 +285,7 @@ final class AppModel: ObservableObject {
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
     private let telemetry: StillLoopTelemetryRecording
     private let diagnosticLogger: DiagnosticLogging
+    private let promptCacheProbeEnabled: Bool
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var unanalyzedSnapshots: [ContextSnapshot] = []
@@ -556,10 +557,12 @@ final class AppModel: ObservableObject {
         diagnosticLogger overrideDiagnosticLogger: DiagnosticLogging? = nil,
         launchAtLoginManager: LaunchAtLoginManaging? = nil,
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         returnTargetOpener: FocusReturnTargetOpening? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
+        self.promptCacheProbeEnabled = environment["STILLLOOP_RUN_PROMPT_CACHE_PROBE"] == "1"
         self.bundledLLMEngineFactory = bundledLLMEngineFactory ?? { baseURL, modelID in
             OpenAICompatibleLLMEngine(
                 baseURL: baseURL,
@@ -581,14 +584,14 @@ final class AppModel: ObservableObject {
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
         let storedModelSource = userDefaults.string(forKey: DefaultsKey.modelSource)
             .flatMap(ModelSetupSelection.Source.init(rawValue:))
-        let environmentForcesLocalLLM = ProcessInfo.processInfo.environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
+        let environmentForcesLocalLLM = environment["STILLLOOP_USE_LOCAL_LLM"] == "1"
         let resolvedBaseURLText = AppModel.resolvedLLMBaseURLText(
-            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_BASE_URL"],
+            environmentValue: environment["STILLLOOP_LLM_BASE_URL"],
             storedValue: userDefaults.string(forKey: DefaultsKey.llmBaseURL),
             preserveStoredValue: storedUseLocalLLM
         )
         let resolvedModelText = AppModel.resolvedLLMModelText(
-            environmentValue: ProcessInfo.processInfo.environment["STILLLOOP_LLM_MODEL"],
+            environmentValue: environment["STILLLOOP_LLM_MODEL"],
             storedValue: userDefaults.string(forKey: DefaultsKey.llmModel),
             preserveStoredValue: storedUseLocalLLM
         )
@@ -1818,6 +1821,7 @@ final class AppModel: ObservableObject {
             llmEngine = engine
             llmEvaluator = evaluator
             await prewarmBundledPromptCacheIfSupported(evaluator)
+            await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: engine)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
             bundledModelRuntimeFailureStatus = nil
@@ -1853,6 +1857,41 @@ final class AppModel: ObservableObject {
                     "failureKind": .string(failure.debugText)
                 ]
             )
+        }
+    }
+
+    private func runBundledPromptCacheProbeIfEnabled(evaluator: LLMFocusEvaluator, engine: LocalLLMEngine) async {
+        guard promptCacheProbeEnabled,
+              let probeEngine = engine as? LLMFocusPromptCacheProbing
+        else { return }
+
+        for request in evaluator.promptCacheProbeRequests() {
+            do {
+                let transportMetrics = try await probeEngine.runFocusPromptCacheProbe(
+                    messages: request.messages,
+                    responseFormat: request.responseFormat
+                )
+                let debugMetrics = Self.promptCacheProbeDebugMetrics(
+                    request: request,
+                    transportMetrics: transportMetrics
+                )
+                var fields: [String: DiagnosticLogValue] = [
+                    "modelSource": .string("bundled"),
+                    "probeCase": .string(request.probeCase.rawValue)
+                ]
+                fields.merge(Self.llmDiagnosticFields(from: debugMetrics)) { current, _ in current }
+                diagnosticLogger.record("model.promptCacheProbe.completed", fields: fields)
+            } catch {
+                let failure = Self.modelInferenceFailurePresentation(for: error)
+                diagnosticLogger.record(
+                    "model.promptCacheProbe.failed",
+                    fields: [
+                        "modelSource": .string("bundled"),
+                        "probeCase": .string(request.probeCase.rawValue),
+                        "failureKind": .string(failure.debugText)
+                    ]
+                )
+            }
         }
     }
 
@@ -2237,6 +2276,47 @@ final class AppModel: ObservableObject {
             }
         }
         return fields
+    }
+
+    private static func promptCacheProbeDebugMetrics(
+        request: LLMFocusPromptCacheProbeRequest,
+        transportMetrics: LLMRequestTransportMetrics
+    ) -> LLMRequestDebugMetrics {
+        LLMRequestDebugMetrics(
+            visualCaptureCount: request.visualCaptureCount,
+            imageCount: llmImageCount(in: request.messages),
+            textSnapshotCount: request.textSnapshotCount,
+            previousEventCount: request.previousEventCount,
+            payloadBytes: transportMetrics.payloadBytes,
+            responseChars: transportMetrics.responseChars ?? 0,
+            inputTextCharacterCount: llmInputTextCharacterCount(in: request.messages),
+            inputTextTokenCount: transportMetrics.inputTextTokenCount,
+            created: transportMetrics.created,
+            usage: transportMetrics.usage,
+            timings: transportMetrics.timings
+        )
+    }
+
+    private static func llmInputTextCharacterCount(in messages: [LLMMessage]) -> Int {
+        messages.reduce(0) { total, message in
+            total + message.content.reduce(0) { subtotal, content in
+                if case .text(let text) = content {
+                    return subtotal + text.count
+                }
+                return subtotal
+            }
+        }
+    }
+
+    private static func llmImageCount(in messages: [LLMMessage]) -> Int {
+        messages.reduce(0) { total, message in
+            total + message.content.filter { content in
+                if case .image = content {
+                    return true
+                }
+                return false
+            }.count
+        }
     }
 
     private static func durationMilliseconds(since startDate: Date) -> Int {

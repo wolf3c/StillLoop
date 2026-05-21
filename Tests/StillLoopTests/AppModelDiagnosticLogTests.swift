@@ -123,6 +123,68 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(succeeded["llmPredictedMS"] as? Double), 6_763.672, accuracy: 0.001)
     }
 
+    func testBundledPromptCacheProbeWritesScalarDiagnosticsWhenEnabled() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = PromptCacheProbeDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: { _, _ in engine },
+            environment: ["STILLLOOP_RUN_PROMPT_CACHE_PROBE": "1"]
+        )
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.probeCallCount, 4)
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let probes = events.filter { $0["event"] as? String == "model.promptCacheProbe.completed" }
+        XCTAssertEqual(probes.map { $0["probeCase"] as? String }, [
+            "warmupA",
+            "warmupB",
+            "userChangedNoImage",
+            "focusShapeNoImage"
+        ])
+        XCTAssertTrue(probes.allSatisfy { $0["modelSource"] as? String == "bundled" })
+        XCTAssertEqual(probes[0]["llmCacheN"] as? Int, 101)
+        XCTAssertEqual(probes[1]["llmCacheN"] as? Int, 202)
+        XCTAssertEqual(probes[2]["llmCachedTokens"] as? Int, 303)
+        XCTAssertEqual(probes[3]["llmPayloadBytes"] as? Int, 40_004)
+        XCTAssertEqual(probes[3]["llmCreated"] as? Int, 1_779_349_004)
+        XCTAssertEqual(probes[3]["llmPromptN"] as? Int, 504)
+        XCTAssertEqual(try XCTUnwrap(probes[3]["llmPromptMS"] as? Double), 4.25, accuracy: 0.001)
+        XCTAssertEqual(probes[3]["llmPredictedN"] as? Int, 1)
+        XCTAssertEqual(try XCTUnwrap(probes[3]["llmPredictedMS"] as? Double), 0.75, accuracy: 0.001)
+        XCTAssertEqual(probes[3]["llmResponseChars"] as? Int, 1)
+        XCTAssertGreaterThan(try XCTUnwrap(probes[3]["llmInputTextCharacterCount"] as? Int), 0)
+    }
+
+    func testBundledPromptCacheProbeDoesNotRunWhenDisabled() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = PromptCacheProbeDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: { _, _ in engine },
+            environment: [:]
+        )
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.probeCallCount, 0)
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        XCTAssertFalse(events.contains { $0["event"] as? String == "model.promptCacheProbe.completed" })
+    }
+
     private var isolatedDefaults: UserDefaults {
         let suiteName = "StillLoopDiagnosticTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -235,5 +297,49 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             ])
         )
         return response
+    }
+}
+
+private final class PromptCacheProbeDiagnosticLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
+    private(set) var prewarmCallCount = 0
+    private(set) var probeCallCount = 0
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        """
+        {"state":"focused","reason":"unused","nudge":null}
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        prewarmCallCount += 1
+    }
+
+    func runFocusPromptCacheProbe(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws -> LLMRequestTransportMetrics {
+        probeCallCount += 1
+        let cacheN = probeCallCount * 101
+        return LLMRequestTransportMetrics(
+            payloadBytes: 40_000 + probeCallCount,
+            responseChars: 1,
+            inputTextTokenCount: 900 + probeCallCount,
+            created: 1_779_349_000 + probeCallCount,
+            usage: .object([
+                "prompt_tokens_details": .object([
+                    "cached_tokens": .int(cacheN)
+                ])
+            ]),
+            timings: .object([
+                "cache_n": .int(cacheN),
+                "prompt_n": .int(500 + probeCallCount),
+                "prompt_ms": .double(Double(probeCallCount) + 0.25),
+                "predicted_n": .int(1),
+                "predicted_ms": .double(0.75)
+            ])
+        )
     }
 }
