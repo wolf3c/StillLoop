@@ -2074,6 +2074,7 @@ final class AppModel: ObservableObject {
         analysisPhase = .presenting(result.state, nudge)
         try? await Task.sleep(for: .milliseconds(850))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, var latestSession = currentSession else { return false }
+        let nudgeReturnTarget = Self.nudgeReturnTarget(for: nudge, in: latestSession)
         if let nudge {
             lastNudge = nudge
             telemetry.record(
@@ -2083,7 +2084,7 @@ final class AppModel: ObservableObject {
                     evaluator: result.evaluator
                 )
             )
-            sendNudge(nudge, subtitle: latestFocusedReturnTargetForCurrentSession()?.subtitleText, state: result.state)
+            sendNudge(nudge, subtitle: nudgeReturnTarget?.subtitleText, state: result.state)
             diagnosticLogger.record(
                 "nudge.sent",
                 fields: [
@@ -2101,6 +2102,7 @@ final class AppModel: ObservableObject {
                 context: context,
                 nudge: nudge,
                 returnTarget: result.returnTarget,
+                nudgeReturnTarget: nudgeReturnTarget,
                 debugDetail: FocusEventDebugDetail.make(
                     task: session.task,
                     evaluator: result.evaluator,
@@ -2120,7 +2122,17 @@ final class AppModel: ObservableObject {
     }
 
     private func latestFocusedReturnTargetForCurrentSession() -> FocusReturnTarget? {
-        currentSession?.events
+        guard let currentSession else { return nil }
+        return Self.latestFocusedReturnTarget(in: currentSession)
+    }
+
+    nonisolated static func nudgeReturnTarget(for nudge: String?, in session: FocusSession) -> FocusReturnTarget? {
+        guard nudge != nil else { return nil }
+        return latestFocusedReturnTarget(in: session)
+    }
+
+    nonisolated static func latestFocusedReturnTarget(in session: FocusSession) -> FocusReturnTarget? {
+        session.events
             .filter { $0.state == .focused }
             .compactMap { event -> (Date, FocusReturnTarget)? in
                 guard let returnTarget = event.returnTarget else { return nil }

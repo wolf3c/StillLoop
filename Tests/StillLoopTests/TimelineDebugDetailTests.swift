@@ -53,4 +53,11 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("NSPasteboard.general.setString"))
         XCTAssertTrue(source.contains("recognitionDebugClipboardText(timeText:"))
     }
+
+    func testRecognitionDebugPopoverShowsNudgeReturnTarget() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("event.nudgeReturnTarget"))
+        XCTAssertTrue(source.contains("target.diagnosticLines"))
+    }
 }

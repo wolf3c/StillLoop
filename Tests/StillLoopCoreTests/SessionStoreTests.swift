@@ -78,6 +78,14 @@ final class SessionStoreTests: XCTestCase {
             browserURL: "https://mail.google.com/mail/u/0/#inbox",
             capturedAt: Date(timeIntervalSince1970: 70)
         )
+        let nudgeTarget = FocusReturnTarget(
+            appName: "Codex",
+            appBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            capturedAt: Date(timeIntervalSince1970: 80)
+        )
         let session = FocusSession(
             id: UUID(uuidString: "66666666-aaaa-4aaa-8aaa-666666666666")!,
             task: "处理 Gmail 中未读邮件",
@@ -90,7 +98,8 @@ final class SessionStoreTests: XCTestCase {
                     state: .focused,
                     context: "Google Chrome · Inbox (3) - Gmail",
                     nudge: nil,
-                    returnTarget: target
+                    returnTarget: target,
+                    nudgeReturnTarget: nudgeTarget
                 )
             ],
             feedback: nil
@@ -102,6 +111,8 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions.first?.events.first?.returnTarget, target)
         XCTAssertEqual(sessions.first?.events.first?.returnTarget?.displayName, "Chrome · Inbox (3) - Gmail")
         XCTAssertEqual(sessions.first?.events.first?.returnTarget?.browserURL, "https://mail.google.com/mail/u/0/#inbox")
+        XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget, nudgeTarget)
+        XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget?.displayName, "Codex · StillLoop")
     }
 
     func testDecodesLegacyFocusEventWithoutReturnTarget() throws {
@@ -118,6 +129,7 @@ final class SessionStoreTests: XCTestCase {
         let event = try JSONDecoder().decode(FocusEvent.self, from: data)
 
         XCTAssertNil(event.returnTarget)
+        XCTAssertNil(event.nudgeReturnTarget)
     }
 
     private func makeSupportDirectory() -> URL {

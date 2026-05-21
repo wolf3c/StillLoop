@@ -96,8 +96,31 @@ public struct FocusReturnTarget: Codable, Equatable {
         "点击回到 \(displayName)"
     }
 
+    public var diagnosticLines: [String] {
+        var lines = ["返回目标：\(displayName)"]
+        if let windowTitle {
+            lines.append("窗口：\(windowTitle)")
+        }
+        if let sanitizedBrowserURLText {
+            lines.append("浏览器URL：\(sanitizedBrowserURLText)")
+        }
+        return lines
+    }
+
     public var hasBrowserURL: Bool {
         browserURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    public var sanitizedBrowserURLText: String? {
+        guard let browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !browserURL.isEmpty
+        else { return nil }
+        guard var components = URLComponents(string: browserURL) else {
+            return browserURL.components(separatedBy: "?").first?.components(separatedBy: "#").first
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string
     }
 
     public static func make(from snapshots: [ContextSnapshot]) -> FocusReturnTarget? {
@@ -320,6 +343,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
     public var context: String
     public var nudge: String?
     public var returnTarget: FocusReturnTarget?
+    public var nudgeReturnTarget: FocusReturnTarget?
     public var debugDetail: FocusEventDebugDetail?
 
     public init(
@@ -329,6 +353,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
         context: String,
         nudge: String?,
         returnTarget: FocusReturnTarget? = nil,
+        nudgeReturnTarget: FocusReturnTarget? = nil,
         debugDetail: FocusEventDebugDetail? = nil
     ) {
         self.id = id
@@ -337,6 +362,7 @@ public struct FocusEvent: Codable, Equatable, Identifiable {
         self.context = context
         self.nudge = nudge
         self.returnTarget = returnTarget
+        self.nudgeReturnTarget = nudgeReturnTarget
         self.debugDetail = debugDetail
     }
 }
@@ -374,6 +400,9 @@ public extension FocusEvent {
             resultLines.append("触发提醒：\(debugDetail.shouldNudge ? "是" : "否")")
             if let nudge = debugDetail.nudge {
                 resultLines.append("返回提醒：\(nudge)")
+            }
+            if let nudgeReturnTarget {
+                resultLines.append(contentsOf: nudgeReturnTarget.diagnosticLines)
             }
             sections.append((["运算返回结果"] + resultLines).joined(separator: "\n"))
 

@@ -182,11 +182,20 @@ final class FocusEventDebugDetailTests: XCTestCase {
     }
 
     func testRecognitionDebugClipboardTextIncludesEveryVisibleSection() {
+        let nudgeTarget = FocusReturnTarget(
+            appName: "Codex",
+            appBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            capturedAt: Date(timeIntervalSince1970: 0)
+        )
         let event = FocusEvent(
             timestamp: Date(timeIntervalSince1970: 1),
             state: .distracted,
             context: "Chrome · 文档页面",
             nudge: "回到：整理发布说明",
+            nudgeReturnTarget: nudgeTarget,
             debugDetail: FocusEventDebugDetail(
                 task: "整理发布说明",
                 evaluator: "自带模型",
@@ -238,7 +247,64 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("输入规模：payloadBytes=5678, responseChars=901, inputTextCharacterCount=234, inputTextTokenCount=56"))
         XCTAssertTrue(text.contains(#"LLM usage：{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#))
         XCTAssertTrue(text.contains("触发提醒：是"))
+        XCTAssertTrue(text.contains("返回目标：Codex · StillLoop"))
+        XCTAssertTrue(text.contains("窗口：StillLoop"))
         XCTAssertTrue(text.contains("模型分析"))
         XCTAssertTrue(text.contains("判断依据：当前内容不支持任务推进。"))
+    }
+
+    func testRecognitionDebugClipboardTextOmitsReturnTargetWhenMissing() {
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .distracted,
+            context: "Codex",
+            nudge: "先回到：优化tracemind",
+            debugDetail: FocusEventDebugDetail(
+                task: "优化tracemind",
+                evaluator: "自带模型",
+                capturedContext: [],
+                resultState: .distracted,
+                reason: "偏离当前任务",
+                shouldNudge: true,
+                nudge: "先回到：优化tracemind"
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "12:46:26")
+
+        XCTAssertFalse(text.contains("返回目标："))
+    }
+
+    func testRecognitionDebugClipboardTextSanitizesReturnTargetBrowserURL() {
+        let nudgeTarget = FocusReturnTarget(
+            appName: "Google Chrome",
+            appBundleIdentifier: "com.google.Chrome",
+            windowTitle: "Gmail",
+            browserTitle: "Inbox",
+            browserURL: "https://mail.google.com/mail/u/0/?token=secret#inbox",
+            capturedAt: Date(timeIntervalSince1970: 0)
+        )
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .distracted,
+            context: "Codex",
+            nudge: "先回到：处理邮件",
+            nudgeReturnTarget: nudgeTarget,
+            debugDetail: FocusEventDebugDetail(
+                task: "处理邮件",
+                evaluator: "自带模型",
+                capturedContext: [],
+                resultState: .distracted,
+                reason: "偏离当前任务",
+                shouldNudge: true,
+                nudge: "先回到：处理邮件"
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "12:46:26")
+
+        XCTAssertTrue(text.contains("浏览器URL：https://mail.google.com/mail/u/0/"))
+        XCTAssertFalse(text.contains("token=secret"))
+        XCTAssertFalse(text.contains("#inbox"))
     }
 }

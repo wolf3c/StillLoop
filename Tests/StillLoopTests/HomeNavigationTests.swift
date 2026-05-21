@@ -874,6 +874,75 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(opener.openedTargets.isEmpty)
     }
 
+    func testNudgeReturnTargetUsesLatestFocusedSessionEventTarget() {
+        let olderTarget = FocusReturnTarget(
+            appName: "Safari",
+            appBundleIdentifier: "com.apple.Safari",
+            windowTitle: "Example",
+            browserTitle: "Example",
+            browserURL: "https://example.com",
+            capturedAt: Date(timeIntervalSince1970: 90)
+        )
+        let latestTarget = FocusReturnTarget(
+            appName: "Codex",
+            appBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            capturedAt: Date(timeIntervalSince1970: 100)
+        )
+        let session = FocusSession(
+            task: "优化tracemind",
+            startedAt: Date(timeIntervalSince1970: 70),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 120),
+                    state: .distracted,
+                    context: "Slack",
+                    nudge: "先回到：优化tracemind"
+                ),
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 110),
+                    state: .focused,
+                    context: "Codex",
+                    nudge: nil,
+                    returnTarget: latestTarget
+                ),
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 95),
+                    state: .focused,
+                    context: "Safari",
+                    nudge: nil,
+                    returnTarget: olderTarget
+                )
+            ],
+            feedback: nil
+        )
+
+        XCTAssertEqual(AppModel.nudgeReturnTarget(for: "先回到：优化tracemind", in: session), latestTarget)
+    }
+
+    func testNudgeReturnTargetIsNilWithoutFocusedTarget() {
+        let session = FocusSession(
+            task: "优化tracemind",
+            startedAt: Date(timeIntervalSince1970: 70),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 120),
+                    state: .distracted,
+                    context: "Slack",
+                    nudge: "先回到：优化tracemind"
+                )
+            ],
+            feedback: nil
+        )
+
+        XCTAssertNil(AppModel.nudgeReturnTarget(for: "先回到：优化tracemind", in: session))
+        XCTAssertNil(AppModel.nudgeReturnTarget(for: nil, in: session))
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 1,
         condition: @escaping @MainActor () -> Bool

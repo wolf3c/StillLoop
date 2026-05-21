@@ -1254,6 +1254,11 @@ private struct TimelineEventDebugPopover: View {
                         if let nudge = detail.nudge {
                             TimelineDebugText("返回提醒：\(nudge)")
                         }
+                        if let target = event.nudgeReturnTarget {
+                            ForEach(target.diagnosticLines, id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
                     }
 
                     if let analysis = detail.analysis {
