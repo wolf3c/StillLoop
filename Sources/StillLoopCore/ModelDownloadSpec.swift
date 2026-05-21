@@ -10,6 +10,8 @@ public struct ModelDownloadSpec: Equatable {
     public let recommendedContextSize: Int
     public let recommendedCacheTypeK: String
     public let recommendedCacheTypeV: String
+    public let recommendedPromptCacheReuse: Int
+    public let recommendedPromptCacheRAMMiB: Int
     public let downloadByteCounts: [String: Int64]
 
     public var modelPageURL: URL {
@@ -66,9 +68,11 @@ public struct ModelDownloadSpec: Equatable {
         localSubdirectory: "Qwen3.5VL-0.8B-ImageExplainer-GGUF",
         localServerModelID: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
         localServerPort: 17_631,
-        recommendedContextSize: 16_384,
-        recommendedCacheTypeK: "f16",
-        recommendedCacheTypeV: "f16",
+        recommendedContextSize: 8_192,
+        recommendedCacheTypeK: "q4_1",
+        recommendedCacheTypeV: "q4_1",
+        recommendedPromptCacheReuse: 64,
+        recommendedPromptCacheRAMMiB: 128,
         downloadByteCounts: [
             "Qwen3.5-0.8B-Base.Q4_K_M.gguf": 529_296_960,
             "Qwen3.5-0.8B-Base.BF16-mmproj.gguf": 207_346_048

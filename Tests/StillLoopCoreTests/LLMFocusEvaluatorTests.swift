@@ -17,6 +17,38 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertGreaterThan(duration, 0)
     }
 
+    func testPrewarmPromptCacheUsesFocusEvaluatorPromptAndDummyUserMessage() async throws {
+        let engine = PrewarmingStubEngine()
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        try await evaluator.prewarmPromptCache()
+
+        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.lastResponseFormat, .focusEvaluation)
+        let messages = try XCTUnwrap(engine.lastPrewarmMessages)
+        XCTAssertEqual(messages.count, 2)
+        guard case .text(let systemPrompt)? = messages[0].content.first else {
+            return XCTFail("Expected system prompt text")
+        }
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertTrue(systemPrompt.contains("You are a focus-session evaluator."))
+        XCTAssertTrue(systemPrompt.contains("Return only strict JSON:"))
+        guard case .text(let dummyUserPrompt)? = messages[1].content.first else {
+            return XCTFail("Expected dummy user prompt text")
+        }
+        XCTAssertEqual(messages[1].role, .user)
+        XCTAssertEqual(dummyUserPrompt, "Warm up the focus evaluator.")
+    }
+
+    func testPrewarmPromptCacheNoopsWhenEngineDoesNotSupportPrewarming() async throws {
+        let engine = StubEngine(response: "{}")
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        try await evaluator.prewarmPromptCache()
+
+        XCTAssertTrue(engine.lastMessages.isEmpty)
+    }
+
     func testSuccessfulModelEvaluationRecordsRequestDebugMetrics() async throws {
         let response = """
         {"state":"uncertain","reason":"Ambiguous context","nudge":null}
@@ -1116,6 +1148,27 @@ private final class StubEngine: LocalLLMEngine {
     func complete(messages: [LLMMessage]) async throws -> String {
         lastMessages = messages
         return response
+    }
+}
+
+private final class PrewarmingStubEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming {
+    private(set) var prewarmCallCount = 0
+    private(set) var lastPrewarmMessages: [LLMMessage]?
+    private(set) var lastResponseFormat: LLMResponseFormat?
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        """
+        {"state":"focused","reason":"unused","nudge":null}
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        prewarmCallCount += 1
+        lastPrewarmMessages = messages
+        lastResponseFormat = responseFormat
     }
 }
 

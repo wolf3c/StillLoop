@@ -44,11 +44,14 @@ final class HomeNavigationTests: XCTestCase {
                 )
             }
         }
+        let resolvedBundledLLMEngineFactory = bundledLLMEngineFactory ?? { _, _ in
+            NoopBundledLLMEngine()
+        }
         return AppModel(
             userDefaults: userDefaults ?? isolatedDefaults,
             bundledModelRuntime: bundledModelRuntime,
             supportDirectory: supportDirectory,
-            bundledLLMEngineFactory: bundledLLMEngineFactory,
+            bundledLLMEngineFactory: resolvedBundledLLMEngineFactory,
             returnTargetOpener: returnTargetOpener
         )
     }
@@ -519,6 +522,45 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertFalse(model.useLocalLLM)
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+    }
+
+    func testBundledModelRuntimePrewarmsPromptCacheAfterPreparation() async {
+        let runtime = FakeBundledRuntime()
+        let engine = PrewarmingLLMEngine()
+        let model = makeModel(
+            bundledModelRuntime: runtime,
+            withBundledModelFiles: true,
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.lastResponseFormat, .focusEvaluation)
+        XCTAssertEqual(engine.callCount, 0)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+    }
+
+    func testBundledModelRuntimeWarmupFailureDoesNotBlockPreparation() async {
+        let runtime = FakeBundledRuntime()
+        let engine = PrewarmingLLMEngine(prewarmError: URLError(.timedOut))
+        let model = makeModel(
+            bundledModelRuntime: runtime,
+            withBundledModelFiles: true,
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        XCTAssertEqual(runtime.startCount, 1)
+        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+        XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }
 
     func testBundledImageReadinessFailureIsVisibleAndDoesNotEnableManualHTTP() async {
@@ -1005,6 +1047,74 @@ private final class SequencedLLMEngine: LocalLLMEngine {
             return response
         case .failure(let error):
             throw error
+        }
+    }
+}
+
+private final class NoopBundledLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming {
+    func complete(messages: [LLMMessage]) async throws -> String {
+        """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": true,
+            "userEngagement": "用户在场。",
+            "screenContent": "内容相关。",
+            "observedActivity": "持续推进。",
+            "taskAlignment": "匹配任务。",
+            "decisionRationale": "当前内容支持任务。"
+          },
+          "state":"focused",
+          "reason":"Focused",
+          "nudge":null
+        }
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {}
+}
+
+private final class PrewarmingLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming {
+    let prewarmError: Error?
+    private(set) var callCount = 0
+    private(set) var prewarmCallCount = 0
+    private(set) var lastResponseFormat: LLMResponseFormat?
+
+    init(prewarmError: Error? = nil) {
+        self.prewarmError = prewarmError
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        callCount += 1
+        return """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": true,
+            "userEngagement": "用户在场。",
+            "screenContent": "内容相关。",
+            "observedActivity": "持续推进。",
+            "taskAlignment": "匹配任务。",
+            "decisionRationale": "当前内容支持任务。"
+          },
+          "state":"focused",
+          "reason":"Focused",
+          "nudge":null
+        }
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        prewarmCallCount += 1
+        lastResponseFormat = responseFormat
+        if let prewarmError {
+            throw prewarmError
         }
     }
 }

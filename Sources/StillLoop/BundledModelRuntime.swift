@@ -206,8 +206,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             "--n-gpu-layers", "99",
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV,
-            "--no-cache-prompt",
-            "--cache-ram", "0"
+            "--cache-prompt",
+            "--cache-reuse", String(spec.recommendedPromptCacheReuse),
+            "--cache-ram", String(spec.recommendedPromptCacheRAMMiB)
         ]
         if let mmprojURL {
             arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)

@@ -1,7 +1,7 @@
 import Foundation
 import StillLoopCore
 
-final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting {
+final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming {
     private static let defaultMaxTokens = 900
     private static let focusEvaluationMaxTokens = 420
 
@@ -335,8 +335,44 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         try await complete(messages: messages, responseFormat: nil)
     }
 
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        _ = try await sendChatCompletion(
+            messages: messages,
+            responseFormat: responseFormat,
+            maxTokens: 1
+        )
+    }
+
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
         lastRequestTransportMetrics = nil
+        let result = try await sendChatCompletion(
+            messages: messages,
+            responseFormat: responseFormat,
+            maxTokens: responseFormat == .focusEvaluation ? Self.focusEvaluationMaxTokens : Self.defaultMaxTokens
+        )
+        let body = try JSONDecoder().decode(ResponseBody.self, from: result.data)
+        guard let content = body.choices.first?.message.content else {
+            throw URLError(.cannotParseResponse)
+        }
+        lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: result.payloadBytes,
+            responseChars: content.count,
+            inputTextTokenCount: nil,
+            created: body.created,
+            usage: body.usage,
+            timings: body.timings
+        )
+        return content
+    }
+
+    private func sendChatCompletion(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?,
+        maxTokens: Int
+    ) async throws -> (data: Data, payloadBytes: Int) {
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -352,7 +388,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             top_p: 0.8,
             top_k: 20,
             presence_penalty: 1.5,
-            max_tokens: responseFormat == .focusEvaluation ? Self.focusEvaluationMaxTokens : Self.defaultMaxTokens,
+            max_tokens: maxTokens,
             stream: false,
             chat_template_kwargs: disablesReasoning
                 ? .init(enable_thinking: false)
@@ -368,19 +404,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
-        let body = try JSONDecoder().decode(ResponseBody.self, from: data)
-        guard let content = body.choices.first?.message.content else {
-            throw URLError(.cannotParseResponse)
-        }
-        lastRequestTransportMetrics = LLMRequestTransportMetrics(
-            payloadBytes: payload.count,
-            responseChars: content.count,
-            inputTextTokenCount: nil,
-            created: body.created,
-            usage: body.usage,
-            timings: body.timings
-        )
-        return content
+        return (data, payload.count)
     }
 
     func inputTextTokenCount(for text: String) async -> Int? {

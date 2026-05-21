@@ -30,9 +30,11 @@ final class ModelDownloadSpecTests: XCTestCase {
         XCTAssertEqual(spec.localServerPort, 17631)
         XCTAssertEqual(spec.localServerBaseURL.absoluteString, "http://127.0.0.1:17631/v1")
         XCTAssertEqual(spec.localServerBaseURL(port: 17632).absoluteString, "http://127.0.0.1:17632/v1")
-        XCTAssertEqual(spec.recommendedContextSize, 16_384)
-        XCTAssertEqual(spec.recommendedCacheTypeK, "f16")
-        XCTAssertEqual(spec.recommendedCacheTypeV, "f16")
+        XCTAssertEqual(spec.recommendedContextSize, 8_192)
+        XCTAssertEqual(spec.recommendedCacheTypeK, "q4_1")
+        XCTAssertEqual(spec.recommendedCacheTypeV, "q4_1")
+        XCTAssertEqual(spec.recommendedPromptCacheReuse, 64)
+        XCTAssertEqual(spec.recommendedPromptCacheRAMMiB, 128)
     }
 
     func testBuiltInModelDisclosesDownloadSizeForAppReviewPrompt() {

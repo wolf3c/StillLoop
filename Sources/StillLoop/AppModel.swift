@@ -1814,8 +1814,10 @@ final class AppModel: ObservableObject {
                 return false
             }
             let engine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            let evaluator = LLMFocusEvaluator(engine: engine)
             llmEngine = engine
-            llmEvaluator = LLMFocusEvaluator(engine: engine)
+            llmEvaluator = evaluator
+            await prewarmBundledPromptCacheIfSupported(evaluator)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
             bundledModelRuntimeFailureStatus = nil
@@ -1836,6 +1838,21 @@ final class AppModel: ObservableObject {
                 )
             )
             return false
+        }
+    }
+
+    private func prewarmBundledPromptCacheIfSupported(_ evaluator: LLMFocusEvaluator) async {
+        do {
+            try await evaluator.prewarmPromptCache()
+        } catch {
+            let failure = Self.modelInferenceFailurePresentation(for: error)
+            diagnosticLogger.record(
+                "model.promptWarmup.failed",
+                fields: [
+                    "modelSource": .string("bundled"),
+                    "failureKind": .string(failure.debugText)
+                ]
+            )
         }
     }
 

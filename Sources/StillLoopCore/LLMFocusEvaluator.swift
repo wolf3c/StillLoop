@@ -12,6 +12,13 @@ public protocol StructuredLocalLLMEngine: LocalLLMEngine {
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String
 }
 
+public protocol LLMFocusPromptCachePrewarming: AnyObject {
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws
+}
+
 public enum LLMUsageValue: Codable, Equatable {
     case object([String: LLMUsageValue])
     case array([LLMUsageValue])
@@ -356,6 +363,19 @@ public struct LLMFocusEvaluator {
 
     public init(engine: LocalLLMEngine) {
         self.engine = engine
+    }
+
+    public func prewarmPromptCache() async throws {
+        guard let prewarmingEngine = engine as? LLMFocusPromptCachePrewarming else {
+            return
+        }
+        try await prewarmingEngine.prewarmFocusEvaluationPrompt(
+            messages: [
+                LLMMessage(role: .system, content: [.text(systemPrompt)]),
+                LLMMessage(role: .user, content: [.text("Warm up the focus evaluator.")])
+            ],
+            responseFormat: .focusEvaluation
+        )
     }
 
     public func evaluate(
