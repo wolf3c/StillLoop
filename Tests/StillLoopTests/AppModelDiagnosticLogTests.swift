@@ -64,6 +64,65 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(runtime.stopCount, 0)
     }
 
+    func testSuccessfulBundledModelWritesCacheAndTimingDiagnostics() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let engine = SuccessfulDiagnosticLLMEngine()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: { _, _ in engine }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "测试 llama 缓存优化",
+            snapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 1280,
+                    screenshotPixelHeight: 832,
+                    screenshotCompressedBytes: 155_000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([0xFF, 0xD8]),
+                    cameraPixelWidth: 512,
+                    cameraPixelHeight: 288,
+                    cameraCompressedBytes: 9_000,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([0xFF, 0xD8])
+                )
+            ],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .focused, context: "Codex", nudge: nil)
+            ]
+        )
+
+        XCTAssertEqual(result.evaluator, "自带模型")
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
+        XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["llmPreviousEventCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["llmResponseChars"] as? Int, engine.response.count)
+        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["llmCreated"] as? Int, 1_779_348_997)
+        XCTAssertEqual(succeeded["llmCachedTokens"] as? Int, 221)
+        XCTAssertEqual(succeeded["llmCacheN"] as? Int, 221)
+        XCTAssertEqual(succeeded["llmPromptN"] as? Int, 3_478)
+        XCTAssertEqual(try XCTUnwrap(succeeded["llmPromptMS"] as? Double), 5_877.439, accuracy: 0.001)
+        XCTAssertEqual(succeeded["llmPredictedN"] as? Int, 336)
+        XCTAssertEqual(try XCTUnwrap(succeeded["llmPredictedMS"] as? Double), 6_763.672, accuracy: 0.001)
+    }
+
     private var isolatedDefaults: UserDefaults {
         let suiteName = "StillLoopDiagnosticTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -139,5 +198,42 @@ private final class SequencedDiagnosticLLMEngine: LocalLLMEngine {
         case .failure(let error):
             throw error
         }
+    }
+}
+
+private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding {
+    let response = """
+    {"state":"focused","reason":"Working on llama cache optimization","nudge":null}
+    """
+
+    private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        try await complete(messages: messages, responseFormat: nil)
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: 452_010,
+            responseChars: response.count,
+            inputTextTokenCount: 1_295,
+            created: 1_779_348_997,
+            usage: .object([
+                "completion_tokens": .int(336),
+                "prompt_tokens": .int(3_699),
+                "prompt_tokens_details": .object([
+                    "cached_tokens": .int(221)
+                ]),
+                "total_tokens": .int(4_035)
+            ]),
+            timings: .object([
+                "cache_n": .int(221),
+                "prompt_n": .int(3_478),
+                "prompt_ms": .double(5_877.439),
+                "predicted_n": .int(336),
+                "predicted_ms": .double(6_763.672)
+            ])
+        )
+        return response
     }
 }

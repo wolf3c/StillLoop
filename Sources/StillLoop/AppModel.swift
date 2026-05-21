@@ -2185,6 +2185,60 @@ final class AppModel: ObservableObject {
         return fields
     }
 
+    private static func llmDiagnosticFields(from metrics: LLMRequestDebugMetrics?) -> [String: DiagnosticLogValue] {
+        guard let metrics else { return [:] }
+        var fields: [String: DiagnosticLogValue] = [
+            "llmVisualCaptureCount": .int(metrics.visualCaptureCount),
+            "llmImageCount": .int(metrics.imageCount),
+            "llmTextSnapshotCount": .int(metrics.textSnapshotCount),
+            "llmPreviousEventCount": .int(metrics.previousEventCount),
+            "llmResponseChars": .int(metrics.responseChars),
+            "llmInputTextCharacterCount": .int(metrics.inputTextCharacterCount)
+        ]
+        if let payloadBytes = metrics.payloadBytes {
+            fields["llmPayloadBytes"] = .int(payloadBytes)
+        }
+        if let inputTextTokenCount = metrics.inputTextTokenCount {
+            fields["llmInputTextTokenCount"] = .int(inputTextTokenCount)
+        }
+        if let created = metrics.created {
+            fields["llmCreated"] = .int(created)
+        }
+        if let cachedTokens = metrics.usage?.diagnosticInt(at: ["prompt_tokens_details", "cached_tokens"]) {
+            fields["llmCachedTokens"] = .int(cachedTokens)
+        }
+        if let timings = metrics.timings {
+            if let cacheN = timings.diagnosticInt(at: ["cache_n"]) {
+                fields["llmCacheN"] = .int(cacheN)
+            }
+            if let promptN = timings.diagnosticInt(at: ["prompt_n"]) {
+                fields["llmPromptN"] = .int(promptN)
+            }
+            if let promptMS = timings.diagnosticDouble(at: ["prompt_ms"]) {
+                fields["llmPromptMS"] = .double(promptMS)
+            }
+            if let promptPerTokenMS = timings.diagnosticDouble(at: ["prompt_per_token_ms"]) {
+                fields["llmPromptPerTokenMS"] = .double(promptPerTokenMS)
+            }
+            if let promptPerSecond = timings.diagnosticDouble(at: ["prompt_per_second"]) {
+                fields["llmPromptPerSecond"] = .double(promptPerSecond)
+            }
+            if let predictedN = timings.diagnosticInt(at: ["predicted_n"]) {
+                fields["llmPredictedN"] = .int(predictedN)
+            }
+            if let predictedMS = timings.diagnosticDouble(at: ["predicted_ms"]) {
+                fields["llmPredictedMS"] = .double(predictedMS)
+            }
+            if let predictedPerTokenMS = timings.diagnosticDouble(at: ["predicted_per_token_ms"]) {
+                fields["llmPredictedPerTokenMS"] = .double(predictedPerTokenMS)
+            }
+            if let predictedPerSecond = timings.diagnosticDouble(at: ["predicted_per_second"]) {
+                fields["llmPredictedPerSecond"] = .double(predictedPerSecond)
+            }
+        }
+        return fields
+    }
+
     private static func durationMilliseconds(since startDate: Date) -> Int {
         max(0, Int(Date().timeIntervalSince(startDate) * 1_000))
     }
@@ -2394,7 +2448,7 @@ final class AppModel: ObservableObject {
                 extra: [
                     "modelSource": .string("bundled"),
                     "state": .string(result.state.rawValue)
-                ]
+                ].merging(Self.llmDiagnosticFields(from: result.requestDebugMetrics)) { current, _ in current }
             )
         )
         localLLMStatus = "当前评估：自带模型已连接"
@@ -2490,4 +2544,36 @@ final class AppModel: ObservableObject {
         )
     }
 
+}
+
+private extension LLMUsageValue {
+    func diagnosticInt(at path: [String]) -> Int? {
+        switch diagnosticValue(at: path) {
+        case .int(let value):
+            return value
+        case .double(let value) where value.isFinite:
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+
+    func diagnosticDouble(at path: [String]) -> Double? {
+        switch diagnosticValue(at: path) {
+        case .int(let value):
+            return Double(value)
+        case .double(let value):
+            return value
+        default:
+            return nil
+        }
+    }
+
+    private func diagnosticValue(at path: [String]) -> LLMUsageValue? {
+        guard let first = path.first else { return self }
+        guard case .object(let object) = self,
+              let next = object[first]
+        else { return nil }
+        return next.diagnosticValue(at: Array(path.dropFirst()))
+    }
 }
