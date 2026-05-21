@@ -71,6 +71,57 @@ final class MacLocalContextProviderTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["start", "photo", "timeout"])
         XCTAssertEqual(scheduler.pendingDelays, [])
     }
+
+    func testCameraStillCaptureFinishGateRunsOnlyTheFirstFinisher() {
+        let gate = CameraStillCaptureFinishGate()
+        let recorder = CameraStillCaptureEventRecorder()
+
+        gate.finish {
+            recorder.append("photo")
+        }
+        gate.finish {
+            recorder.append("timeout")
+        }
+
+        XCTAssertEqual(recorder.events, ["photo"])
+    }
+
+    func testCompressProducesJPEGDataOffMainThread() throws {
+        let image = try XCTUnwrap(makeTestImage(width: 4, height: 4))
+        let expectation = expectation(description: "compressed")
+        var summary: VisualCaptureSummary?
+
+        DispatchQueue.global(qos: .utility).async {
+            summary = compress(image: image, maxDimension: 2, quality: 0.7)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 2)
+        let compressed = try XCTUnwrap(summary)
+        XCTAssertEqual(compressed.width, 2)
+        XCTAssertEqual(compressed.height, 2)
+        XCTAssertEqual(compressed.mimeType, "image/jpeg")
+        XCTAssertTrue(compressed.data.starts(with: [0xFF, 0xD8]))
+    }
+}
+
+private func makeTestImage(width: Int, height: Int) -> CGImage? {
+    guard
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    else {
+        return nil
+    }
+    context.setFillColor(NSColor.systemBlue.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage()
 }
 
 private struct StubBrowserMetadataReader: BrowserTabMetadataReading {

@@ -2,6 +2,7 @@ import AppKit
 @preconcurrency import AVFoundation
 import CoreGraphics
 import Foundation
+import ImageIO
 import StillLoopCore
 
 final class MacLocalContextProvider: ContextProvider {
@@ -276,35 +277,46 @@ struct VisualCaptureSummary {
     var data: Data
 }
 
-private func compress(image: CGImage, maxDimension: Double, quality: Double) -> VisualCaptureSummary? {
-    let width = CGFloat(image.width)
-    let height = CGFloat(image.height)
-    let scale = min(1, CGFloat(maxDimension) / max(width, height))
-    let targetWidth = max(1, Int(width * scale))
-    let targetHeight = max(1, Int(height * scale))
+func compress(image: CGImage, maxDimension: Double, quality: Double) -> VisualCaptureSummary? {
+    autoreleasepool {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        let scale = min(1, CGFloat(maxDimension) / max(width, height))
+        let targetWidth = max(1, Int(width * scale))
+        let targetHeight = max(1, Int(height * scale))
 
-    guard
-        let context = CGContext(
-            data: nil,
-            width: targetWidth,
-            height: targetHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        )
-    else {
-        return nil
-    }
+        guard
+            let context = CGContext(
+                data: nil,
+                width: targetWidth,
+                height: targetHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return nil
+        }
 
-    context.interpolationQuality = .medium
-    context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
-    guard let scaled = context.makeImage() else { return nil }
-    let representation = NSBitmapImageRep(cgImage: scaled)
-    guard let data = representation.representation(using: .jpeg, properties: [.compressionFactor: CGFloat(quality)]) else {
-        return nil
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        guard let scaled = context.makeImage() else { return nil }
+
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
+            return nil
+        }
+        let properties: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: max(0, min(1, quality))
+        ]
+        CGImageDestinationAddImage(destination, scaled, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        let encoded = data as Data
+        return VisualCaptureSummary(width: targetWidth, height: targetHeight, compressedBytes: encoded.count, mimeType: "image/jpeg", data: encoded)
     }
-    return VisualCaptureSummary(width: targetWidth, height: targetHeight, compressedBytes: data.count, mimeType: "image/jpeg", data: data)
 }
 
 struct CameraStillCaptureTiming: Equatable {
@@ -356,10 +368,23 @@ struct CameraStillCaptureSchedule {
     }
 }
 
-private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
-    private var continuation: CheckedContinuation<VisualCaptureSummary?, Never>?
-    private var activeSession: AVCaptureSession?
-    private var activeOutput: AVCapturePhotoOutput?
+final class CameraStillCaptureFinishGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasFinished = false
+
+    func finish(_ work: () -> Void) {
+        lock.lock()
+        guard !hasFinished else {
+            lock.unlock()
+            return
+        }
+        hasFinished = true
+        lock.unlock()
+        work()
+    }
+}
+
+private final class CameraStillCapture: @unchecked Sendable {
     private let captureSchedule: CameraStillCaptureSchedule
 
     init(captureSchedule: CameraStillCaptureSchedule = CameraStillCaptureSchedule()) {
@@ -371,6 +396,23 @@ private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate,
             return nil
         }
 
+        let request = CameraStillCaptureRequest(captureSchedule: captureSchedule)
+        return await request.capture()
+    }
+}
+
+private final class CameraStillCaptureRequest: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
+    private var continuation: CheckedContinuation<VisualCaptureSummary?, Never>?
+    private var activeSession: AVCaptureSession?
+    private var activeOutput: AVCapturePhotoOutput?
+    private let captureSchedule: CameraStillCaptureSchedule
+    private let finishGate = CameraStillCaptureFinishGate()
+
+    init(captureSchedule: CameraStillCaptureSchedule = CameraStillCaptureSchedule()) {
+        self.captureSchedule = captureSchedule
+    }
+
+    func capture() async -> VisualCaptureSummary? {
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
 
@@ -382,15 +424,13 @@ private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate,
                 let input = try? AVCaptureDeviceInput(device: device),
                 session.canAddInput(input)
             else {
-                continuation.resume(returning: nil)
-                self.continuation = nil
+                finish(nil)
                 return
             }
 
             let output = AVCapturePhotoOutput()
             guard session.canAddOutput(output) else {
-                continuation.resume(returning: nil)
-                self.continuation = nil
+                finish(nil)
                 return
             }
 
@@ -437,11 +477,14 @@ private final class CameraStillCapture: NSObject, AVCapturePhotoCaptureDelegate,
     }
 
     private func finish(_ summary: VisualCaptureSummary?) {
-        activeSession?.stopRunning()
-        activeSession = nil
-        activeOutput = nil
-        guard let continuation else { return }
-        self.continuation = nil
-        continuation.resume(returning: summary)
+        finishGate.finish {
+            let session = activeSession
+            let continuation = continuation
+            activeSession = nil
+            activeOutput = nil
+            self.continuation = nil
+            session?.stopRunning()
+            continuation?.resume(returning: summary)
+        }
     }
 }
