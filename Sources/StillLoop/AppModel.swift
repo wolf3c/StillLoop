@@ -289,6 +289,7 @@ final class AppModel: ObservableObject {
     private let promptCacheProbeEnabled: Bool
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
+    private var shouldValidateBundledRuntimeForActiveRun = false
     private var unanalyzedSnapshots: [ContextSnapshot] = []
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
@@ -1106,6 +1107,7 @@ final class AppModel: ObservableObject {
         currentSession = FocusSession(task: task, startedAt: Date(), endedAt: nil, events: [], feedback: nil)
         provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)
         isCurrentSessionUsingRuleBasedModelFallback = forceRuleBasedModel
+        shouldValidateBundledRuntimeForActiveRun = modelSetupSelection.source == .bundled && !forceRuleBasedModel
         contextSourceDescription = "上下文来源：真实本机"
         status = .running
         currentState = .uncertain
@@ -1249,6 +1251,7 @@ final class AppModel: ObservableObject {
         currentSession = session
         taskText = task
         status = .running
+        shouldValidateBundledRuntimeForActiveRun = modelSetupSelection.source == .bundled && !isCurrentSessionUsingRuleBasedModelFallback
         currentState = .uncertain
         lastNudge = "暂无提醒"
         isSuspendedForSystemInactivity = false
@@ -1506,9 +1509,12 @@ final class AppModel: ObservableObject {
         case .manual:
             bundledModelRuntimeFailureStatus = nil
             bundledModelRuntimeUnavailableStatus = nil
+            shouldValidateBundledRuntimeForActiveRun = false
             bundledModelPrewarmTask?.cancel()
             bundledModelPrewarmTask = nil
             bundledModelRuntime.stop()
+            llmEngine = nil
+            llmEvaluator = nil
             bundledModelRuntimeStatus = "自带模型：已停止"
             modelConfigurationChanged()
         }
@@ -1528,6 +1534,7 @@ final class AppModel: ObservableObject {
             llmEvaluator = nil
             configureBundledModelSelectionStatus()
         case .manual:
+            shouldValidateBundledRuntimeForActiveRun = false
             configureLocalLLM()
         }
     }
@@ -1770,11 +1777,11 @@ final class AppModel: ObservableObject {
     func prepareBundledModelForEvaluation() async -> Bool {
         if let bundledModelPrewarmTask {
             await bundledModelPrewarmTask.value
-            if modelSetupSelection.source == .bundled, llmEvaluator != nil {
+            if modelSetupSelection.source == .bundled, llmEvaluator != nil, !shouldValidateBundledRuntimeForActiveRun {
                 return true
             }
         }
-        if modelSetupSelection.source == .bundled, llmEvaluator != nil {
+        if modelSetupSelection.source == .bundled, llmEvaluator != nil, !shouldValidateBundledRuntimeForActiveRun {
             return true
         }
 
@@ -1861,6 +1868,7 @@ final class AppModel: ObservableObject {
             await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: engine)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
+            shouldValidateBundledRuntimeForActiveRun = false
             bundledModelRuntimeFailureStatus = nil
             bundledModelRuntimeUnavailableStatus = nil
             return true
@@ -2030,6 +2038,7 @@ final class AppModel: ObservableObject {
     }
 
     func stopBundledModelRuntime() {
+        shouldValidateBundledRuntimeForActiveRun = false
         guard modelSetupSelection.source == .bundled else { return }
         bundledModelPrewarmTask?.cancel()
         bundledModelPrewarmTask = nil

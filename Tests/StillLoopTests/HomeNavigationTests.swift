@@ -281,7 +281,8 @@ final class HomeNavigationTests: XCTestCase {
         model.continueFromWelcome()
 
         XCTAssertEqual(model.screen, .taskSetup)
-        try await waitUntil { runtime.startCount == 1 }
+        try await waitUntil { model.bundledModelRuntimeStatus == "自带模型：已预热" }
+        XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已预热")
     }
 
@@ -522,6 +523,33 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertFalse(model.useLocalLLM)
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
+    }
+
+    func testBundledModelRuntimeRevalidatesOnceWhenNewTaskStarts() async {
+        let runtime = FakeBundledRuntime()
+        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
+        model.selectModelSource(.bundled)
+
+        let firstPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(firstPrepared)
+        XCTAssertEqual(runtime.startCount, 1)
+
+        model.startPermissionDecisionOverride = .proceed
+        model.taskText = "开发 StillLoop"
+        model.startSession()
+
+        let secondPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(secondPrepared)
+        XCTAssertEqual(runtime.startCount, 2)
+
+        let thirdPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(thirdPrepared)
+        XCTAssertEqual(runtime.startCount, 2)
+
+        model.pauseSession()
     }
 
     func testBundledModelRuntimePrewarmsPromptCacheAfterPreparation() async {
