@@ -691,6 +691,7 @@ public struct LLMFocusEvaluator {
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
         The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
+        String fields must be actual concise observations, not copied labels, placeholders, or instructions.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
