@@ -15,8 +15,23 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(decoded, status)
     }
 
-    func testMakeCapturesSampledContextAndEvaluationResult() {
-        let snapshot = ContextSnapshot(
+    func testMakeSplitsEnvironmentAndVisualContextFromPromptInputs() {
+        let textOnlySnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Safari",
+            windowTitle: "Research",
+            browserTitle: "Design Note",
+            browserURL: "https://example.com/search?q=private#section",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotPixelWidth: 1024,
+            screenshotPixelHeight: 665,
+            screenshotCompressedBytes: 48_843,
+            cameraPixelWidth: 512,
+            cameraPixelHeight: 288,
+            cameraCompressedBytes: 3_252
+        )
+        let visualSnapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
             activeAppName: "Codex",
             windowTitle: "StillLoop",
@@ -61,11 +76,21 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 taskAlignment: "内容与调优识别能力相关。"
             )
         )
+        let previousEvents = [
+            FocusEvent(
+                timestamp: Date(timeIntervalSince1970: 0),
+                state: .focused,
+                context: "Codex -> Safari",
+                nudge: nil
+            )
+        ]
 
         let detail = FocusEventDebugDetail.make(
             task: "调优识别能力",
             evaluator: result.evaluator,
-            snapshots: [snapshot],
+            environmentSnapshots: [textOnlySnapshot, visualSnapshot],
+            visualSnapshots: [visualSnapshot],
+            previousEvents: previousEvents,
             result: result
         )
 
@@ -82,10 +107,25 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.requestDebugMetrics?.inputTextTokenCount, 56)
         XCTAssertEqual(detail.requestDebugMetrics?.powerStatus?.powerSource, .battery)
         XCTAssertEqual(detail.requestDebugMetrics?.visualSampleLimit, 1)
-        XCTAssertEqual(detail.capturedContext.count, 1)
-        XCTAssertTrue(detail.capturedContext[0].contains("capture[1] 1970-01-01T00:00:01Z"))
-        XCTAssertTrue(detail.capturedContext[0].contains("Codex · StillLoop"))
-        XCTAssertTrue(detail.capturedContext[0].contains("screenshot=1024x665,48843B; camera=512x288,3252B"))
+        XCTAssertTrue(detail.capturedContext.isEmpty)
+        XCTAssertEqual(detail.environmentContext.count, 3)
+        XCTAssertTrue(detail.environmentContext[0].contains("Current task:\n调优识别能力"))
+        XCTAssertTrue(detail.environmentContext[0].contains("- focused: Codex -> Safari nudge=none"))
+        XCTAssertTrue(detail.environmentContext[1].contains("Text timeline: all pending captures, metadata only"))
+        XCTAssertTrue(detail.environmentContext[1].contains("targetID: T1"))
+        XCTAssertTrue(detail.environmentContext[1].contains("app: Safari"))
+        XCTAssertTrue(detail.environmentContext[1].contains("browserURL: https://example.com/search"))
+        XCTAssertFalse(detail.environmentContext[1].contains("q=private"))
+        XCTAssertFalse(detail.environmentContext[1].contains("#section"))
+        XCTAssertTrue(detail.environmentContext[2].contains("visual sample[1]"))
+        XCTAssertTrue(detail.environmentContext[2].contains("targetID: T2"))
+        XCTAssertTrue(detail.environmentContext[2].contains("app: Codex"))
+        XCTAssertEqual(detail.visualContext.count, 1)
+        XCTAssertTrue(detail.visualContext[0].contains("visual sample[1]"))
+        XCTAssertTrue(detail.visualContext[0].contains("targetID: T2"))
+        XCTAssertTrue(detail.visualContext[0].contains("visualOrder: screenshot image first, then camera image"))
+        XCTAssertTrue(detail.visualContext[0].contains("screenshot: available 1024x665 48843B"))
+        XCTAssertTrue(detail.visualContext[0].contains("camera: available 512x288 3252B"))
     }
 
     func testDecodesLegacyDebugDetailWithoutAnalysis() throws {
@@ -108,6 +148,9 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertNil(detail.modelRunDurationSeconds)
         XCTAssertNil(detail.requestDebugMetrics)
         XCTAssertEqual(detail.resultState, .focused)
+        XCTAssertEqual(detail.capturedContext, ["WorkFlowy"])
+        XCTAssertTrue(detail.environmentContext.isEmpty)
+        XCTAssertTrue(detail.visualContext.isEmpty)
     }
 
     func testDecodesLegacyFocusEventWithoutDebugDetail() throws {
@@ -150,9 +193,65 @@ final class FocusEventDebugDetailTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(detail.capturedContext[0].contains("https://example.com/search"))
-        XCTAssertFalse(detail.capturedContext[0].contains("q=private"))
-        XCTAssertFalse(detail.capturedContext[0].contains("#section"))
+        XCTAssertTrue(detail.environmentContext[1].contains("https://example.com/search"))
+        XCTAssertFalse(detail.environmentContext[1].contains("q=private"))
+        XCTAssertFalse(detail.environmentContext[1].contains("#section"))
+    }
+
+    func testRecognitionDebugClipboardTextShowsSplitContextSections() {
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .focused,
+            context: "Codex",
+            nudge: nil,
+            debugDetail: FocusEventDebugDetail(
+                task: "开发 stillloop",
+                evaluator: "自带模型",
+                environmentContext: [
+                    "Current task:\n开发 stillloop",
+                    "Text timeline: all pending captures, metadata only.\n\ntimeline[1]\ntargetID: T1\ntime: 1970-01-01T00:00:01Z\napp: Safari",
+                    "visual sample[1]\ntargetID: T2\ntime: 1970-01-01T00:00:02Z\napp: Codex"
+                ],
+                visualContext: [
+                    "visual sample[1]\ntargetID: T2\ntime: 1970-01-01T00:00:02Z\napp: Codex\nvisualOrder: screenshot image first, then camera image for this same capture timestamp\nscreenshot: available 1024x665 48843B\ncamera: available 512x288 3252B"
+                ],
+                capturedContext: [],
+                resultState: .focused,
+                reason: "任务匹配",
+                shouldNudge: false,
+                nudge: nil
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "14:51:14")
+
+        XCTAssertTrue(text.contains("环境上下文\nCurrent task:\n开发 stillloop"))
+        XCTAssertTrue(text.contains("视觉上下文\nvisual sample[1]\ntargetID: T2"))
+        XCTAssertFalse(text.contains("采样上下文"))
+    }
+
+    func testRecognitionDebugClipboardTextFallsBackToLegacyCapturedContext() {
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .focused,
+            context: "Codex",
+            nudge: nil,
+            debugDetail: FocusEventDebugDetail(
+                task: "开发 stillloop",
+                evaluator: "自带模型",
+                capturedContext: ["capture[1] 1970-01-01T00:00:01Z\nCodex"],
+                resultState: .focused,
+                reason: "任务匹配",
+                shouldNudge: false,
+                nudge: nil
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "14:51:14")
+
+        XCTAssertTrue(text.contains("采样上下文\ncapture[1] 1970-01-01T00:00:01Z"))
+        XCTAssertFalse(text.contains("环境上下文"))
+        XCTAssertFalse(text.contains("视觉上下文"))
     }
 
     func testFormattedRequestMetricLinesShowsFullLLMUsageJSON() throws {
@@ -270,7 +369,14 @@ final class FocusEventDebugDetailTests: XCTestCase {
             debugDetail: FocusEventDebugDetail(
                 task: "整理发布说明",
                 evaluator: "自带模型",
-                capturedContext: ["capture[1] 1970-01-01T00:00:01Z\nChrome · 文档页面\nscreenshot=available; camera=unavailable"],
+                environmentContext: [
+                    "Current task:\n整理发布说明",
+                    "visual sample[1]\ntargetID: T1\ntime: 1970-01-01T00:00:01Z\napp: Chrome\nwindow: 文档页面"
+                ],
+                visualContext: [
+                    "visual sample[1]\ntargetID: T1\ntime: 1970-01-01T00:00:01Z\napp: Chrome\nwindow: 文档页面\nvisualOrder: screenshot image first, then camera image for this same capture timestamp\nscreenshot: available\ncamera: unavailable"
+                ],
+                capturedContext: [],
                 resultState: .distracted,
                 reason: "页面内容偏离当前任务",
                 shouldNudge: true,
@@ -321,7 +427,8 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("识别详情"))
         XCTAssertTrue(text.contains("时间：08:00:01"))
         XCTAssertTrue(text.contains("时间线摘要\nChrome · 文档页面\n提醒：回到：整理发布说明"))
-        XCTAssertTrue(text.contains("采样上下文\ncapture[1] 1970-01-01T00:00:01Z"))
+        XCTAssertTrue(text.contains("环境上下文\nCurrent task:\n整理发布说明"))
+        XCTAssertTrue(text.contains("视觉上下文\nvisual sample[1]\ntargetID: T1"))
         XCTAssertTrue(text.contains("运算返回结果"))
         XCTAssertTrue(text.contains("状态：明显偏离 (distracted)"))
         XCTAssertFalse(text.contains("置信度"))

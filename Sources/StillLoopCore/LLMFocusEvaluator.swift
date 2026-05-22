@@ -172,6 +172,16 @@ public struct LLMFocusPromptCacheProbeRequest: Equatable {
     }
 }
 
+public struct LLMFocusPromptDebugContext: Equatable {
+    public var environmentContext: [String]
+    public var visualContext: [String]
+
+    public init(environmentContext: [String], visualContext: [String]) {
+        self.environmentContext = environmentContext
+        self.visualContext = visualContext
+    }
+}
+
 public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var visualCaptureCount: Int
     public var imageCount: Int
@@ -389,15 +399,36 @@ public struct LLMFocusEvaluator {
 
     private let engine: LocalLLMEngine
     private let decoder = JSONDecoder()
-    private let dateFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
 
     public init(engine: LocalLLMEngine) {
         self.engine = engine
+    }
+
+    public static func debugContext(
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent]
+    ) -> LLMFocusPromptDebugContext {
+        let targetSnapshots = promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
+        let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
+        var environmentContext = [
+            taskAndHistoryText(task: task, previousEvents: previousEvents)
+        ]
+        let orderedTextSnapshots = targetSnapshots
+            .filter { !visualSnapshotIDs.contains($0.snapshot.id) }
+        if !orderedTextSnapshots.isEmpty {
+            environmentContext.append(textTimeline(for: orderedTextSnapshots))
+        }
+        let visualContext = visualTextParts(
+            targetSnapshots: targetSnapshots,
+            visualSnapshotIDs: visualSnapshotIDs
+        )
+        environmentContext.append(contentsOf: visualContext)
+        return LLMFocusPromptDebugContext(
+            environmentContext: environmentContext,
+            visualContext: visualContext
+        )
     }
 
     public func prewarmPromptCache() async throws {
@@ -450,7 +481,7 @@ public struct LLMFocusEvaluator {
                 nudge: nil
             )
         ]
-        let focusShapeTargetSnapshots = promptTargetSnapshots(
+        let focusShapeTargetSnapshots = Self.promptTargetSnapshots(
             textSnapshots: textSnapshots,
             visualSnapshots: []
         )
@@ -531,7 +562,7 @@ public struct LLMFocusEvaluator {
         powerStatus: DevicePowerStatus?,
         visualSampleLimit: Int?
     ) async throws -> LLMEvaluationResult {
-        let targetSnapshots = promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
+        let targetSnapshots = Self.promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
         let promptMessages = messages(
             task: task,
             textSnapshots: textSnapshots,
@@ -694,26 +725,16 @@ public struct LLMFocusEvaluator {
         previousEvents: [FocusEvent],
         targetSnapshots: [PromptTargetSnapshot]
     ) -> [LLMMessage] {
-        let history = previousEvents.suffix(8).map { event in
-            "- \(event.state.rawValue): \(event.context) nudge=\(event.nudge ?? "none")"
-        }.joined(separator: "\n")
-
         var messages = [
             LLMMessage(role: .system, content: [.text(systemPrompt)]),
-            LLMMessage(role: .user, content: [.text("""
-            Current task:
-            \(task)
-
-            Recent state log (background only; current captures have priority and prior decisions may be wrong):
-            \(history.isEmpty ? "none" : history)
-            """)])
+            LLMMessage(role: .user, content: [.text(Self.taskAndHistoryText(task: task, previousEvents: previousEvents))])
         ]
 
         let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
         let orderedTextSnapshots = targetSnapshots
             .filter { !visualSnapshotIDs.contains($0.snapshot.id) }
         if !orderedTextSnapshots.isEmpty {
-            messages.append(LLMMessage(role: .user, content: [.text(textTimeline(for: orderedTextSnapshots))]))
+            messages.append(LLMMessage(role: .user, content: [.text(Self.textTimeline(for: orderedTextSnapshots))]))
         }
 
         messages.append(contentsOf: targetSnapshots
@@ -721,18 +742,8 @@ public struct LLMFocusEvaluator {
             .enumerated()
             .map { index, targetSnapshot in
                 let snapshot = targetSnapshot.snapshot
-                var captureLines = captureMetadataLines(
-                    for: snapshot,
-                    label: "visual sample[\(index + 1)]",
-                    targetID: targetSnapshot.targetID
-                )
-                captureLines.append(contentsOf: [
-                    "visualOrder: screenshot image first, then camera image for this same capture timestamp",
-                    "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))",
-                    "camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))"
-                ])
                 var content: [LLMMessage.Content] = [
-                    .text(captureLines.joined(separator: "\n"))
+                    .text(Self.visualSampleText(for: targetSnapshot, visualIndex: index + 1))
                 ]
                 if let mimeType = snapshot.screenshotMimeType, let data = snapshot.screenshotData {
                     content.append(.image(mimeType: mimeType, data: data))
@@ -745,7 +756,47 @@ public struct LLMFocusEvaluator {
         return messages
     }
 
-    private func promptTargetSnapshots(
+    private static func taskAndHistoryText(task: String, previousEvents: [FocusEvent]) -> String {
+        let history = previousEvents.suffix(8).map { event in
+            "- \(event.state.rawValue): \(event.context) nudge=\(event.nudge ?? "none")"
+        }.joined(separator: "\n")
+        return """
+        Current task:
+        \(task)
+
+        Recent state log (background only; current captures have priority and prior decisions may be wrong):
+        \(history.isEmpty ? "none" : history)
+        """
+    }
+
+    private static func visualTextParts(
+        targetSnapshots: [PromptTargetSnapshot],
+        visualSnapshotIDs: Set<UUID>
+    ) -> [String] {
+        targetSnapshots
+            .filter { visualSnapshotIDs.contains($0.snapshot.id) }
+            .enumerated()
+            .map { index, targetSnapshot in
+                visualSampleText(for: targetSnapshot, visualIndex: index + 1)
+            }
+    }
+
+    private static func visualSampleText(for targetSnapshot: PromptTargetSnapshot, visualIndex: Int) -> String {
+        let snapshot = targetSnapshot.snapshot
+        var captureLines = captureMetadataLines(
+            for: snapshot,
+            label: "visual sample[\(visualIndex)]",
+            targetID: targetSnapshot.targetID
+        )
+        captureLines.append(contentsOf: [
+            "visualOrder: screenshot image first, then camera image for this same capture timestamp",
+            "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))",
+            "camera: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))"
+        ])
+        return captureLines.joined(separator: "\n")
+    }
+
+    private static func promptTargetSnapshots(
         textSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot]
     ) -> [PromptTargetSnapshot] {
@@ -759,7 +810,7 @@ public struct LLMFocusEvaluator {
         }
     }
 
-    private func textTimeline(for snapshots: [PromptTargetSnapshot]) -> String {
+    private static func textTimeline(for snapshots: [PromptTargetSnapshot]) -> String {
         var lines = [
             "Text timeline: all pending captures, metadata only. Images are attached only to separate visual sample messages."
         ]
@@ -774,11 +825,11 @@ public struct LLMFocusEvaluator {
         return lines.joined(separator: "\n")
     }
 
-    private func captureMetadataLines(for snapshot: ContextSnapshot, label: String, targetID: String) -> [String] {
+    private static func captureMetadataLines(for snapshot: ContextSnapshot, label: String, targetID: String) -> [String] {
         var captureLines = [
             label,
             "targetID: \(targetID)",
-            "time: \(dateFormatter.string(from: snapshot.timestamp))",
+            "time: \(formattedPromptDate(snapshot.timestamp))",
             "app: \(snapshot.activeAppName)"
         ]
         if let windowTitle = snapshot.displayWindowTitle {
@@ -793,7 +844,14 @@ public struct LLMFocusEvaluator {
         return captureLines
     }
 
-    private func visualLine(available: Bool, width: Int?, height: Int?, bytes: Int?) -> String {
+    private static func formattedPromptDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: date)
+    }
+
+    private static func visualLine(available: Bool, width: Int?, height: Int?, bytes: Int?) -> String {
         guard available else { return "unavailable" }
         guard let width, let height, let bytes else { return "available" }
         return "available \(width)x\(height) \(bytes)B"

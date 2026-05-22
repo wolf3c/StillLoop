@@ -401,7 +401,15 @@ public extension FocusEvent {
         sections.append((["时间线摘要"] + timelineLines).joined(separator: "\n"))
 
         if let debugDetail {
-            if !debugDetail.capturedContext.isEmpty {
+            if !debugDetail.environmentContext.isEmpty {
+                sections.append((["环境上下文"] + debugDetail.environmentContext).joined(separator: "\n"))
+            }
+            if !debugDetail.visualContext.isEmpty {
+                sections.append((["视觉上下文"] + debugDetail.visualContext).joined(separator: "\n"))
+            }
+            if debugDetail.environmentContext.isEmpty,
+               debugDetail.visualContext.isEmpty,
+               !debugDetail.capturedContext.isEmpty {
                 sections.append((["采样上下文"] + debugDetail.capturedContext).joined(separator: "\n"))
             }
 
@@ -455,6 +463,8 @@ private extension String {
 public struct FocusEventDebugDetail: Codable, Equatable {
     public var task: String
     public var evaluator: String
+    public var environmentContext: [String]
+    public var visualContext: [String]
     public var capturedContext: [String]
     public var resultState: FocusState
     public var reason: String
@@ -467,7 +477,9 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public init(
         task: String,
         evaluator: String,
-        capturedContext: [String],
+        environmentContext: [String] = [],
+        visualContext: [String] = [],
+        capturedContext: [String] = [],
         resultState: FocusState,
         reason: String,
         shouldNudge: Bool,
@@ -478,6 +490,8 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     ) {
         self.task = task
         self.evaluator = evaluator
+        self.environmentContext = environmentContext
+        self.visualContext = visualContext
         self.capturedContext = capturedContext
         self.resultState = resultState
         self.reason = reason
@@ -486,6 +500,59 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.modelRunDurationSeconds = modelRunDurationSeconds
         self.requestDebugMetrics = requestDebugMetrics
         self.analysis = analysis
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case task
+        case evaluator
+        case environmentContext
+        case visualContext
+        case capturedContext
+        case resultState
+        case reason
+        case shouldNudge
+        case nudge
+        case modelRunDurationSeconds
+        case requestDebugMetrics
+        case analysis
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        task = try container.decode(String.self, forKey: .task)
+        evaluator = try container.decode(String.self, forKey: .evaluator)
+        environmentContext = (try? container.decodeIfPresent([String].self, forKey: .environmentContext)) ?? []
+        visualContext = (try? container.decodeIfPresent([String].self, forKey: .visualContext)) ?? []
+        capturedContext = (try? container.decodeIfPresent([String].self, forKey: .capturedContext)) ?? []
+        resultState = try container.decode(FocusState.self, forKey: .resultState)
+        reason = try container.decode(String.self, forKey: .reason)
+        shouldNudge = try container.decode(Bool.self, forKey: .shouldNudge)
+        nudge = try container.decodeIfPresent(String.self, forKey: .nudge)
+        modelRunDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .modelRunDurationSeconds)
+        requestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .requestDebugMetrics)
+        analysis = try container.decodeIfPresent(LLMFocusAnalysis.self, forKey: .analysis)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(task, forKey: .task)
+        try container.encode(evaluator, forKey: .evaluator)
+        if !environmentContext.isEmpty {
+            try container.encode(environmentContext, forKey: .environmentContext)
+        }
+        if !visualContext.isEmpty {
+            try container.encode(visualContext, forKey: .visualContext)
+        }
+        if !capturedContext.isEmpty {
+            try container.encode(capturedContext, forKey: .capturedContext)
+        }
+        try container.encode(resultState, forKey: .resultState)
+        try container.encode(reason, forKey: .reason)
+        try container.encode(shouldNudge, forKey: .shouldNudge)
+        try container.encodeIfPresent(nudge, forKey: .nudge)
+        try container.encodeIfPresent(modelRunDurationSeconds, forKey: .modelRunDurationSeconds)
+        try container.encodeIfPresent(requestDebugMetrics, forKey: .requestDebugMetrics)
+        try container.encodeIfPresent(analysis, forKey: .analysis)
     }
 
     public static func formattedModelRunDuration(_ duration: TimeInterval) -> String {
@@ -528,26 +595,37 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         snapshots: [ContextSnapshot],
         result: LLMEvaluationResult
     ) -> FocusEventDebugDetail {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        let context = snapshots
-            .sorted { $0.timestamp < $1.timestamp }
-            .enumerated()
-            .map { index, snapshot in
-                [
-                    "capture[\(index + 1)] \(formatter.string(from: snapshot.timestamp))",
-                    snapshot.diagnosticDisplayText,
-                    snapshot.visualSummary
-                ]
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
-            }
+        make(
+            task: task,
+            evaluator: evaluator,
+            environmentSnapshots: snapshots,
+            visualSnapshots: snapshots,
+            previousEvents: [],
+            result: result
+        )
+    }
+
+    public static func make(
+        task: String,
+        evaluator: String,
+        environmentSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        result: LLMEvaluationResult
+    ) -> FocusEventDebugDetail {
+        let promptDebugContext = LLMFocusEvaluator.debugContext(
+            task: task,
+            textSnapshots: environmentSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents
+        )
 
         return FocusEventDebugDetail(
             task: task,
             evaluator: evaluator,
-            capturedContext: context,
+            environmentContext: promptDebugContext.environmentContext,
+            visualContext: promptDebugContext.visualContext,
+            capturedContext: [],
             resultState: result.state,
             reason: result.reason,
             shouldNudge: result.shouldNudge,

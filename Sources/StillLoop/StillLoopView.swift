@@ -1231,9 +1231,29 @@ private struct TimelineEventDebugPopover: View {
                 }
 
                 if let detail = event.debugDetail {
-                    TimelineDebugSection(title: "采样上下文") {
-                        ForEach(Array(detail.capturedContext.enumerated()), id: \.offset) { _, context in
-                            TimelineDebugText(context)
+                    if !detail.environmentContext.isEmpty {
+                        TimelineDebugSection(title: "环境上下文") {
+                            ForEach(Array(detail.environmentContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
+                        }
+                    }
+
+                    if !detail.visualContext.isEmpty {
+                        TimelineDebugSection(title: "视觉上下文") {
+                            ForEach(Array(detail.visualContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
+                        }
+                    }
+
+                    if detail.environmentContext.isEmpty,
+                       detail.visualContext.isEmpty,
+                       !detail.capturedContext.isEmpty {
+                        TimelineDebugSection(title: "采样上下文") {
+                            ForEach(Array(detail.capturedContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
                         }
                     }
 

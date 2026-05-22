@@ -2207,7 +2207,9 @@ final class AppModel: ObservableObject {
                 debugDetail: FocusEventDebugDetail.make(
                     task: session.task,
                     evaluator: result.evaluator,
-                    snapshots: visualSnapshots,
+                    environmentSnapshots: contextSnapshots,
+                    visualSnapshots: visualSnapshots,
+                    previousEvents: session.events,
                     result: result
                 )
             ),
