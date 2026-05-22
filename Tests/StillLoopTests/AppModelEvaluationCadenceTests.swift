@@ -3,11 +3,11 @@ import XCTest
 
 @MainActor
 final class AppModelEvaluationCadenceTests: XCTestCase {
-    func testEvaluationCadenceUsesFifteenSecondMinimumTotalInterval() {
+    func testEvaluationCadenceUsesFifteenSecondMinimumTotalIntervalAndSlowThreshold() {
         let model = AppModel()
 
         XCTAssertEqual(model.targetEvaluationCadenceSeconds, 15)
-        XCTAssertEqual(model.slowEvaluationThresholdSeconds, 10)
+        XCTAssertEqual(model.slowEvaluationThresholdSeconds, 15)
         XCTAssertEqual(model.slowEvaluationRetryDelaySeconds, 1)
     }
 }

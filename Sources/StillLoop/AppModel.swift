@@ -266,7 +266,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isCurrentSessionUsingRuleBasedModelFallback = false
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
-    let slowEvaluationThresholdSeconds: TimeInterval = 10
+    let slowEvaluationThresholdSeconds: TimeInterval = 15
     let slowEvaluationRetryDelaySeconds: TimeInterval = 1
     nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
 
