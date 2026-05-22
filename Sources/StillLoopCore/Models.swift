@@ -558,6 +558,7 @@ public struct FocusSession: Codable, Equatable, Identifiable {
     public var task: String
     public var startedAt: Date
     public var endedAt: Date?
+    public var continuationGapDuration: TimeInterval
     public var events: [FocusEvent]
     public var feedback: SessionFeedback?
     public var reviewComment: String?
@@ -567,6 +568,7 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         task: String,
         startedAt: Date,
         endedAt: Date?,
+        continuationGapDuration: TimeInterval = 0,
         events: [FocusEvent],
         feedback: SessionFeedback?,
         reviewComment: String? = nil
@@ -575,9 +577,33 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         self.task = task
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.continuationGapDuration = continuationGapDuration
         self.events = events
         self.feedback = feedback
         self.reviewComment = reviewComment
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case task
+        case startedAt
+        case endedAt
+        case continuationGapDuration
+        case events
+        case feedback
+        case reviewComment
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        task = try container.decode(String.self, forKey: .task)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
+        continuationGapDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .continuationGapDuration) ?? 0
+        events = try container.decode([FocusEvent].self, forKey: .events)
+        feedback = try container.decodeIfPresent(SessionFeedback.self, forKey: .feedback)
+        reviewComment = try container.decodeIfPresent(String.self, forKey: .reviewComment)
     }
 }
 
@@ -612,7 +638,7 @@ public struct SessionSummary: Codable, Equatable, Identifiable {
         self.task = session.task
         self.startedAt = session.startedAt
         self.endedAt = endedAt
-        self.totalDuration = max(0, endedAt.timeIntervalSince(session.startedAt))
+        self.totalDuration = max(0, endedAt.timeIntervalSince(session.startedAt) - session.continuationGapDuration)
         self.estimatedFocusedDuration = TimeInterval(session.events.filter { $0.state == .focused }.count * 120)
         self.offTrackEventCount = session.events.filter { $0.state == .distracted }.count
         self.nudgeCount = session.events.filter { $0.nudge != nil }.count

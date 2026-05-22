@@ -11,27 +11,73 @@ final class ReviewScreenTests: XCTestCase {
         return defaults
     }
 
-    func testContinueReviewTaskStartsNewSessionWithSameTask() {
+    func testContinueReviewTaskResumesSameSessionWithExistingTimeline() {
         let model = AppModel(userDefaults: isolatedDefaults)
         model.startPermissionDecisionOverride = .proceed
         model.useLocalLLM = false
+        let sessionID = UUID(uuidString: "11111111-aaaa-4aaa-8aaa-111111111111")!
+        let event = FocusEvent(
+            id: UUID(uuidString: "22222222-aaaa-4aaa-8aaa-222222222222")!,
+            timestamp: Date(timeIntervalSince1970: 120),
+            state: .focused,
+            context: "Codex · StillLoop",
+            nudge: nil
+        )
         model.status = .ended
         model.screen = .review
         model.currentSession = FocusSession(
+            id: sessionID,
             task: "整理产品方案",
             startedAt: Date().addingTimeInterval(-180),
             endedAt: Date(),
-            events: [],
-            feedback: nil
+            events: [event],
+            feedback: .helpful,
+            reviewComment: "上一轮短评"
         )
 
         model.continueReviewTask()
 
         XCTAssertEqual(model.status, .running)
         XCTAssertEqual(model.screen, .focus)
+        XCTAssertEqual(model.currentSession?.id, sessionID)
         XCTAssertEqual(model.currentSession?.task, "整理产品方案")
+        XCTAssertEqual(model.currentSession?.events, [event])
         XCTAssertNil(model.currentSession?.endedAt)
+        XCTAssertNil(model.currentSession?.feedback)
+        XCTAssertNil(model.currentSession?.reviewComment)
         XCTAssertEqual(model.taskText, "整理产品方案")
+    }
+
+    func testContinueReviewTaskExcludesReviewGapFromElapsedTime() {
+        let model = AppModel(userDefaults: isolatedDefaults)
+        model.startPermissionDecisionOverride = .proceed
+        model.useLocalLLM = false
+        let sessionID = UUID(uuidString: "33333333-aaaa-4aaa-8aaa-333333333333")!
+        model.status = .ended
+        model.screen = .review
+        model.currentSession = FocusSession(
+            id: sessionID,
+            task: "整理产品方案",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 500),
+            events: [],
+            feedback: nil
+        )
+
+        model.continueReviewTask(now: Date(timeIntervalSince1970: 650))
+
+        XCTAssertEqual(model.currentSession?.id, sessionID)
+        XCTAssertEqual(model.currentSession?.continuationGapDuration, 150)
+        XCTAssertEqual(model.activeElapsed(at: Date(timeIntervalSince1970: 650)), 400)
+    }
+
+    func testContinueReviewTaskRestartsLocalContextProvider() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/AppModel.swift", encoding: .utf8)
+        let methodStart = try XCTUnwrap(source.range(of: "func continueReviewTask(now: Date = Date())"))
+        let methodEnd = try XCTUnwrap(source.range(of: "func openLastFocusedReturnTarget()"))
+        let snippet = String(source[methodStart.lowerBound..<methodEnd.lowerBound])
+
+        XCTAssertTrue(snippet.contains("provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)"))
     }
 
     func testReviewViewShowsTaskAndRemovesFeedbackControls() throws {

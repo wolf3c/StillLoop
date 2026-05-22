@@ -25,6 +25,22 @@ final class SessionSummaryTests: XCTestCase {
         XCTAssertEqual(summary.feedback, .helpful)
     }
 
+    func testSummaryTotalDurationExcludesContinuationGaps() {
+        let session = FocusSession(
+            id: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!,
+            task: "继续整理方案",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: Date(timeIntervalSince1970: 900),
+            continuationGapDuration: 240,
+            events: [],
+            feedback: nil
+        )
+
+        let summary = SessionSummary(session: session)
+
+        XCTAssertEqual(summary.totalDuration, 660)
+    }
+
     func testSummaryAggregatesTopAppsFromSampledContextChains() {
         let session = FocusSession(
             id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
@@ -73,6 +89,7 @@ final class SessionSummaryTests: XCTestCase {
         let session = try decoder.decode(FocusSession.self, from: data)
 
         XCTAssertNil(session.reviewComment)
+        XCTAssertEqual(session.continuationGapDuration, 0)
     }
 
     func testDecodesLegacySessionSummaryWithoutReviewComment() throws {

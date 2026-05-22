@@ -174,6 +174,46 @@ final class AppModelReviewCommentTests: XCTestCase {
         )
     }
 
+    func testLateReviewCommentDoesNotWriteIntoContinuedRunningSession() async throws {
+        let supportDirectory = makeSupportDirectory()
+        let generator = BlockingSessionReviewCommentGenerator()
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            supportDirectory: supportDirectory,
+            reviewCommentGenerator: generator
+        )
+        model.startPermissionDecisionOverride = .proceed
+        let sessionID = UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
+        model.status = .running
+        model.currentSession = FocusSession(
+            id: sessionID,
+            task: "写产品方案",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 60), state: .focused, context: "Codex", nudge: nil)
+            ],
+            feedback: nil
+        )
+
+        model.endSession()
+        try await waitUntil { generator.hasStarted }
+        model.continueReviewTask(now: Date().addingTimeInterval(120))
+
+        generator.complete(with: "这是上一段结束时生成的短评，不应该写入续接中的任务。")
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(model.status, .running)
+        XCTAssertEqual(model.currentSession?.id, sessionID)
+        XCTAssertNil(model.currentSession?.reviewComment)
+        XCTAssertNil(model.currentSession?.endedAt)
+        XCTAssertTrue(try FileSessionStore(appSupportDirectory: supportDirectory).loadSummaries().isEmpty)
+        let storedSessions = try FileSessionStore(appSupportDirectory: supportDirectory).loadSessions()
+        XCTAssertEqual(storedSessions.first?.id, sessionID)
+        XCTAssertNil(storedSessions.first?.reviewComment)
+        XCTAssertNil(storedSessions.first?.endedAt)
+    }
+
     func testLateReviewCommentPreservesSessionUpdates() async throws {
         let supportDirectory = makeSupportDirectory()
         let generator = BlockingSessionReviewCommentGenerator()

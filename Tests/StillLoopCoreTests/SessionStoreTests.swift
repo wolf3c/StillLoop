@@ -50,6 +50,31 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions.first?.task, "更新后的任务")
     }
 
+    func testRemoveSummaryRemovesOnlyMatchingSummaryAndPreservesOrder() throws {
+        let store = FileSessionStore(appSupportDirectory: makeSupportDirectory())
+        let first = SessionSummary(session: makeSession(
+            id: UUID(uuidString: "77777777-aaaa-4aaa-8aaa-777777777777")!,
+            task: "第一段"
+        ))
+        let second = SessionSummary(session: makeSession(
+            id: UUID(uuidString: "88888888-aaaa-4aaa-8aaa-888888888888")!,
+            task: "第二段"
+        ))
+        let third = SessionSummary(session: makeSession(
+            id: UUID(uuidString: "99999999-aaaa-4aaa-8aaa-999999999999")!,
+            task: "第三段"
+        ))
+        try store.save(summary: first)
+        try store.save(summary: second)
+        try store.save(summary: third)
+
+        try store.removeSummary(id: second.id)
+
+        let summaries = try store.loadSummaries()
+        XCTAssertEqual(summaries.map(\.id), [third.id, first.id])
+        XCTAssertEqual(summaries.map(\.task), ["第三段", "第一段"])
+    }
+
     func testSavedSessionEventsFileDoesNotContainScreenshotOrCameraDataFields() throws {
         let supportDirectory = makeSupportDirectory()
         let store = FileSessionStore(appSupportDirectory: supportDirectory)

@@ -1220,7 +1220,7 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.idle)
     }
 
-    func continueReviewTask() {
+    func continueReviewTask(now: Date = Date()) {
         let task = currentSession?.task.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !task.isEmpty else {
             prepareNewSession()
@@ -1228,24 +1228,50 @@ final class AppModel: ObservableObject {
         }
 
         cancelSessionLoops()
+        reviewCommentTask?.cancel()
+        reviewCommentTask = nil
         markBundledModelRuntimeWarmIfRunning()
-        provider = nil
-        currentSession = nil
+        provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)
         latestContext = nil
         lastFocusedReturnTarget = nil
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
+        guard var session = currentSession else {
+            prepareNewSession()
+            return
+        }
+        if let endedAt = session.endedAt {
+            session.continuationGapDuration += max(0, now.timeIntervalSince(endedAt))
+        }
+        session.endedAt = nil
+        session.feedback = nil
+        session.reviewComment = nil
+        currentSession = session
         taskText = task
-        status = .idle
+        status = .running
         currentState = .uncertain
         lastNudge = "暂无提醒"
-        elapsed = 0
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
         accumulatedSystemSuspendedDuration = 0
-        evaluationLoopDescription = "等待开始任务"
+        elapsed = activeElapsed(at: now)
+        evaluationLoopDescription = "继续采集"
         analysisPhase = .idle
-        startSessionAfterPermissionCheck(task: task)
+        contextSourceDescription = "上下文来源：真实本机"
+        screen = .focus
+        try? store.update(session: session)
+        try? store.removeSummary(id: session.id)
+        summaries = (try? store.loadSummaries()) ?? summaries.filter { $0.id != session.id }
+        postStatusItemMode(.uncertain)
+        startCaptureLoop()
+        startEvaluationLoop()
+        telemetry.record(
+            .focusSessionResumed(
+                modelSource: modelSetupSelection.source,
+                reason: "user",
+                duration: elapsed
+            )
+        )
     }
 
     func openLastFocusedReturnTarget() -> Bool {
@@ -1278,6 +1304,7 @@ final class AppModel: ObservableObject {
         do {
             let comment = try await generator.generateComment(for: session)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !Task.isCancelled else { return }
             guard !comment.isEmpty else { return }
             applyReviewComment(comment, to: session)
         } catch {
@@ -1310,6 +1337,7 @@ final class AppModel: ObservableObject {
     private func applyReviewComment(_ comment: String, to session: FocusSession) {
         let summary: SessionSummary
         if var currentSession, currentSession.id == session.id {
+            guard currentSession.endedAt != nil else { return }
             currentSession.reviewComment = comment
             self.currentSession = currentSession
             summary = SessionSummary(session: currentSession)
@@ -1656,7 +1684,13 @@ final class AppModel: ObservableObject {
     func activeElapsed(at now: Date = Date()) -> TimeInterval {
         guard let session = currentSession else { return 0 }
         let currentSuspendedDuration = systemSuspendedAt.map { max(0, now.timeIntervalSince($0)) } ?? 0
-        return max(0, now.timeIntervalSince(session.startedAt) - accumulatedSystemSuspendedDuration - currentSuspendedDuration)
+        return max(
+            0,
+            now.timeIntervalSince(session.startedAt)
+                - session.continuationGapDuration
+                - accumulatedSystemSuspendedDuration
+                - currentSuspendedDuration
+        )
     }
 
     @discardableResult

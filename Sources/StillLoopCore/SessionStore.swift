@@ -58,6 +58,17 @@ public final class FileSessionStore: SessionStore {
         try data.write(to: summariesFileURL, options: .atomic)
     }
 
+    public func removeSummary(id: UUID) throws {
+        try FileManager.default.createDirectory(
+            at: summariesFileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        var summaries = try loadSummaries()
+        summaries.removeAll { $0.id == id }
+        let data = try encoder.encode(summaries)
+        try data.write(to: summariesFileURL, options: .atomic)
+    }
+
     public func loadSessions() throws -> [FocusSession] {
         guard FileManager.default.fileExists(atPath: sessionsFileURL.path) else { return [] }
         let data = try Data(contentsOf: sessionsFileURL)
