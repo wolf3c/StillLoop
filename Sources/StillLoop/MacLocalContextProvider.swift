@@ -39,6 +39,8 @@ final class MacLocalContextProvider: ContextProvider {
             windowTitle: windowTitle,
             browserTitle: browserMetadata?.title,
             browserURL: browserMetadata?.url,
+            processIdentifier: focusedWindow.processIdentifier,
+            windowNumber: focusedWindow.windowNumber,
             screenshotAvailable: screenshot != nil,
             cameraFrameAvailable: camera != nil,
             screenshotPixelWidth: screenshot?.width,
@@ -67,6 +69,8 @@ struct FocusedWindow: Equatable {
     var appName: String
     var bundleIdentifier: String?
     var title: String
+    var processIdentifier: Int? = nil
+    var windowNumber: Int? = nil
 }
 
 protocol FocusedWindowReading {
@@ -91,30 +95,39 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
                 return nil
             }
             let bundleIdentifier = Self.bundleIdentifier(for: window)
+            let processIdentifier = Self.processIdentifier(for: window)
+            let windowNumber = Self.windowNumber(for: window)
             let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return FocusedWindow(
                 appName: ownerName,
                 bundleIdentifier: bundleIdentifier,
-                title: title?.isEmpty == false ? title! : "当前窗口"
+                title: title?.isEmpty == false ? title! : "当前窗口",
+                processIdentifier: processIdentifier,
+                windowNumber: windowNumber
             )
         }
 
         if !Self.isStillLoopAppName(frontmostApp) {
             if var focusedWindow = visibleWindows.first(where: { $0.appName == frontmostApp }) {
                 focusedWindow.bundleIdentifier = focusedWindow.bundleIdentifier ?? frontmostBundleIdentifier
+                focusedWindow.processIdentifier = focusedWindow.processIdentifier ?? frontmostApplication.map { Int($0.processIdentifier) }
                 return focusedWindow
             }
             return FocusedWindow(
                 appName: frontmostApp,
                 bundleIdentifier: frontmostBundleIdentifier,
-                title: "当前窗口"
+                title: "当前窗口",
+                processIdentifier: frontmostApplication.map { Int($0.processIdentifier) },
+                windowNumber: nil
             )
         }
 
         return visibleWindows.first { !Self.isStillLoopAppName($0.appName) } ?? FocusedWindow(
             appName: frontmostApp,
             bundleIdentifier: frontmostBundleIdentifier,
-            title: "StillLoop"
+            title: "StillLoop",
+            processIdentifier: frontmostApplication.map { Int($0.processIdentifier) },
+            windowNumber: nil
         )
     }
 
@@ -123,15 +136,31 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
     }
 
     private static func bundleIdentifier(for window: [String: Any]) -> String? {
+        guard let processIdentifier = processIdentifier(for: window) else { return nil }
+        return NSRunningApplication(processIdentifier: pid_t(processIdentifier))?.bundleIdentifier
+    }
+
+    private static func processIdentifier(for window: [String: Any]) -> Int? {
         let rawPID = window[kCGWindowOwnerPID as String]
         if let processIdentifier = rawPID as? pid_t {
-            return NSRunningApplication(processIdentifier: processIdentifier)?.bundleIdentifier
+            return Int(processIdentifier)
         }
         if let processIdentifier = rawPID as? Int {
-            return NSRunningApplication(processIdentifier: pid_t(processIdentifier))?.bundleIdentifier
+            return processIdentifier
         }
         if let processIdentifier = rawPID as? NSNumber {
-            return NSRunningApplication(processIdentifier: processIdentifier.int32Value)?.bundleIdentifier
+            return processIdentifier.intValue
+        }
+        return nil
+    }
+
+    private static func windowNumber(for window: [String: Any]) -> Int? {
+        let rawWindowNumber = window[kCGWindowNumber as String]
+        if let windowNumber = rawWindowNumber as? Int {
+            return windowNumber
+        }
+        if let windowNumber = rawWindowNumber as? NSNumber {
+            return windowNumber.intValue
         }
         return nil
     }

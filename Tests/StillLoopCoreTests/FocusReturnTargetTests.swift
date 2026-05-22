@@ -2,7 +2,7 @@ import XCTest
 @testable import StillLoopCore
 
 final class FocusReturnTargetTests: XCTestCase {
-    func testFocusedEvaluationBuildsReturnTargetFromModelSelectedBrowserSnapshot() async throws {
+    func testFocusedEvaluationBuildsReturnTargetFromModelSelectedTargetID() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubReturnTargetEngine(response: """
         {
           "analysis": {
@@ -14,12 +14,7 @@ final class FocusReturnTargetTests: XCTestCase {
             "taskAlignment": "页面内容与处理未读邮件匹配。",
             "decisionRationale": "用户参与且当前页面支持任务。"
           },
-          "focusTarget": {
-            "appName": "Google Chrome",
-            "windowTitle": "Gmail",
-            "browserTitle": "Inbox (3) - Gmail",
-            "browserURL": "https://mail.google.com/mail/u/0/#inbox"
-          },
+          "focusTargetID": "T1",
           "state": "focused",
           "reason": "Gmail inbox matches the task.",
           "nudge": null
@@ -32,6 +27,8 @@ final class FocusReturnTargetTests: XCTestCase {
             windowTitle: "Gmail",
             browserTitle: "Inbox (3) - Gmail",
             browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            processIdentifier: 1200,
+            windowNumber: 8801,
             screenshotAvailable: true,
             cameraFrameAvailable: true
         )
@@ -42,6 +39,8 @@ final class FocusReturnTargetTests: XCTestCase {
             windowTitle: "StillLoop",
             browserTitle: nil,
             browserURL: nil,
+            processIdentifier: 1300,
+            windowNumber: 9901,
             screenshotAvailable: true,
             cameraFrameAvailable: true
         )
@@ -57,11 +56,13 @@ final class FocusReturnTargetTests: XCTestCase {
         XCTAssertEqual(result.returnTarget?.appBundleIdentifier, "com.google.Chrome")
         XCTAssertEqual(result.returnTarget?.browserTitle, "Inbox (3) - Gmail")
         XCTAssertEqual(result.returnTarget?.browserURL, "https://mail.google.com/mail/u/0/#inbox")
+        XCTAssertEqual(result.returnTarget?.processIdentifier, 1200)
+        XCTAssertEqual(result.returnTarget?.windowNumber, 8801)
         XCTAssertEqual(result.returnTarget?.displayName, "Chrome · Inbox (3) - Gmail")
         XCTAssertEqual(result.returnTarget?.subtitleText, "点击回到 Chrome · Inbox (3) - Gmail")
     }
 
-    func testFocusedEvaluationBuildsReturnTargetFromModelSelectedAppSnapshot() async throws {
+    func testFocusedEvaluationUsesTargetIDInsteadOfTextFieldsForDuplicateWindows() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubReturnTargetEngine(response: """
         {
           "analysis": {
@@ -73,31 +74,40 @@ final class FocusReturnTargetTests: XCTestCase {
             "taskAlignment": "Codex 中的 StillLoop 项目与开发 StillLoop 任务匹配。",
             "decisionRationale": "用户参与且当前应用内容支持任务。"
           },
-          "focusTarget": {
-            "appName": "Codex",
-            "windowTitle": "StillLoop",
-            "browserTitle": null,
-            "browserURL": null
-          },
+          "focusTargetID": "T2",
           "state": "focused",
           "reason": "Codex matches the development task.",
           "nudge": null
         }
         """))
-        let snapshot = ContextSnapshot(
+        let olderWindow = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 39),
+            activeAppName: "Codex",
+            activeAppBundleIdentifier: "com.openai.codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 2001,
+            windowNumber: 3001,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+        let selectedWindow = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 40),
             activeAppName: "Codex",
             activeAppBundleIdentifier: "com.openai.codex",
             windowTitle: "StillLoop",
             browserTitle: nil,
             browserURL: nil,
+            processIdentifier: 2002,
+            windowNumber: 3002,
             screenshotAvailable: true,
             cameraFrameAvailable: true
         )
 
         let result = try await evaluator.evaluate(
             task: "开发 StillLoop 产品",
-            recentSnapshots: [snapshot],
+            recentSnapshots: [olderWindow, selectedWindow],
             previousEvents: []
         )
 
@@ -105,11 +115,13 @@ final class FocusReturnTargetTests: XCTestCase {
         XCTAssertEqual(result.returnTarget?.appName, "Codex")
         XCTAssertEqual(result.returnTarget?.appBundleIdentifier, "com.openai.codex")
         XCTAssertEqual(result.returnTarget?.windowTitle, "StillLoop")
+        XCTAssertEqual(result.returnTarget?.processIdentifier, 2002)
+        XCTAssertEqual(result.returnTarget?.windowNumber, 3002)
         XCTAssertNil(result.returnTarget?.browserURL)
         XCTAssertEqual(result.returnTarget?.subtitleText, "点击回到 Codex · StillLoop")
     }
 
-    func testFocusedEvaluationIgnoresModelSelectedTargetMissingFromSnapshots() async throws {
+    func testFocusedEvaluationIgnoresModelSelectedTargetIDMissingFromSnapshots() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubReturnTargetEngine(response: """
         {
           "analysis": {
@@ -121,12 +133,7 @@ final class FocusReturnTargetTests: XCTestCase {
             "taskAlignment": "模型声称 Gmail 与任务匹配。",
             "decisionRationale": "模型选择了 Gmail 作为专注目标。"
           },
-          "focusTarget": {
-            "appName": "Google Chrome",
-            "windowTitle": "Gmail",
-            "browserTitle": "Inbox - Gmail",
-            "browserURL": "https://mail.google.com/mail/u/0/#inbox"
-          },
+          "focusTargetID": "T99",
           "state": "focused",
           "reason": "Gmail matches the task.",
           "nudge": null
@@ -156,12 +163,7 @@ final class FocusReturnTargetTests: XCTestCase {
     func testDistractedEvaluationDoesNotBuildReturnTarget() async throws {
         let evaluator = LLMFocusEvaluator(engine: StubReturnTargetEngine(response: """
         {
-          "focusTarget": {
-            "appName": "Google Chrome",
-            "windowTitle": "X",
-            "browserTitle": "X",
-            "browserURL": "https://x.com/home"
-          },
+          "focusTargetID": "T1",
           "state":"distracted",
           "reason":"Current page is unrelated.",
           "nudge":null

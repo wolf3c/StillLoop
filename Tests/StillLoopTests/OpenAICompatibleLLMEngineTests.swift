@@ -135,10 +135,10 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         )
         XCTAssertLessThan(
             try XCTUnwrap(requestBodyText.range(of: #""state":{"#)?.lowerBound),
-            try XCTUnwrap(requestBodyText.range(of: #""focusTarget":{"#)?.lowerBound)
+            try XCTUnwrap(requestBodyText.range(of: #""focusTargetID":{"#)?.lowerBound)
         )
         XCTAssertLessThan(
-            try XCTUnwrap(requestBodyText.range(of: #""focusTarget":{"#)?.lowerBound),
+            try XCTUnwrap(requestBodyText.range(of: #""focusTargetID":{"#)?.lowerBound),
             try XCTUnwrap(requestBodyText.range(of: #""nudge":{"#)?.lowerBound)
         )
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
@@ -163,16 +163,11 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertNil(analysisProperties["decisionRationale"])
         let state = try XCTUnwrap(properties["state"] as? [String: Any])
         XCTAssertEqual(state["enum"] as? [String], ["focused", "uncertain", "distracted", "stuck", "resting", "away"])
-        let focusTarget = try XCTUnwrap(properties["focusTarget"] as? [String: Any])
-        XCTAssertEqual(focusTarget["type"] as? [String], ["object", "null"])
-        let focusTargetProperties = try XCTUnwrap(focusTarget["properties"] as? [String: Any])
-        XCTAssertNotNil(focusTargetProperties["appName"] as? [String: Any])
-        XCTAssertNotNil(focusTargetProperties["windowTitle"] as? [String: Any])
-        XCTAssertNotNil(focusTargetProperties["browserTitle"] as? [String: Any])
-        XCTAssertNotNil(focusTargetProperties["browserURL"] as? [String: Any])
-        XCTAssertEqual(focusTarget["required"] as? [String], ["appName", "windowTitle", "browserTitle", "browserURL"])
+        let focusTargetID = try XCTUnwrap(properties["focusTargetID"] as? [String: Any])
+        XCTAssertEqual(focusTargetID["type"] as? [String], ["string", "null"])
+        XCTAssertNil(properties["focusTarget"])
         XCTAssertNil(properties["confidence"])
-        XCTAssertEqual(schema["required"] as? [String], ["analysis", "reason", "state", "focusTarget", "nudge"])
+        XCTAssertEqual(schema["required"] as? [String], ["analysis", "reason", "state", "focusTargetID", "nudge"])
         XCTAssertFalse((schema["required"] as? [String])?.contains("confidence") == true)
     }
 

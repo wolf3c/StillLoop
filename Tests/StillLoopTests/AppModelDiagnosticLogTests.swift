@@ -159,8 +159,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .battery)
         XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
-        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
-        XCTAssertFalse(engine.flattenedPrompt.contains("visual sample[1]\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]\ntargetID: T4\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
+        XCTAssertFalse(engine.flattenedPrompt.contains("visual sample[1]\ntargetID: T3\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })

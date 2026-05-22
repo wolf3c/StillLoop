@@ -101,6 +101,8 @@ final class SessionStoreTests: XCTestCase {
             windowTitle: "Gmail",
             browserTitle: "Inbox (3) - Gmail",
             browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            processIdentifier: 1200,
+            windowNumber: 8801,
             capturedAt: Date(timeIntervalSince1970: 70)
         )
         let nudgeTarget = FocusReturnTarget(
@@ -109,6 +111,8 @@ final class SessionStoreTests: XCTestCase {
             windowTitle: "StillLoop",
             browserTitle: nil,
             browserURL: nil,
+            processIdentifier: 2002,
+            windowNumber: 3002,
             capturedAt: Date(timeIntervalSince1970: 80)
         )
         let session = FocusSession(
@@ -136,8 +140,12 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions.first?.events.first?.returnTarget, target)
         XCTAssertEqual(sessions.first?.events.first?.returnTarget?.displayName, "Chrome · Inbox (3) - Gmail")
         XCTAssertEqual(sessions.first?.events.first?.returnTarget?.browserURL, "https://mail.google.com/mail/u/0/#inbox")
+        XCTAssertEqual(sessions.first?.events.first?.returnTarget?.processIdentifier, 1200)
+        XCTAssertEqual(sessions.first?.events.first?.returnTarget?.windowNumber, 8801)
         XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget, nudgeTarget)
         XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget?.displayName, "Codex · StillLoop")
+        XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget?.processIdentifier, 2002)
+        XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget?.windowNumber, 3002)
     }
 
     func testDecodesLegacyFocusEventWithoutReturnTarget() throws {

@@ -192,6 +192,43 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertGreaterThan(metrics.inputTextCharacterCount, 0)
     }
 
+    func testPromptIncludesUniqueTargetIDsForCandidateCaptures() async throws {
+        let engine = StubEngine(response: """
+        {"state":"uncertain","reason":"Ambiguous context","focusTargetID":null,"nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "开发 StillLoop 产品",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Codex",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    activeAppName: "Codex",
+                    windowTitle: "StillLoop",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertTrue(engine.flattenedPrompt.contains("targetID: T1"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("targetID: T2"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("Return only strict JSON:"))
+        XCTAssertTrue(engine.flattenedPrompt.contains(#""focusTargetID":"T1 or null""#))
+    }
+
     func testInputTextTokenCountingDoesNotInflateModelRunDuration() async throws {
         let evaluator = LLMFocusEvaluator(engine: SlowTokenCountingEngine(response: """
         {"state":"uncertain","reason":"Ambiguous context","nudge":null}
@@ -462,7 +499,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
         XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=false -> distracted"))
         XCTAssertFalse(prompt.contains("Do not let the final state contradict userEngaged or taskAligned"))
-        XCTAssertTrue(prompt.contains("\"analysis\":{\"userEngagement\":\"short observable summary\",\"userEngaged\":true,\"screenContent\":\"short high-level summary\",\"observedActivity\":\"short progress summary\",\"taskAlignment\":\"short alignment summary\",\"taskAligned\":true},\"reason\":\"short reason\",\"state\":\"focused|uncertain|distracted|stuck|resting|away\",\"focusTarget\""))
+        XCTAssertTrue(prompt.contains("\"analysis\":{\"userEngagement\":\"short observable summary\",\"userEngaged\":true,\"screenContent\":\"short high-level summary\",\"observedActivity\":\"short progress summary\",\"taskAlignment\":\"short alignment summary\",\"taskAligned\":true},\"reason\":\"short reason\",\"state\":\"focused|uncertain|distracted|stuck|resting|away\",\"focusTargetID\""))
     }
 
     func testParsesAwayStateForUserLeavingScene() async throws {
@@ -817,12 +854,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             "taskAlignment": "标题显示 Home / X，与浏览任务匹配。",
             "decisionRationale": "用户参与且当前页面支持任务。"
           },
-          "focusTarget": {
-            "appName": "Google Chrome",
-            "windowTitle": "当前窗口",
-            "browserTitle": "Home / X",
-            "browserURL": null
-          },
+          "focusTargetID": "T1",
           "state": "focused",
           "reason": "X 页面与浏览任务匹配。",
           "nudge": null
@@ -1023,7 +1055,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("browserURL: https://example.com"))
         XCTAssertTrue(engine.flattenedPrompt.contains("app: Ghostty"))
         XCTAssertTrue(engine.flattenedPrompt.contains("app: Mail"))
-        XCTAssertTrue(engine.flattenedPrompt.contains("timeline[1]\ntime: 1970-01-01T00:00:10Z"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("timeline[1]\ntargetID: T1\ntime: 1970-01-01T00:00:10Z"))
         XCTAssertFalse(engine.flattenedPrompt.contains("timeline[2]\ntime:"))
         XCTAssertFalse(engine.flattenedPrompt.contains("timeline[1]\ntime: 1970-01-01T00:00:20Z"))
         XCTAssertFalse(engine.flattenedPrompt.contains("timeline[1]\ntime: 1970-01-01T00:00:30Z"))

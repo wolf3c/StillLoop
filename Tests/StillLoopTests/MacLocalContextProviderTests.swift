@@ -10,7 +10,9 @@ final class MacLocalContextProviderTests: XCTestCase {
             focusedWindowReader: StubFocusedWindowReader(
                 appName: "Google Chrome",
                 bundleIdentifier: "com.google.Chrome",
-                title: "当前窗口"
+                title: "当前窗口",
+                processIdentifier: 4201,
+                windowNumber: 9902
             ),
             visualCapture: StubVisualCapture()
         )
@@ -22,6 +24,8 @@ final class MacLocalContextProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.windowTitle, "当前窗口")
         XCTAssertEqual(snapshot.browserTitle, "OpenAI Platform")
         XCTAssertEqual(snapshot.browserURL, "https://platform.openai.com/docs")
+        XCTAssertEqual(snapshot.processIdentifier, 4201)
+        XCTAssertEqual(snapshot.windowNumber, 9902)
     }
 
     func testCapturePresentsBrowserAutomationNoticeBeforeReadingBrowserMetadata() async {
@@ -136,9 +140,17 @@ private struct StubFocusedWindowReader: FocusedWindowReading {
     var appName: String
     var bundleIdentifier: String? = nil
     var title: String
+    var processIdentifier: Int? = nil
+    var windowNumber: Int? = nil
 
     func bestFocusedWindow() -> FocusedWindow {
-        FocusedWindow(appName: appName, bundleIdentifier: bundleIdentifier, title: title)
+        FocusedWindow(
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            title: title,
+            processIdentifier: processIdentifier,
+            windowNumber: windowNumber
+        )
     }
 }
 

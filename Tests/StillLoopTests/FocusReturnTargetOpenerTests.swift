@@ -235,6 +235,60 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         XCTAssertTrue(appOpener.actions.isEmpty)
     }
 
+    func testAppTargetRaisesMatchedWindowBeforeBundleActivation() {
+        let runner = RecordingAppleScriptRunner(result: true)
+        let appOpener = RecordingReturnTargetApplicationOpener(activateBundleResult: true)
+        let windowRaiser = RecordingFocusReturnTargetWindowRaiser(result: true)
+        let opener = MacFocusReturnTargetOpener(
+            scriptRunner: runner,
+            applicationOpener: appOpener,
+            windowRaiser: windowRaiser
+        )
+        let target = FocusReturnTarget(
+            appName: "Zed",
+            appBundleIdentifier: "dev.zed.Zed",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 4421,
+            windowNumber: 9031,
+            capturedAt: Date(timeIntervalSince1970: 80)
+        )
+
+        XCTAssertTrue(opener.open(target))
+
+        XCTAssertEqual(windowRaiser.requests, [target])
+        XCTAssertTrue(appOpener.actions.isEmpty)
+        XCTAssertTrue(runner.sources.isEmpty)
+    }
+
+    func testAppTargetFallsBackToBundleActivationWhenWindowRaiseFails() {
+        let runner = RecordingAppleScriptRunner(result: true)
+        let appOpener = RecordingReturnTargetApplicationOpener(activateBundleResult: true)
+        let windowRaiser = RecordingFocusReturnTargetWindowRaiser(result: false)
+        let opener = MacFocusReturnTargetOpener(
+            scriptRunner: runner,
+            applicationOpener: appOpener,
+            windowRaiser: windowRaiser
+        )
+        let target = FocusReturnTarget(
+            appName: "Zed",
+            appBundleIdentifier: "dev.zed.Zed",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 4421,
+            windowNumber: 9031,
+            capturedAt: Date(timeIntervalSince1970: 81)
+        )
+
+        XCTAssertTrue(opener.open(target))
+
+        XCTAssertEqual(windowRaiser.requests, [target])
+        XCTAssertEqual(appOpener.actions, ["activateBundle:dev.zed.Zed"])
+        XCTAssertTrue(runner.sources.isEmpty)
+    }
+
     func testAppTargetActivatesRunningBundleBeforeOpeningApplication() {
         let runner = RecordingAppleScriptRunner(result: true)
         let appOpener = RecordingReturnTargetApplicationOpener(
@@ -254,6 +308,20 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         XCTAssertTrue(opener.open(target))
         XCTAssertEqual(appOpener.actions, ["activateBundle:com.openai.codex"])
         XCTAssertTrue(runner.sources.isEmpty)
+    }
+}
+
+private final class RecordingFocusReturnTargetWindowRaiser: FocusReturnTargetWindowRaising {
+    var requests: [FocusReturnTarget] = []
+    let result: Bool
+
+    init(result: Bool) {
+        self.result = result
+    }
+
+    func raiseWindow(for target: FocusReturnTarget) -> Bool {
+        requests.append(target)
+        return result
     }
 }
 

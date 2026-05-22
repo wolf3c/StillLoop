@@ -1,3 +1,4 @@
+import ApplicationServices
 import AppKit
 import Foundation
 import StillLoopCore
@@ -39,6 +40,10 @@ protocol FocusReturnTargetApplicationOpening {
     func activateRunningApplication(named appName: String) -> Bool
 }
 
+protocol FocusReturnTargetWindowRaising {
+    func raiseWindow(for target: FocusReturnTarget) -> Bool
+}
+
 struct WorkspaceFocusReturnTargetApplicationOpener: FocusReturnTargetApplicationOpening {
     func activateRunningApplication(bundleIdentifier: String) -> Bool {
         NSRunningApplication
@@ -65,6 +70,156 @@ struct WorkspaceFocusReturnTargetApplicationOpener: FocusReturnTargetApplication
     }
 }
 
+struct AccessibilityFocusReturnTargetWindowRaiser: FocusReturnTargetWindowRaising {
+    private struct LiveWindow {
+        var title: String?
+        var bounds: CGRect?
+    }
+
+    func raiseWindow(for target: FocusReturnTarget) -> Bool {
+        guard let processIdentifier = target.processIdentifier,
+              let windowNumber = target.windowNumber,
+              let liveWindow = liveWindow(processIdentifier: processIdentifier, windowNumber: windowNumber),
+              bundleMatches(target.appBundleIdentifier, processIdentifier: processIdentifier)
+        else {
+            return false
+        }
+
+        let application = AXUIElementCreateApplication(pid_t(processIdentifier))
+        guard let axWindows = axWindows(for: application),
+              let axWindow = bestAXWindow(in: axWindows, target: target, liveWindow: liveWindow)
+        else {
+            return false
+        }
+
+        _ = AXUIElementSetAttributeValue(application, kAXFocusedWindowAttribute as CFString, axWindow)
+        let raiseResult = AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+        _ = NSRunningApplication(processIdentifier: pid_t(processIdentifier))?
+            .activate(options: [.activateIgnoringOtherApps])
+        return raiseResult == .success
+    }
+
+    private func bundleMatches(_ bundleIdentifier: String?, processIdentifier: Int) -> Bool {
+        guard let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleIdentifier.isEmpty
+        else {
+            return true
+        }
+        return NSRunningApplication(processIdentifier: pid_t(processIdentifier))?.bundleIdentifier == bundleIdentifier
+    }
+
+    private func liveWindow(processIdentifier: Int, windowNumber: Int) -> LiveWindow? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]]
+        else {
+            return nil
+        }
+        guard let window = windows.first(where: { window in
+            Self.intValue(window[kCGWindowOwnerPID as String]) == processIdentifier
+                && Self.intValue(window[kCGWindowNumber as String]) == windowNumber
+                && Self.intValue(window[kCGWindowLayer as String]) == 0
+        }) else {
+            return nil
+        }
+        let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bounds: CGRect?
+        if let boundsDictionary = window[kCGWindowBounds as String] as? [String: Any] {
+            bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary)
+        } else {
+            bounds = nil
+        }
+        return LiveWindow(title: title?.isEmpty == false ? title : nil, bounds: bounds)
+    }
+
+    private func axWindows(for application: AXUIElement) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? [AXUIElement]
+    }
+
+    private func bestAXWindow(
+        in windows: [AXUIElement],
+        target: FocusReturnTarget,
+        liveWindow: LiveWindow
+    ) -> AXUIElement? {
+        windows.first { axWindow in
+            titleMatches(axWindow, target: target, liveWindow: liveWindow)
+                && frameMatches(axWindow, liveWindow: liveWindow)
+        }
+            ?? windows.first { frameMatches($0, liveWindow: liveWindow) }
+            ?? windows.first { titleMatches($0, target: target, liveWindow: liveWindow) }
+    }
+
+    private func titleMatches(_ axWindow: AXUIElement, target: FocusReturnTarget, liveWindow: LiveWindow) -> Bool {
+        let axTitle = normalized(title(for: axWindow))
+        guard !axTitle.isEmpty else { return false }
+        return [target.windowTitle, liveWindow.title]
+            .map(normalized)
+            .contains(axTitle)
+    }
+
+    private func frameMatches(_ axWindow: AXUIElement, liveWindow: LiveWindow) -> Bool {
+        guard let liveBounds = liveWindow.bounds, let axFrame = frame(for: axWindow) else {
+            return false
+        }
+        return abs(axFrame.origin.x - liveBounds.origin.x) <= 2
+            && abs(axFrame.origin.y - liveBounds.origin.y) <= 2
+            && abs(axFrame.size.width - liveBounds.size.width) <= 2
+            && abs(axFrame.size.height - liveBounds.size.height) <= 2
+    }
+
+    private func title(for axWindow: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
+    private func frame(for axWindow: AXUIElement) -> CGRect? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axWindow, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(axWindow, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue,
+              let sizeValue,
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID()
+        else {
+            return nil
+        }
+        let positionAXValue = positionValue as! AXValue
+        let sizeAXValue = sizeValue as! AXValue
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionAXValue, .cgPoint, &point),
+              AXValueGetValue(sizeAXValue, .cgSize, &size)
+        else {
+            return nil
+        }
+        return CGRect(origin: point, size: size)
+    }
+
+    private func normalized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let value = value as? Int {
+            return value
+        }
+        if let value = value as? NSNumber {
+            return value.intValue
+        }
+        if let value = value as? pid_t {
+            return Int(value)
+        }
+        return nil
+    }
+}
+
 struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
     private struct BrowserTabLocation: Equatable {
         var windowIndex: Int
@@ -75,13 +230,16 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
 
     private let scriptRunner: AppleScriptRunning
     private let applicationOpener: FocusReturnTargetApplicationOpening
+    private let windowRaiser: FocusReturnTargetWindowRaising
 
     init(
         scriptRunner: AppleScriptRunning = NSAppleScriptRunner(),
-        applicationOpener: FocusReturnTargetApplicationOpening = WorkspaceFocusReturnTargetApplicationOpener()
+        applicationOpener: FocusReturnTargetApplicationOpening = WorkspaceFocusReturnTargetApplicationOpener(),
+        windowRaiser: FocusReturnTargetWindowRaising = AccessibilityFocusReturnTargetWindowRaiser()
     ) {
         self.scriptRunner = scriptRunner
         self.applicationOpener = applicationOpener
+        self.windowRaiser = windowRaiser
     }
 
     func open(_ target: FocusReturnTarget) -> Bool {
@@ -117,6 +275,10 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
     }
 
     private func openApplicationTarget(_ target: FocusReturnTarget) -> Bool {
+        if windowRaiser.raiseWindow(for: target) {
+            return true
+        }
+
         if let bundleIdentifier = target.appBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
            !bundleIdentifier.isEmpty {
             if applicationOpener.activateRunningApplication(bundleIdentifier: bundleIdentifier) {

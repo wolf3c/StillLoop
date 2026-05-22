@@ -319,14 +319,14 @@ public struct LLMFocusEvaluator {
 
     private struct ModelResponse: Decodable {
         var analysis: LLMFocusAnalysis?
-        var focusTarget: ModelFocusTarget?
+        var focusTargetID: String?
         var state: FocusState
         var reason: String
         var nudge: String?
 
         private enum CodingKeys: String, CodingKey {
             case analysis
-            case focusTarget
+            case focusTargetID
             case state
             case reason
             case nudge
@@ -339,7 +339,7 @@ public struct LLMFocusEvaluator {
             } catch {
                 analysis = nil
             }
-            focusTarget = try? container.decodeIfPresent(ModelFocusTarget.self, forKey: .focusTarget)
+            focusTargetID = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .focusTargetID))
             let rawState = try container.decode(String.self, forKey: .state)
             guard let decodedState = Self.decodeState(rawState) else {
                 throw DecodingError.dataCorruptedError(
@@ -351,6 +351,11 @@ public struct LLMFocusEvaluator {
             state = decodedState
             reason = (try? container.decode(String.self, forKey: .reason)) ?? ""
             nudge = try? container.decodeIfPresent(String.self, forKey: .nudge)
+        }
+
+        private static func trimmed(_ value: String?) -> String? {
+            let trimmedValue = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmedValue.isEmpty ? nil : trimmedValue
         }
 
         private static func decodeState(_ rawValue: String) -> FocusState? {
@@ -377,31 +382,9 @@ public struct LLMFocusEvaluator {
         }
     }
 
-    private struct ModelFocusTarget: Decodable, Equatable {
-        var appName: String?
-        var windowTitle: String?
-        var browserTitle: String?
-        var browserURL: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case appName
-            case windowTitle
-            case browserTitle
-            case browserURL
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            appName = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .appName))
-            windowTitle = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .windowTitle))
-            browserTitle = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .browserTitle))
-            browserURL = Self.trimmed(try? container.decodeIfPresent(String.self, forKey: .browserURL))
-        }
-
-        private static func trimmed(_ value: String?) -> String? {
-            let trimmedValue = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return trimmedValue.isEmpty ? nil : trimmedValue
-        }
+    private struct PromptTargetSnapshot: Equatable {
+        var targetID: String
+        var snapshot: ContextSnapshot
     }
 
     private let engine: LocalLLMEngine
@@ -467,11 +450,16 @@ public struct LLMFocusEvaluator {
                 nudge: nil
             )
         ]
+        let focusShapeTargetSnapshots = promptTargetSnapshots(
+            textSnapshots: textSnapshots,
+            visualSnapshots: []
+        )
         let focusShapeMessages = messages(
             task: "优化 tracemind",
             textSnapshots: textSnapshots,
             visualSnapshots: [],
-            previousEvents: previousEvents
+            previousEvents: previousEvents,
+            targetSnapshots: focusShapeTargetSnapshots
         )
         return [
             LLMFocusPromptCacheProbeRequest(
@@ -507,20 +495,13 @@ public struct LLMFocusEvaluator {
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil
     ) async throws -> LLMEvaluationResult {
-        let promptMessages = messages(
-            task: task,
-            textSnapshots: recentSnapshots,
-            visualSnapshots: recentSnapshots,
-            previousEvents: previousEvents
-        )
-        return try await evaluate(
+        return try await performEvaluation(
             task: task,
             textSnapshots: recentSnapshots,
             visualSnapshots: recentSnapshots,
             previousEvents: previousEvents,
             powerStatus: powerStatus,
-            visualSampleLimit: visualSampleLimit,
-            promptMessages: promptMessages
+            visualSampleLimit: visualSampleLimit
         )
     }
 
@@ -532,32 +513,32 @@ public struct LLMFocusEvaluator {
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil
     ) async throws -> LLMEvaluationResult {
-        let promptMessages = messages(
-            task: task,
-            textSnapshots: textSnapshots,
-            visualSnapshots: visualSnapshots,
-            previousEvents: previousEvents
-        )
-        return try await evaluate(
+        return try await performEvaluation(
             task: task,
             textSnapshots: textSnapshots,
             visualSnapshots: visualSnapshots,
             previousEvents: previousEvents,
             powerStatus: powerStatus,
-            visualSampleLimit: visualSampleLimit,
-            promptMessages: promptMessages
+            visualSampleLimit: visualSampleLimit
         )
     }
 
-    private func evaluate(
+    private func performEvaluation(
         task: String,
         textSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent],
         powerStatus: DevicePowerStatus?,
-        visualSampleLimit: Int?,
-        promptMessages: [LLMMessage]
+        visualSampleLimit: Int?
     ) async throws -> LLMEvaluationResult {
+        let targetSnapshots = promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
+        let promptMessages = messages(
+            task: task,
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents,
+            targetSnapshots: targetSnapshots
+        )
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
         let imageCount = imageCount(in: promptMessages)
         let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
@@ -576,7 +557,7 @@ public struct LLMFocusEvaluator {
         } catch {
             throw LLMFocusEvaluationError(kind: .jsonParse)
         }
-        let returnTarget = resolvedReturnTarget(from: modelResponse, snapshots: textSnapshots)
+        let returnTarget = resolvedReturnTarget(from: modelResponse, targetSnapshots: targetSnapshots)
         let nudge = normalizedNudge(from: modelResponse, task: task)
         let modelRunDurationSeconds = max(0, Date().timeIntervalSince(modelStartedAt))
         return LLMEvaluationResult(
@@ -682,12 +663,11 @@ public struct LLMFocusEvaluator {
         - userEngaged: boolean, whether the user appears present and active, or null if unclear.
         - taskAligned: boolean, whether visible work appears to support the current task, or null if unclear.
 
-        Also choose focusTarget:
-        - If state is focused, focusTarget should identify the app/window/browser page that is the actual focused task context.
-        - If state is not focused, focusTarget must be null.
-        - Use only app, window, browserTitle, and browserURL values present in the current captures. Never invent an app, title, or URL from the task or history.
-        - For browser work, include browserURL when it is present in the current capture metadata; otherwise use browserTitle.
-        - For non-browser work, set browserTitle and browserURL to null.
+        Also choose focusTargetID:
+        - Each current capture includes a targetID such as T1 or T2.
+        - If state is focused, focusTargetID must be exactly one targetID from the current captures.
+        - If state is not focused, focusTargetID must be null.
+        - Never invent a targetID from the task or history.
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
         The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
@@ -695,7 +675,7 @@ public struct LLMFocusEvaluator {
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","userEngaged":true,"screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","taskAligned":true},"reason":"short reason","state":"focused|uncertain|distracted|stuck|resting|away","focusTarget":{"appName":"app from current captures","windowTitle":"window title or null","browserTitle":"browser title or null","browserURL":"browser URL or null"},"nudge":"short Chinese nudge or null"}
+        {"analysis":{"userEngagement":"short observable summary","userEngaged":true,"screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","taskAligned":true},"reason":"short reason","state":"focused|uncertain|distracted|stuck|resting|away","focusTargetID":"T1 or null","nudge":"short Chinese nudge or null"}
         """
     }
 
@@ -711,7 +691,8 @@ public struct LLMFocusEvaluator {
         task: String,
         textSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
-        previousEvents: [FocusEvent]
+        previousEvents: [FocusEvent],
+        targetSnapshots: [PromptTargetSnapshot]
     ) -> [LLMMessage] {
         let history = previousEvents.suffix(8).map { event in
             "- \(event.state.rawValue): \(event.context) nudge=\(event.nudge ?? "none")"
@@ -729,18 +710,22 @@ public struct LLMFocusEvaluator {
         ]
 
         let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
-        let orderedTextSnapshots = textSnapshots
-            .filter { !visualSnapshotIDs.contains($0.id) }
-            .sorted { $0.timestamp < $1.timestamp }
+        let orderedTextSnapshots = targetSnapshots
+            .filter { !visualSnapshotIDs.contains($0.snapshot.id) }
         if !orderedTextSnapshots.isEmpty {
             messages.append(LLMMessage(role: .user, content: [.text(textTimeline(for: orderedTextSnapshots))]))
         }
 
-        messages.append(contentsOf: visualSnapshots
-            .sorted { $0.timestamp < $1.timestamp }
+        messages.append(contentsOf: targetSnapshots
+            .filter { visualSnapshotIDs.contains($0.snapshot.id) }
             .enumerated()
-            .map { index, snapshot in
-                var captureLines = captureMetadataLines(for: snapshot, label: "visual sample[\(index + 1)]")
+            .map { index, targetSnapshot in
+                let snapshot = targetSnapshot.snapshot
+                var captureLines = captureMetadataLines(
+                    for: snapshot,
+                    label: "visual sample[\(index + 1)]",
+                    targetID: targetSnapshot.targetID
+                )
                 captureLines.append(contentsOf: [
                     "visualOrder: screenshot image first, then camera image for this same capture timestamp",
                     "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))",
@@ -760,20 +745,39 @@ public struct LLMFocusEvaluator {
         return messages
     }
 
-    private func textTimeline(for snapshots: [ContextSnapshot]) -> String {
+    private func promptTargetSnapshots(
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot]
+    ) -> [PromptTargetSnapshot] {
+        let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
+        let orderedSnapshots = textSnapshots
+            .filter { !visualSnapshotIDs.contains($0.id) }
+            .sorted { $0.timestamp < $1.timestamp }
+            + visualSnapshots.sorted { $0.timestamp < $1.timestamp }
+        return orderedSnapshots.enumerated().map { index, snapshot in
+            PromptTargetSnapshot(targetID: "T\(index + 1)", snapshot: snapshot)
+        }
+    }
+
+    private func textTimeline(for snapshots: [PromptTargetSnapshot]) -> String {
         var lines = [
             "Text timeline: all pending captures, metadata only. Images are attached only to separate visual sample messages."
         ]
-        for (index, snapshot) in snapshots.enumerated() {
+        for (index, targetSnapshot) in snapshots.enumerated() {
             lines.append("")
-            lines.append(contentsOf: captureMetadataLines(for: snapshot, label: "timeline[\(index + 1)]"))
+            lines.append(contentsOf: captureMetadataLines(
+                for: targetSnapshot.snapshot,
+                label: "timeline[\(index + 1)]",
+                targetID: targetSnapshot.targetID
+            ))
         }
         return lines.joined(separator: "\n")
     }
 
-    private func captureMetadataLines(for snapshot: ContextSnapshot, label: String) -> [String] {
+    private func captureMetadataLines(for snapshot: ContextSnapshot, label: String, targetID: String) -> [String] {
         var captureLines = [
             label,
+            "targetID: \(targetID)",
             "time: \(dateFormatter.string(from: snapshot.timestamp))",
             "app: \(snapshot.activeAppName)"
         ]
@@ -801,69 +805,14 @@ public struct LLMFocusEvaluator {
 
     private func resolvedReturnTarget(
         from response: ModelResponse,
-        snapshots: [ContextSnapshot]
+        targetSnapshots: [PromptTargetSnapshot]
     ) -> FocusReturnTarget? {
         guard response.state == .focused,
-              let focusTarget = response.focusTarget,
-              let snapshot = snapshot(matching: focusTarget, in: snapshots)
+              let focusTargetID = response.focusTargetID,
+              let targetSnapshot = targetSnapshots.first(where: { $0.targetID == focusTargetID })
         else {
             return nil
         }
-        return FocusReturnTarget.make(from: snapshot)
-    }
-
-    private func snapshot(
-        matching target: ModelFocusTarget,
-        in snapshots: [ContextSnapshot]
-    ) -> ContextSnapshot? {
-        let candidates = snapshots
-            .filter { snapshot in
-                guard let appName = target.appName else { return false }
-                return normalizedText(snapshot.activeAppName) == normalizedText(appName)
-            }
-            .sorted { $0.timestamp > $1.timestamp }
-
-        guard !candidates.isEmpty else { return nil }
-
-        if let browserURL = target.browserURL {
-            return candidates.first { snapshot in
-                snapshotBrowserURLMatches(snapshot, targetURL: browserURL)
-            }
-        }
-
-        if let browserTitle = target.browserTitle {
-            return candidates.first { snapshot in
-                normalizedText(snapshot.browserTitle) == normalizedText(browserTitle)
-            }
-        }
-
-        if let windowTitle = target.windowTitle {
-            return candidates.first { snapshot in
-                normalizedText(snapshot.displayWindowTitle ?? snapshot.windowTitle) == normalizedText(windowTitle)
-            }
-        }
-
-        return candidates.first
-    }
-
-    private func snapshotBrowserURLMatches(_ snapshot: ContextSnapshot, targetURL: String) -> Bool {
-        let target = normalizedURLText(targetURL)
-        return [
-            snapshot.browserURL,
-            snapshot.sanitizedBrowserURLText
-        ]
-            .compactMap { $0 }
-            .map(normalizedURLText)
-            .contains(target)
-    }
-
-    private func normalizedText(_ value: String?) -> String {
-        value?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-    }
-
-    private func normalizedURLText(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return FocusReturnTarget.make(from: targetSnapshot.snapshot)
     }
 }

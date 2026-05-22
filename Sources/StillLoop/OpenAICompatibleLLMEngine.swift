@@ -364,21 +364,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                                 .string("away")
                             ]))
                         ])),
-                        ("focusTarget", .object([
-                            ("type", .array([.string("object"), .string("null")])),
-                            ("additionalProperties", .bool(false)),
-                            ("properties", .object([
-                                ("appName", .object([("type", .string("string"))])),
-                                ("windowTitle", .object([("type", .array([.string("string"), .string("null")]))])),
-                                ("browserTitle", .object([("type", .array([.string("string"), .string("null")]))])),
-                                ("browserURL", .object([("type", .array([.string("string"), .string("null")]))]))
-                            ])),
-                            ("required", .array([
-                                .string("appName"),
-                                .string("windowTitle"),
-                                .string("browserTitle"),
-                                .string("browserURL")
-                            ]))
+                        ("focusTargetID", .object([
+                            ("type", .array([.string("string"), .string("null")]))
                         ])),
                         ("nudge", .object([("type", .array([.string("string"), .string("null")]))]))
                     ])),
@@ -386,7 +373,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                         .string("analysis"),
                         .string("reason"),
                         .string("state"),
-                        .string("focusTarget"),
+                        .string("focusTargetID"),
                         .string("nudge")
                     ]))
                 ]))

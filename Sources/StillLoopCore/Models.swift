@@ -46,6 +46,8 @@ public struct FocusReturnTarget: Codable, Equatable {
     public var windowTitle: String?
     public var browserTitle: String?
     public var browserURL: String?
+    public var processIdentifier: Int?
+    public var windowNumber: Int?
     public var capturedAt: Date
     public var displayName: String
 
@@ -55,6 +57,8 @@ public struct FocusReturnTarget: Codable, Equatable {
         windowTitle: String?,
         browserTitle: String?,
         browserURL: String?,
+        processIdentifier: Int? = nil,
+        windowNumber: Int? = nil,
         capturedAt: Date,
         displayName: String? = nil
     ) {
@@ -63,6 +67,8 @@ public struct FocusReturnTarget: Codable, Equatable {
         self.windowTitle = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.browserTitle = browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.processIdentifier = processIdentifier
+        self.windowNumber = windowNumber
         self.capturedAt = capturedAt
         self.displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             ?? Self.displayName(
@@ -79,6 +85,8 @@ public struct FocusReturnTarget: Codable, Equatable {
         let windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)
         let browserTitle = try container.decodeIfPresent(String.self, forKey: .browserTitle)
         let browserURL = try container.decodeIfPresent(String.self, forKey: .browserURL)
+        let processIdentifier = try container.decodeIfPresent(Int.self, forKey: .processIdentifier)
+        let windowNumber = try container.decodeIfPresent(Int.self, forKey: .windowNumber)
         let capturedAt = try container.decode(Date.self, forKey: .capturedAt)
         let displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         self.init(
@@ -87,6 +95,8 @@ public struct FocusReturnTarget: Codable, Equatable {
             windowTitle: windowTitle,
             browserTitle: browserTitle,
             browserURL: browserURL,
+            processIdentifier: processIdentifier,
+            windowNumber: windowNumber,
             capturedAt: capturedAt,
             displayName: displayName
         )
@@ -137,6 +147,8 @@ public struct FocusReturnTarget: Codable, Equatable {
             windowTitle: snapshot.displayWindowTitle,
             browserTitle: snapshot.browserTitle,
             browserURL: snapshot.browserURL,
+            processIdentifier: snapshot.processIdentifier,
+            windowNumber: snapshot.windowNumber,
             capturedAt: snapshot.timestamp
         )
     }
@@ -148,6 +160,8 @@ public struct FocusReturnTarget: Codable, Equatable {
             windowTitle: snapshot.displayWindowTitle,
             browserTitle: snapshot.browserTitle,
             browserURL: snapshot.browserURL,
+            processIdentifier: snapshot.processIdentifier,
+            windowNumber: snapshot.windowNumber,
             capturedAt: snapshot.timestamp
         )
     }
@@ -196,6 +210,8 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
     public var windowTitle: String
     public var browserTitle: String?
     public var browserURL: String?
+    public var processIdentifier: Int?
+    public var windowNumber: Int?
     public var screenshotAvailable: Bool
     public var cameraFrameAvailable: Bool
     public var screenshotPixelWidth: Int?
@@ -217,6 +233,8 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         windowTitle: String,
         browserTitle: String?,
         browserURL: String?,
+        processIdentifier: Int? = nil,
+        windowNumber: Int? = nil,
         screenshotAvailable: Bool,
         cameraFrameAvailable: Bool,
         screenshotPixelWidth: Int? = nil,
@@ -237,6 +255,8 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
         self.windowTitle = windowTitle
         self.browserTitle = browserTitle
         self.browserURL = browserURL
+        self.processIdentifier = processIdentifier
+        self.windowNumber = windowNumber
         self.screenshotAvailable = screenshotAvailable
         self.cameraFrameAvailable = cameraFrameAvailable
         self.screenshotPixelWidth = screenshotPixelWidth
