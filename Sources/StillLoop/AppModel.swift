@@ -266,8 +266,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var isCurrentSessionUsingRuleBasedModelFallback = false
     let captureCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
-    let slowEvaluationThresholdSeconds: TimeInterval = 15
-    let slowEvaluationRetryDelaySeconds: TimeInterval = 1
+    let normalEvaluationCooldownSeconds: TimeInterval = 10
+    let powerSavingEvaluationCooldownSeconds: TimeInterval = 60
     nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
 
     private let evaluator = FocusEvaluator()
@@ -2022,7 +2022,8 @@ final class AppModel: ObservableObject {
                     continue
                 }
                 let elapsed = Date().timeIntervalSince(startedAt)
-                let delay = self.nextEvaluationDelay(after: elapsed)
+                let powerStatus = self.devicePowerStatusProvider.currentDevicePowerStatus()
+                let delay = self.evaluationDelay(after: elapsed, powerStatus: powerStatus)
                 self.evaluationLoopDescription = "本轮耗时 \(Int(ceil(elapsed))) 秒，\(Int(ceil(delay))) 秒后再次评估"
                 try? await Task.sleep(for: .seconds(delay))
                 self.evaluationLoopDescription = "等待下一轮分析"
@@ -2076,11 +2077,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func nextEvaluationDelay(after elapsed: TimeInterval) -> TimeInterval {
-        if elapsed < slowEvaluationThresholdSeconds {
-            return max(0, targetEvaluationCadenceSeconds - elapsed)
+    func evaluationDelay(after elapsed: TimeInterval, powerStatus: DevicePowerStatus) -> TimeInterval {
+        let cadenceDelay = max(0, targetEvaluationCadenceSeconds - elapsed)
+        return max(cadenceDelay, evaluationCooldownSeconds(for: powerStatus))
+    }
+
+    private func evaluationCooldownSeconds(for powerStatus: DevicePowerStatus) -> TimeInterval {
+        if powerStatus.powerSource == .battery || powerStatus.lowPowerMode {
+            return powerSavingEvaluationCooldownSeconds
         }
-        return slowEvaluationRetryDelaySeconds
+        return normalEvaluationCooldownSeconds
     }
 
     private func captureSnapshot() async {
