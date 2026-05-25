@@ -48,6 +48,7 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 - `2026-05-19`: Added a prompt rule that singled out Codex/AI assistants as insufficient novel-writing evidence. Root cause: encoded a failing sample's app name instead of the general product principle. Future rule: fix evaluator mistakes with general evidence requirements and consistency checks, not sample-specific app exclusions that mask real product quality.
 - `2026-05-20`: Blurred the focus evaluator's away boundary by treating screen activity as a substitute for camera presence. Root cause: patched prompt/guard semantics before investigating whether camera capture, image ordering, or photo processing caused the user to be missed. Future rule: for away false positives, first inspect the camera capture pipeline and saved diagnostic metadata, then adjust evaluator semantics only if capture evidence is sound.
 - `2026-05-21`: Stored App Store marketing screenshots only under ignored `.build/app-store-marketing`, then submitted stale images that referenced a page not present in the app. Root cause: treated generated build output as durable release metadata and did not verify each screenshot against a reachable app path before submission. Future rule: App Store screenshots must live in a stable marketing directory with a manifest mapping each image to a real app entry point, and metadata must be checked for stale feature names before submission.
+- `2026-05-25`: Tried to justify `com.apple.security.network.server` for a localhost model helper after App Review questioned it, but App Review still required removal. Root cause: optimized for technical accuracy of the helper architecture instead of Apple's minimum-entitlement review standard. Future rule: Mac App Store builds must omit `network.server` unless the shipped UI exposes a clear user-facing incoming-server feature that App Review can locate.
 
 ## Design And Behavior Changes
 
@@ -122,12 +123,13 @@ The expected installer identity is `3rd Party Mac Developer Installer: Jinchun C
 
 ```sh
 codesign --verify --deep --strict --verbose=2 .build/app-store/StillLoop.app
+codesign -d --entitlements - .build/app-store/StillLoop.app
 plutil -p .build/app-store/StillLoop.app/Contents/Info.plist
 pkgutil --check-signature .build/app-store/StillLoop-1.0.pkg
 shasum -a 256 .build/app-store/StillLoop-1.0.pkg
 ```
 
-Confirm `CFBundleIdentifier` is `com.super-tree.stillloop`, `CFBundleShortVersionString` matches `STILLLOOP_MARKETING_VERSION`, and `CFBundleVersion` matches the incremented `STILLLOOP_BUNDLE_VERSION`. The script writes `.build/app-store/StillLoop-$STILLLOOP_MARKETING_VERSION.pkg`; `STILLLOOP_BUNDLE_VERSION` changes the upload build number, not the package filename.
+Confirm `CFBundleIdentifier` is `com.super-tree.stillloop`, `CFBundleShortVersionString` matches `STILLLOOP_MARKETING_VERSION`, `CFBundleVersion` matches the incremented `STILLLOOP_BUNDLE_VERSION`, and the signed app entitlements do not contain `com.apple.security.network.server`. The script writes `.build/app-store/StillLoop-$STILLLOOP_MARKETING_VERSION.pkg`; `STILLLOOP_BUNDLE_VERSION` changes the upload build number, not the package filename.
 
 If the provisioning profile was newly downloaded, move it into the preferred local signing directory before packaging and keep that directory out of git:
 

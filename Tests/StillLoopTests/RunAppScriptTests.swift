@@ -68,13 +68,13 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE\""))
     }
 
-    func testAppStoreEntitlementsEnableRequiredSandboxCapabilities() throws {
+    func testAppStoreEntitlementsUseMinimumRequiredSandboxCapabilities() throws {
         let entitlements = try String(contentsOfFile: "Config/StillLoop-AppStore.entitlements", encoding: .utf8)
 
         XCTAssertTrue(entitlements.contains("<key>com.apple.security.app-sandbox</key>"))
         XCTAssertTrue(entitlements.contains("<key>com.apple.security.device.camera</key>"))
         XCTAssertTrue(entitlements.contains("<key>com.apple.security.network.client</key>"))
-        XCTAssertTrue(entitlements.contains("<key>com.apple.security.network.server</key>"))
+        XCTAssertFalse(entitlements.contains("<key>com.apple.security.network.server</key>"))
         XCTAssertTrue(entitlements.contains("<key>com.apple.security.automation.apple-events</key>"))
     }
 
@@ -137,6 +137,6 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
         XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --options runtime --sign \"$STILLLOOP_APP_SIGN_IDENTITY\" --entitlements \"$HELPER_ENTITLEMENTS_FILE\" {} \\;"))
         XCTAssertTrue(script.contains("<key>com.apple.security.inherit</key>"))
-        XCTAssertTrue(script.contains("<key>com.apple.security.network.server</key>"))
+        XCTAssertFalse(script.contains("<key>com.apple.security.network.server</key>"))
     }
 }

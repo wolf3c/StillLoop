@@ -101,8 +101,6 @@ cat > "$ENTITLEMENTS_FILE" <<PLIST
   <true/>
   <key>com.apple.security.network.client</key>
   <true/>
-  <key>com.apple.security.network.server</key>
-  <true/>
 </dict>
 </plist>
 PLIST
