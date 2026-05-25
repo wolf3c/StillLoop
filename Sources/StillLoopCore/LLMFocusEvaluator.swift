@@ -6,6 +6,8 @@ public protocol LocalLLMEngine: AnyObject {
 
 public enum LLMResponseFormat: Equatable {
     case focusEvaluation
+    case userPresenceEvaluation
+    case taskAlignmentEvaluation
 }
 
 public protocol StructuredLocalLLMEngine: LocalLLMEngine {
@@ -272,6 +274,101 @@ public struct LLMFocusAnalysis: Codable, Equatable {
     }
 }
 
+public enum LLMUserPresence: String, Codable, Equatable {
+    case present
+    case away
+    case resting
+    case unclear
+}
+
+public enum LLMUserEngagement: String, Codable, Equatable {
+    case engaged
+    case disengaged
+    case unclear
+}
+
+public struct LLMUserPresenceEvaluation: Codable, Equatable {
+    public var presence: LLMUserPresence
+    public var engagement: LLMUserEngagement
+    public var reason: String
+
+    public init(presence: LLMUserPresence, engagement: LLMUserEngagement, reason: String) {
+        self.presence = presence
+        self.engagement = engagement
+        self.reason = reason
+    }
+}
+
+public enum LLMTaskAlignment: String, Codable, Equatable {
+    case aligned
+    case unaligned
+    case unclear
+}
+
+public enum LLMTaskProgress: String, Codable, Equatable {
+    case progressing
+    case stalled
+    case unclear
+}
+
+public struct LLMTaskAlignmentEvaluation: Codable, Equatable {
+    public var alignment: LLMTaskAlignment
+    public var progress: LLMTaskProgress
+    public var focusTargetID: String?
+    public var reason: String
+
+    public init(
+        alignment: LLMTaskAlignment,
+        progress: LLMTaskProgress,
+        focusTargetID: String?,
+        reason: String
+    ) {
+        self.alignment = alignment
+        self.progress = progress
+        let trimmedFocusTargetID = focusTargetID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.focusTargetID = trimmedFocusTargetID.isEmpty ? nil : trimmedFocusTargetID
+        self.reason = reason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case alignment
+        case progress
+        case focusTargetID
+        case reason
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            alignment: container.decode(LLMTaskAlignment.self, forKey: .alignment),
+            progress: container.decode(LLMTaskProgress.self, forKey: .progress),
+            focusTargetID: try container.decodeIfPresent(String.self, forKey: .focusTargetID),
+            reason: container.decode(String.self, forKey: .reason)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(alignment, forKey: .alignment)
+        try container.encode(progress, forKey: .progress)
+        try container.encodeIfPresent(focusTargetID, forKey: .focusTargetID)
+        try container.encode(reason, forKey: .reason)
+    }
+}
+
+public struct LLMSplitFocusAnalysis: Codable, Equatable {
+    public var userPresence: LLMUserPresenceEvaluation?
+    public var taskAlignment: LLMTaskAlignmentEvaluation?
+
+    public init(
+        userPresence: LLMUserPresenceEvaluation?,
+        taskAlignment: LLMTaskAlignmentEvaluation?
+    ) {
+        self.userPresence = userPresence
+        self.taskAlignment = taskAlignment
+    }
+}
+
 public struct LLMEvaluationResult: Equatable {
     public var state: FocusState
     public var reason: String
@@ -280,7 +377,10 @@ public struct LLMEvaluationResult: Equatable {
     public var evaluator: String
     public var modelRunDurationSeconds: TimeInterval?
     public var requestDebugMetrics: LLMRequestDebugMetrics?
+    public var presenceRequestDebugMetrics: LLMRequestDebugMetrics?
+    public var taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics?
     public var analysis: LLMFocusAnalysis?
+    public var splitAnalysis: LLMSplitFocusAnalysis?
     public var returnTarget: FocusReturnTarget?
 
     public init(
@@ -291,7 +391,10 @@ public struct LLMEvaluationResult: Equatable {
         evaluator: String = "模型",
         modelRunDurationSeconds: TimeInterval? = nil,
         requestDebugMetrics: LLMRequestDebugMetrics? = nil,
+        presenceRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
+        taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
         analysis: LLMFocusAnalysis? = nil,
+        splitAnalysis: LLMSplitFocusAnalysis? = nil,
         returnTarget: FocusReturnTarget? = nil
     ) {
         self.state = state
@@ -301,8 +404,97 @@ public struct LLMEvaluationResult: Equatable {
         self.evaluator = evaluator
         self.modelRunDurationSeconds = modelRunDurationSeconds
         self.requestDebugMetrics = requestDebugMetrics
+        self.presenceRequestDebugMetrics = presenceRequestDebugMetrics
+        self.taskAlignmentRequestDebugMetrics = taskAlignmentRequestDebugMetrics
         self.analysis = analysis
+        self.splitAnalysis = splitAnalysis
         self.returnTarget = returnTarget
+    }
+}
+
+public struct FocusDecisionSynthesizer {
+    public init() {}
+
+    public func synthesize(
+        task: String,
+        presence: LLMUserPresenceEvaluation,
+        taskAlignment: LLMTaskAlignmentEvaluation?,
+        focusedSnapshot: ContextSnapshot?
+    ) -> LLMEvaluationResult {
+        let state: FocusState
+        switch presence.presence {
+        case .away:
+            state = .away
+        case .resting:
+            state = .resting
+        case .present, .unclear:
+            if let taskAlignment {
+                switch (taskAlignment.alignment, taskAlignment.progress) {
+                case (.aligned, .progressing):
+                    state = .focused
+                case (.aligned, .stalled):
+                    state = .stuck
+                case (.unaligned, _):
+                    state = .distracted
+                default:
+                    state = .uncertain
+                }
+            } else {
+                state = .uncertain
+            }
+        }
+
+        let nudge = Self.nudge(for: state, task: task)
+        return LLMEvaluationResult(
+            state: state,
+            reason: Self.reason(state: state, presence: presence, taskAlignment: taskAlignment),
+            shouldNudge: nudge != nil,
+            nudge: nudge,
+            analysis: Self.compatibilityAnalysis(presence: presence, taskAlignment: taskAlignment),
+            splitAnalysis: LLMSplitFocusAnalysis(userPresence: presence, taskAlignment: taskAlignment),
+            returnTarget: state == .focused ? focusedSnapshot.flatMap(FocusReturnTarget.make(from:)) : nil
+        )
+    }
+
+    private static func nudge(for state: FocusState, task: String) -> String? {
+        switch state {
+        case .distracted, .stuck:
+            return NudgeGenerator().message(for: state, task: task)
+        case .focused, .uncertain, .resting, .away:
+            return nil
+        }
+    }
+
+    private static func reason(
+        state: FocusState,
+        presence: LLMUserPresenceEvaluation,
+        taskAlignment: LLMTaskAlignmentEvaluation?
+    ) -> String {
+        switch state {
+        case .away, .resting:
+            return presence.reason
+        case .focused, .distracted, .stuck:
+            return taskAlignment?.reason ?? presence.reason
+        case .uncertain:
+            if let taskAlignment {
+                return "\(presence.reason) \(taskAlignment.reason)"
+            }
+            return presence.reason
+        }
+    }
+
+    private static func compatibilityAnalysis(
+        presence: LLMUserPresenceEvaluation,
+        taskAlignment: LLMTaskAlignmentEvaluation?
+    ) -> LLMFocusAnalysis {
+        LLMFocusAnalysis(
+            userEngagement: presence.reason,
+            userEngaged: presence.presence == .present && presence.engagement == .engaged,
+            screenContent: taskAlignment?.reason ?? "屏幕任务判断不可用。",
+            observedActivity: taskAlignment.map { "任务进展：\($0.progress.rawValue)" } ?? "任务进展不明确。",
+            taskAlignment: taskAlignment?.reason ?? "任务匹配不明确。",
+            taskAligned: taskAlignment?.alignment == .aligned
+        )
     }
 }
 
@@ -321,6 +513,16 @@ public struct LLMFocusEvaluationError: Error, Equatable {
 
     public init(kind: LLMFocusFailureKind) {
         self.kind = kind
+    }
+}
+
+public struct LLMSplitFocusEvaluationError: Error {
+    public var presenceError: Error
+    public var taskAlignmentError: Error
+
+    public init(presenceError: Error, taskAlignmentError: Error) {
+        self.presenceError = presenceError
+        self.taskAlignmentError = taskAlignmentError
     }
 }
 
@@ -397,11 +599,21 @@ public struct LLMFocusEvaluator {
         var snapshot: ContextSnapshot
     }
 
-    private let engine: LocalLLMEngine
+    private let legacyEngine: LocalLLMEngine?
+    private let userPresenceEngine: LocalLLMEngine?
+    private let taskAlignmentEngine: LocalLLMEngine?
     private let decoder = JSONDecoder()
 
     public init(engine: LocalLLMEngine) {
-        self.engine = engine
+        legacyEngine = engine
+        userPresenceEngine = nil
+        taskAlignmentEngine = nil
+    }
+
+    public init(userPresenceEngine: LocalLLMEngine, taskAlignmentEngine: LocalLLMEngine) {
+        legacyEngine = nil
+        self.userPresenceEngine = userPresenceEngine
+        self.taskAlignmentEngine = taskAlignmentEngine
     }
 
     public static func debugContext(
@@ -432,15 +644,45 @@ public struct LLMFocusEvaluator {
     }
 
     public func prewarmPromptCache() async throws {
-        guard let prewarmingEngine = engine as? LLMFocusPromptCachePrewarming else {
+        if let legacyEngine {
+            guard let prewarmingEngine = legacyEngine as? LLMFocusPromptCachePrewarming else {
+                return
+            }
+            try await prewarmingEngine.prewarmFocusEvaluationPrompt(
+                messages: [
+                    LLMMessage(role: .system, content: [.text(systemPrompt)]),
+                    LLMMessage(role: .user, content: [.text(promptCacheWarmupUserPrompt)])
+                ],
+                responseFormat: .focusEvaluation
+            )
             return
         }
+        guard let userPresenceEngine, let taskAlignmentEngine else { return }
+        async let presencePrewarm: Void = prewarm(
+            engine: userPresenceEngine,
+            systemPrompt: userPresenceSystemPrompt,
+            responseFormat: .userPresenceEvaluation
+        )
+        async let taskPrewarm: Void = prewarm(
+            engine: taskAlignmentEngine,
+            systemPrompt: taskAlignmentSystemPrompt,
+            responseFormat: .taskAlignmentEvaluation
+        )
+        _ = try await (presencePrewarm, taskPrewarm)
+    }
+
+    private func prewarm(
+        engine: LocalLLMEngine,
+        systemPrompt: String,
+        responseFormat: LLMResponseFormat
+    ) async throws {
+        guard let prewarmingEngine = engine as? LLMFocusPromptCachePrewarming else { return }
         try await prewarmingEngine.prewarmFocusEvaluationPrompt(
             messages: [
                 LLMMessage(role: .system, content: [.text(systemPrompt)]),
                 LLMMessage(role: .user, content: [.text(promptCacheWarmupUserPrompt)])
             ],
-            responseFormat: .focusEvaluation
+            responseFormat: responseFormat
         )
     }
 
@@ -562,6 +804,21 @@ public struct LLMFocusEvaluator {
         powerStatus: DevicePowerStatus?,
         visualSampleLimit: Int?
     ) async throws -> LLMEvaluationResult {
+        if let userPresenceEngine, let taskAlignmentEngine {
+            return try await performSplitEvaluation(
+                task: task,
+                textSnapshots: textSnapshots,
+                visualSnapshots: visualSnapshots,
+                previousEvents: previousEvents,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit,
+                userPresenceEngine: userPresenceEngine,
+                taskAlignmentEngine: taskAlignmentEngine
+            )
+        }
+        guard let engine = legacyEngine else {
+            throw LLMFocusEvaluationError(kind: .unknown)
+        }
         let targetSnapshots = Self.promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
         let promptMessages = messages(
             task: task,
@@ -617,6 +874,333 @@ public struct LLMFocusEvaluator {
         )
     }
 
+    private struct UserPresenceRun {
+        var evaluation: LLMUserPresenceEvaluation
+        var requestDebugMetrics: LLMRequestDebugMetrics
+        var duration: TimeInterval
+    }
+
+    private struct TaskAlignmentRun {
+        var evaluation: LLMTaskAlignmentEvaluation
+        var requestDebugMetrics: LLMRequestDebugMetrics
+        var duration: TimeInterval
+    }
+
+    private func performSplitEvaluation(
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?,
+        userPresenceEngine: LocalLLMEngine,
+        taskAlignmentEngine: LocalLLMEngine
+    ) async throws -> LLMEvaluationResult {
+        let targetSnapshots = Self.promptTargetSnapshots(textSnapshots: textSnapshots, visualSnapshots: visualSnapshots)
+        async let presenceOutcome = userPresenceOutcome(
+            engine: userPresenceEngine,
+            visualSnapshots: visualSnapshots,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit
+        )
+        async let taskOutcome = taskAlignmentOutcome(
+            engine: taskAlignmentEngine,
+            task: task,
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents,
+            targetSnapshots: targetSnapshots,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit
+        )
+        let (presenceResult, taskResult) = await (presenceOutcome, taskOutcome)
+
+        switch (presenceResult, taskResult) {
+        case (.failure(let presenceError), .failure(let taskError)):
+            throw LLMSplitFocusEvaluationError(
+                presenceError: presenceError,
+                taskAlignmentError: taskError
+            )
+        case (.failure, .success(let taskRun)):
+            var result = synthesizeSplitResult(
+                task: task,
+                presenceRun: UserPresenceRun(
+                    evaluation: LLMUserPresenceEvaluation(
+                        presence: .unclear,
+                        engagement: .unclear,
+                        reason: "用户状态判断失败。"
+                    ),
+                    requestDebugMetrics: emptySplitMetrics(
+                        visualCaptureCount: visualSnapshots.count,
+                        textSnapshotCount: 0,
+                        previousEventCount: 0,
+                        powerStatus: powerStatus,
+                        visualSampleLimit: visualSampleLimit
+                    ),
+                    duration: 0
+                ),
+                taskRun: taskRun,
+                targetSnapshots: targetSnapshots
+            )
+            result.taskAlignmentRequestDebugMetrics = taskRun.requestDebugMetrics
+            return result
+        case (.success(let presenceRun), .failure(let taskError)):
+            guard presenceRun.evaluation.presence == .away || presenceRun.evaluation.presence == .resting else {
+                throw taskError
+            }
+            return synthesizeSplitResult(
+                task: task,
+                presenceRun: presenceRun,
+                taskRun: nil,
+                targetSnapshots: targetSnapshots
+            )
+        case (.success(let presenceRun), .success(let taskRun)):
+            return synthesizeSplitResult(
+                task: task,
+                presenceRun: presenceRun,
+                taskRun: taskRun,
+                targetSnapshots: targetSnapshots
+            )
+        }
+    }
+
+    private func userPresenceOutcome(
+        engine: LocalLLMEngine,
+        visualSnapshots: [ContextSnapshot],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) async -> Result<UserPresenceRun, Error> {
+        do {
+            return .success(try await runUserPresenceEvaluation(
+                engine: engine,
+                visualSnapshots: visualSnapshots,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit
+            ))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func taskAlignmentOutcome(
+        engine: LocalLLMEngine,
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        targetSnapshots: [PromptTargetSnapshot],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) async -> Result<TaskAlignmentRun, Error> {
+        do {
+            return .success(try await runTaskAlignmentEvaluation(
+                engine: engine,
+                task: task,
+                textSnapshots: textSnapshots,
+                visualSnapshots: visualSnapshots,
+                previousEvents: previousEvents,
+                targetSnapshots: targetSnapshots,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit
+            ))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func runUserPresenceEvaluation(
+        engine: LocalLLMEngine,
+        visualSnapshots: [ContextSnapshot],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) async throws -> UserPresenceRun {
+        let promptMessages = userPresenceMessages(visualSnapshots: visualSnapshots)
+        let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
+        let imageCount = imageCount(in: promptMessages)
+        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
+            .inputTextTokenCount(for: inputText(in: promptMessages))
+        let startedAt = Date()
+        let response = try await complete(
+            engine: engine,
+            messages: promptMessages,
+            responseFormat: .userPresenceEvaluation
+        )
+        let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
+        let evaluation: LLMUserPresenceEvaluation
+        do {
+            evaluation = try LLMJSONResponseExtractor.decodeFirst(
+                LLMUserPresenceEvaluation.self,
+                from: response,
+                using: decoder
+            )
+        } catch {
+            throw LLMFocusEvaluationError(kind: .jsonParse)
+        }
+        return UserPresenceRun(
+            evaluation: evaluation,
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: visualSnapshots.count,
+                imageCount: imageCount,
+                textSnapshotCount: 0,
+                previousEventCount: 0,
+                payloadBytes: transportMetrics?.payloadBytes,
+                responseChars: response.count,
+                inputTextCharacterCount: inputTextCharacterCount,
+                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit,
+                created: transportMetrics?.created,
+                usage: transportMetrics?.usage,
+                timings: transportMetrics?.timings
+            ),
+            duration: max(0, Date().timeIntervalSince(startedAt))
+        )
+    }
+
+    private func runTaskAlignmentEvaluation(
+        engine: LocalLLMEngine,
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        targetSnapshots: [PromptTargetSnapshot],
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) async throws -> TaskAlignmentRun {
+        let promptMessages = taskAlignmentMessages(
+            task: task,
+            textSnapshots: textSnapshots,
+            visualSnapshots: visualSnapshots,
+            previousEvents: previousEvents,
+            targetSnapshots: targetSnapshots
+        )
+        let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
+        let imageCount = imageCount(in: promptMessages)
+        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
+            .inputTextTokenCount(for: inputText(in: promptMessages))
+        let startedAt = Date()
+        let response = try await complete(
+            engine: engine,
+            messages: promptMessages,
+            responseFormat: .taskAlignmentEvaluation
+        )
+        let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
+        let evaluation: LLMTaskAlignmentEvaluation
+        do {
+            evaluation = try LLMJSONResponseExtractor.decodeFirst(
+                LLMTaskAlignmentEvaluation.self,
+                from: response,
+                using: decoder
+            )
+        } catch {
+            throw LLMFocusEvaluationError(kind: .jsonParse)
+        }
+        return TaskAlignmentRun(
+            evaluation: evaluation,
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: visualSnapshots.count,
+                imageCount: imageCount,
+                textSnapshotCount: textSnapshots.count,
+                previousEventCount: previousEvents.count,
+                payloadBytes: transportMetrics?.payloadBytes,
+                responseChars: response.count,
+                inputTextCharacterCount: inputTextCharacterCount,
+                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                powerStatus: powerStatus,
+                visualSampleLimit: visualSampleLimit,
+                created: transportMetrics?.created,
+                usage: transportMetrics?.usage,
+                timings: transportMetrics?.timings
+            ),
+            duration: max(0, Date().timeIntervalSince(startedAt))
+        )
+    }
+
+    private func complete(
+        engine: LocalLLMEngine,
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat
+    ) async throws -> String {
+        if let structuredEngine = engine as? StructuredLocalLLMEngine {
+            return try await structuredEngine.complete(messages: messages, responseFormat: responseFormat)
+        }
+        return try await engine.complete(messages: messages)
+    }
+
+    private func synthesizeSplitResult(
+        task: String,
+        presenceRun: UserPresenceRun,
+        taskRun: TaskAlignmentRun?,
+        targetSnapshots: [PromptTargetSnapshot]
+    ) -> LLMEvaluationResult {
+        let focusedSnapshot = taskRun?.evaluation.focusTargetID.flatMap { focusTargetID in
+            targetSnapshots.first(where: { $0.targetID == focusTargetID })?.snapshot
+        }
+        var result = FocusDecisionSynthesizer().synthesize(
+            task: task,
+            presence: presenceRun.evaluation,
+            taskAlignment: taskRun?.evaluation,
+            focusedSnapshot: focusedSnapshot
+        )
+        result.modelRunDurationSeconds = max(presenceRun.duration, taskRun?.duration ?? 0)
+        result.requestDebugMetrics = combinedMetrics(
+            presence: presenceRun.requestDebugMetrics,
+            taskAlignment: taskRun?.requestDebugMetrics
+        )
+        result.presenceRequestDebugMetrics = presenceRun.requestDebugMetrics
+        result.taskAlignmentRequestDebugMetrics = taskRun?.requestDebugMetrics
+        return result
+    }
+
+    private func combinedMetrics(
+        presence: LLMRequestDebugMetrics,
+        taskAlignment: LLMRequestDebugMetrics?
+    ) -> LLMRequestDebugMetrics {
+        guard let taskAlignment else { return presence }
+        return LLMRequestDebugMetrics(
+            visualCaptureCount: max(presence.visualCaptureCount, taskAlignment.visualCaptureCount),
+            imageCount: presence.imageCount + taskAlignment.imageCount,
+            textSnapshotCount: taskAlignment.textSnapshotCount,
+            previousEventCount: taskAlignment.previousEventCount,
+            payloadBytes: sum(presence.payloadBytes, taskAlignment.payloadBytes),
+            responseChars: presence.responseChars + taskAlignment.responseChars,
+            inputTextCharacterCount: presence.inputTextCharacterCount + taskAlignment.inputTextCharacterCount,
+            inputTextTokenCount: sum(presence.inputTextTokenCount, taskAlignment.inputTextTokenCount),
+            powerStatus: taskAlignment.powerStatus ?? presence.powerStatus,
+            visualSampleLimit: taskAlignment.visualSampleLimit ?? presence.visualSampleLimit
+        )
+    }
+
+    private func emptySplitMetrics(
+        visualCaptureCount: Int,
+        textSnapshotCount: Int,
+        previousEventCount: Int,
+        powerStatus: DevicePowerStatus?,
+        visualSampleLimit: Int?
+    ) -> LLMRequestDebugMetrics {
+        LLMRequestDebugMetrics(
+            visualCaptureCount: visualCaptureCount,
+            imageCount: 0,
+            textSnapshotCount: textSnapshotCount,
+            previousEventCount: previousEventCount,
+            responseChars: 0,
+            inputTextCharacterCount: 0,
+            powerStatus: powerStatus,
+            visualSampleLimit: visualSampleLimit
+        )
+    }
+
+    private func sum(_ lhs: Int?, _ rhs: Int?) -> Int? {
+        switch (lhs, rhs) {
+        case (.some(let lhs), .some(let rhs)):
+            return lhs + rhs
+        case (.some(let value), .none), (.none, .some(let value)):
+            return value
+        case (.none, .none):
+            return nil
+        }
+    }
+
     private func inputTextCharacterCount(in messages: [LLMMessage]) -> Int {
         messages.reduce(0) { total, message in
             total + message.content.reduce(0) { subtotal, content in
@@ -662,6 +1246,159 @@ public struct LLMFocusEvaluator {
         case .resting, .away:
             return response.nudge == nil ? nil : nudgeGenerator.message(for: response.state, task: task)
         }
+    }
+
+    private var userPresenceSystemPrompt: String {
+        """
+        You are a camera-only user state evaluator.
+        Judge only whether recent camera frames show the person physically present, away, resting, or unclear.
+        Do not use task details, screen content, app names, window titles, browser metadata, or recent focus history.
+        Do not infer task progress or task alignment.
+
+        Choose:
+        - present: the person is visible and appears available to continue.
+        - away: the person is absent from the camera frames.
+        - resting: the person is visible but appears to be taking an intentional pause.
+        - unclear: camera evidence is missing, unreadable, or ambiguous.
+
+        engagement:
+        - engaged: the person appears attentive or active.
+        - disengaged: the person appears inactive or not attending.
+        - unclear: engagement cannot be determined.
+
+        Output exactly one strict JSON object with keys: "presence", "engagement", "reason".
+        "presence" must be one of: present, away, resting, unclear.
+        "engagement" must be one of: engaged, disengaged, unclear.
+        Use concise Chinese for reason. Do not add Markdown or extra text.
+        """
+    }
+
+    private var taskAlignmentSystemPrompt: String {
+        """
+        You are a screen-only task alignment evaluator.
+        Judge whether the visible screen activity supports the stated task and whether it shows progress.
+        Use screenshots, app/window/browser metadata, current task, and recent state log only.
+
+        alignment:
+        - aligned: visible screen content directly supports the task.
+        - unaligned: visible screen content is clearly unrelated to the task.
+        - unclear: screen evidence is ambiguous or weak.
+
+        progress:
+        - progressing: visible content shows active work, relevant artifacts, edits, tests, debugging, writing, or other forward movement.
+        - stalled: task context is present but there is no visible forward movement.
+        - unclear: progress cannot be determined.
+
+        Also choose focusTargetID:
+        - If alignment is aligned, focusTargetID should be one current targetID when a specific capture best represents the aligned work.
+        - Otherwise use null.
+        - Never invent a targetID.
+
+        Do not quote or transcribe private page text verbatim. Summarize only what is necessary.
+        Output exactly one strict JSON object with keys: "alignment", "progress", "focusTargetID", "reason".
+        Use concise Chinese for reason. Do not add Markdown or extra text.
+        """
+    }
+
+    private func userPresenceMessages(visualSnapshots: [ContextSnapshot]) -> [LLMMessage] {
+        var messages = [
+            LLMMessage(role: .system, content: [.text(userPresenceSystemPrompt)])
+        ]
+        let cameraMessages = visualSnapshots
+            .sorted { $0.timestamp < $1.timestamp }
+            .enumerated()
+            .map { index, snapshot -> LLMMessage in
+                var content: [LLMMessage.Content] = [
+                    .text(Self.cameraSampleText(for: snapshot, cameraIndex: index + 1))
+                ]
+                if let mimeType = snapshot.cameraMimeType, let data = snapshot.cameraData {
+                    content.append(.image(mimeType: mimeType, data: data))
+                }
+                return LLMMessage(role: .user, content: content)
+            }
+        if cameraMessages.isEmpty {
+            messages.append(LLMMessage(role: .user, content: [.text("No camera frames are available.")]))
+        } else {
+            messages.append(contentsOf: cameraMessages)
+        }
+        return messages
+    }
+
+    private static func cameraSampleText(for snapshot: ContextSnapshot, cameraIndex: Int) -> String {
+        [
+            "camera sample[\(cameraIndex)]",
+            "time: \(formattedPromptDate(snapshot.timestamp))",
+            "frame: \(visualLine(available: snapshot.cameraFrameAvailable, width: snapshot.cameraPixelWidth, height: snapshot.cameraPixelHeight, bytes: snapshot.cameraCompressedBytes))"
+        ].joined(separator: "\n")
+    }
+
+    private func taskAlignmentMessages(
+        task: String,
+        textSnapshots: [ContextSnapshot],
+        visualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        targetSnapshots: [PromptTargetSnapshot]
+    ) -> [LLMMessage] {
+        var messages = [
+            LLMMessage(role: .system, content: [.text(taskAlignmentSystemPrompt)]),
+            LLMMessage(role: .user, content: [.text(Self.taskAlignmentTaskAndHistoryText(task: task, previousEvents: previousEvents))])
+        ]
+
+        let visualSnapshotIDs = Set(visualSnapshots.map(\.id))
+        let orderedTextSnapshots = targetSnapshots
+            .filter { !visualSnapshotIDs.contains($0.snapshot.id) }
+        if !orderedTextSnapshots.isEmpty {
+            messages.append(LLMMessage(role: .user, content: [.text(Self.textTimeline(for: orderedTextSnapshots))]))
+        }
+
+        messages.append(contentsOf: targetSnapshots
+            .filter { visualSnapshotIDs.contains($0.snapshot.id) }
+            .enumerated()
+            .map { index, targetSnapshot in
+                let snapshot = targetSnapshot.snapshot
+                var content: [LLMMessage.Content] = [
+                    .text(Self.taskVisualSampleText(for: targetSnapshot, visualIndex: index + 1))
+                ]
+                if let mimeType = snapshot.screenshotMimeType, let data = snapshot.screenshotData {
+                    content.append(.image(mimeType: mimeType, data: data))
+                }
+                return LLMMessage(role: .user, content: content)
+            })
+        return messages
+    }
+
+    private static func taskAlignmentTaskAndHistoryText(task: String, previousEvents: [FocusEvent]) -> String {
+        let history = previousEvents.suffix(8).map { event in
+            "- \(event.state.rawValue): \(event.context) nudge=\(event.nudge ?? "none")"
+        }.joined(separator: "\n")
+        return """
+        Current screen evidence checklist:
+        - Judge current captures first; use history only as background.
+        - App names, prior focused events, and capture metadata are not enough for aligned.
+        - Aligned requires visible task evidence: relevant content, work artifacts, or progress signals.
+        - Do not use prior focused records to justify aligned.
+        - Social feeds, X/Home, or generic browser home pages are unrelated unless the task is to use that site or visible content directly supports the task.
+        - Internal evaluator labels only: targetID, visual sample, screenshot, pixel sizes, and byte counts are not user-visible activity.
+
+        Current task:
+        \(task)
+
+        Recent state log (background only; current captures have priority and prior decisions may be wrong):
+        \(history.isEmpty ? "none" : history)
+        """
+    }
+
+    private static func taskVisualSampleText(for targetSnapshot: PromptTargetSnapshot, visualIndex: Int) -> String {
+        let snapshot = targetSnapshot.snapshot
+        var captureLines = captureMetadataLines(
+            for: snapshot,
+            label: "visual sample[\(visualIndex)]",
+            targetID: targetSnapshot.targetID
+        )
+        captureLines.append(
+            "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))"
+        )
+        return captureLines.joined(separator: "\n")
     }
 
     private var systemPrompt: String {

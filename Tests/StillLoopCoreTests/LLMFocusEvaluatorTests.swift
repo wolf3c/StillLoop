@@ -2,6 +2,239 @@ import XCTest
 @testable import StillLoopCore
 
 final class LLMFocusEvaluatorTests: XCTestCase {
+    func testSynthesizerRequiresBothPresenceAndTaskProgressForFocused() throws {
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+        let synthesizer = FocusDecisionSynthesizer()
+
+        let focused = synthesizer.synthesize(
+            task: "开发 StillLoop",
+            presence: LLMUserPresenceEvaluation(
+                presence: .present,
+                engagement: .engaged,
+                reason: "用户在场。"
+            ),
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .aligned,
+                progress: .progressing,
+                focusTargetID: "T1",
+                reason: "屏幕显示 StillLoop 开发工作。"
+            ),
+            focusedSnapshot: snapshot
+        )
+
+        XCTAssertEqual(focused.state, .focused)
+        XCTAssertFalse(focused.shouldNudge)
+        XCTAssertNotNil(focused.returnTarget)
+
+        let away = synthesizer.synthesize(
+            task: "开发 StillLoop",
+            presence: LLMUserPresenceEvaluation(
+                presence: .away,
+                engagement: .unclear,
+                reason: "摄像头没有看到用户。"
+            ),
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .aligned,
+                progress: .progressing,
+                focusTargetID: "T1",
+                reason: "屏幕显示 StillLoop 开发工作。"
+            ),
+            focusedSnapshot: snapshot
+        )
+
+        XCTAssertEqual(away.state, .away)
+        XCTAssertFalse(away.shouldNudge)
+        XCTAssertNil(away.returnTarget)
+    }
+
+    func testSynthesizerCoversTaskMismatchStalledAndAmbiguousCases() throws {
+        let synthesizer = FocusDecisionSynthesizer()
+        let present = LLMUserPresenceEvaluation(
+            presence: .present,
+            engagement: .engaged,
+            reason: "用户在场。"
+        )
+
+        let distracted = synthesizer.synthesize(
+            task: "写小说",
+            presence: present,
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .unaligned,
+                progress: .unclear,
+                focusTargetID: nil,
+                reason: "屏幕显示代码调试，不是小说写作。"
+            ),
+            focusedSnapshot: nil
+        )
+        XCTAssertEqual(distracted.state, .distracted)
+        XCTAssertTrue(distracted.shouldNudge)
+
+        let stuck = synthesizer.synthesize(
+            task: "写小说",
+            presence: present,
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .aligned,
+                progress: .stalled,
+                focusTargetID: "T1",
+                reason: "文档打开但没有明显新增内容。"
+            ),
+            focusedSnapshot: nil
+        )
+        XCTAssertEqual(stuck.state, .stuck)
+        XCTAssertTrue(stuck.shouldNudge)
+
+        let uncertain = synthesizer.synthesize(
+            task: "写小说",
+            presence: present,
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .unclear,
+                progress: .unclear,
+                focusTargetID: nil,
+                reason: "屏幕内容不清楚。"
+            ),
+            focusedSnapshot: nil
+        )
+        XCTAssertEqual(uncertain.state, .uncertain)
+        XCTAssertFalse(uncertain.shouldNudge)
+    }
+
+    func testSplitEvaluatorKeepsPresenceAndTaskPromptsIsolated() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","progress":"progressing","focusTargetID":"T1","reason":"屏幕显示 StillLoop 开发。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "开发 StillLoop",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(presenceEngine.lastResponseFormat, .userPresenceEvaluation)
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("Current task:"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("browserURL:"))
+        XCTAssertTrue(presenceEngine.lastMessages.containsImageData(Data([4, 5, 6])))
+        XCTAssertFalse(presenceEngine.lastMessages.containsImageData(Data([1, 2, 3])))
+
+        XCTAssertEqual(taskEngine.lastResponseFormat, .taskAlignmentEvaluation)
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("Current task:"))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("targetID: T1"))
+        XCTAssertTrue(taskEngine.lastMessages.containsImageData(Data([1, 2, 3])))
+        XCTAssertFalse(taskEngine.lastMessages.containsImageData(Data([4, 5, 6])))
+        XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("user appears"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("physical presence"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("camera:"))
+    }
+
+    func testDecodedTaskAlignmentTrimsEmptyFocusTargetID() throws {
+        let data = Data("""
+        {"alignment":"unaligned","progress":"unclear","focusTargetID":"   ","reason":"屏幕不匹配。"}
+        """.utf8)
+
+        let evaluation = try JSONDecoder().decode(LLMTaskAlignmentEvaluation.self, from: data)
+
+        XCTAssertNil(evaluation.focusTargetID)
+    }
+
+    func testPresenceFailureSyntheticMetricsDoNotIncludeTaskHistory() async throws {
+        let presenceEngine = FailingStructuredStubEngine(error: LLMFocusEvaluationError(kind: .timeout))
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"屏幕显示 StillLoop 开发。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "开发 StillLoop",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .distracted, context: "Activity Monitor", nudge: nil)
+            ]
+        )
+
+        XCTAssertEqual(result.splitAnalysis?.userPresence?.presence, .unclear)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.textSnapshotCount, 0)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.previousEventCount, 0)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.previousEventCount, 1)
+    }
+
+    func testSplitEvaluatorRunsPresenceAndTaskRequestsConcurrently() async throws {
+        let presenceEngine = DelayedStructuredStubEngine(
+            response: #"{"presence":"present","engagement":"engaged","reason":"用户在场。"}"#,
+            delay: .milliseconds(200)
+        )
+        let taskEngine = DelayedStructuredStubEngine(
+            response: #"{"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"屏幕显示任务内容。"}"#,
+            delay: .milliseconds(200)
+        )
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine
+        )
+
+        let startedAt = Date()
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Notes",
+                    windowTitle: "方案",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: false,
+                    cameraFrameAvailable: false
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.35)
+        XCTAssertEqual(presenceEngine.callCount, 1)
+        XCTAssertEqual(taskEngine.callCount, 1)
+    }
+
     func testSuccessfulModelEvaluationRecordsRequestDuration() async throws {
         let evaluator = LLMFocusEvaluator(engine: DelayedStubEngine(response: """
         {"state":"distracted","reason":"Video site is unrelated","nudge":null}
@@ -1275,6 +1508,27 @@ private final class DelayedStubEngine: LocalLLMEngine {
     }
 }
 
+private final class DelayedStructuredStubEngine: StructuredLocalLLMEngine {
+    let response: String
+    let delay: Duration
+    private(set) var callCount = 0
+
+    init(response: String, delay: Duration) {
+        self.response = response
+        self.delay = delay
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        try await complete(messages: messages, responseFormat: nil)
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        callCount += 1
+        try await Task.sleep(for: delay)
+        return response
+    }
+}
+
 private final class InstrumentedStubEngine: LocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting {
     let response: String
     private(set) var lastMessages: [LLMMessage] = []
@@ -1352,5 +1606,45 @@ private final class StructuredStubEngine: StructuredLocalLLMEngine {
         lastMessages = messages
         lastResponseFormat = responseFormat
         return response
+    }
+}
+
+private final class FailingStructuredStubEngine: StructuredLocalLLMEngine {
+    let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        throw error
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        throw error
+    }
+}
+
+private extension StructuredStubEngine {
+    var flattenedPrompt: String {
+        lastMessages.flatMap(\.content).compactMap { content in
+            if case .text(let text) = content {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n")
+    }
+}
+
+private extension Array where Element == LLMMessage {
+    func containsImageData(_ expectedData: Data) -> Bool {
+        contains { message in
+            message.content.contains { content in
+                if case .image(_, let data) = content {
+                    return data == expectedData
+                }
+                return false
+            }
+        }
     }
 }

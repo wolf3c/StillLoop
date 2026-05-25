@@ -291,6 +291,8 @@ final class UnixSocketOpenAICompatibleHTTPTransport: OpenAICompatibleHTTPTranspo
 final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
     private static let defaultMaxTokens = 900
     private static let focusEvaluationMaxTokens = 420
+    private static let userPresenceEvaluationMaxTokens = 180
+    private static let taskAlignmentEvaluationMaxTokens = 220
     private static let unixSocketScheme = "http+unix"
 
     enum VisualCapability: Equatable {
@@ -551,7 +553,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         let result = try await sendChatCompletion(
             messages: messages,
             responseFormat: responseFormat,
-            maxTokens: responseFormat == .focusEvaluation ? Self.focusEvaluationMaxTokens : Self.defaultMaxTokens
+            maxTokens: Self.maxTokens(for: responseFormat)
         )
         let body = try JSONDecoder().decode(ResponseBody.self, from: result.data)
         guard let content = body.choices.first?.message.content else {
@@ -613,10 +615,23 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                 ("enable_thinking", .bool(false))
             ])))
         }
-        if usesResponseFormat, responseFormat == .focusEvaluation {
-            fields.append(("response_format", Self.focusEvaluationResponseFormatJSON()))
+        if usesResponseFormat, let responseFormat {
+            fields.append(("response_format", Self.responseFormatJSON(for: responseFormat)))
         }
         return try OrderedJSONValue.object(fields).encodedData()
+    }
+
+    private static func maxTokens(for responseFormat: LLMResponseFormat?) -> Int {
+        switch responseFormat {
+        case .focusEvaluation:
+            return focusEvaluationMaxTokens
+        case .userPresenceEvaluation:
+            return userPresenceEvaluationMaxTokens
+        case .taskAlignmentEvaluation:
+            return taskAlignmentEvaluationMaxTokens
+        case nil:
+            return defaultMaxTokens
+        }
     }
 
     private func jsonMessage(for message: LLMMessage) -> OrderedJSONValue {
@@ -646,6 +661,17 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                 ])
             }
         })
+    }
+
+    private static func responseFormatJSON(for responseFormat: LLMResponseFormat) -> OrderedJSONValue {
+        switch responseFormat {
+        case .focusEvaluation:
+            return focusEvaluationResponseFormatJSON()
+        case .userPresenceEvaluation:
+            return userPresenceEvaluationResponseFormatJSON()
+        case .taskAlignmentEvaluation:
+            return taskAlignmentEvaluationResponseFormatJSON()
+        }
     }
 
     private static func focusEvaluationResponseFormatJSON() -> OrderedJSONValue {
@@ -701,6 +727,87 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                         .string("state"),
                         .string("focusTargetID"),
                         .string("nudge")
+                    ]))
+                ]))
+            ]))
+        ])
+    }
+
+    private static func userPresenceEvaluationResponseFormatJSON() -> OrderedJSONValue {
+        .object([
+            ("type", .string("json_schema")),
+            ("json_schema", .object([
+                ("name", .string("user_presence_evaluation")),
+                ("strict", .bool(true)),
+                ("schema", .object([
+                    ("type", .string("object")),
+                    ("additionalProperties", .bool(false)),
+                    ("properties", .object([
+                        ("presence", .object([
+                            ("type", .string("string")),
+                            ("enum", .array([
+                                .string("present"),
+                                .string("away"),
+                                .string("resting"),
+                                .string("unclear")
+                            ]))
+                        ])),
+                        ("engagement", .object([
+                            ("type", .string("string")),
+                            ("enum", .array([
+                                .string("engaged"),
+                                .string("disengaged"),
+                                .string("unclear")
+                            ]))
+                        ])),
+                        ("reason", .object([("type", .string("string"))]))
+                    ])),
+                    ("required", .array([
+                        .string("presence"),
+                        .string("engagement"),
+                        .string("reason")
+                    ]))
+                ]))
+            ]))
+        ])
+    }
+
+    private static func taskAlignmentEvaluationResponseFormatJSON() -> OrderedJSONValue {
+        .object([
+            ("type", .string("json_schema")),
+            ("json_schema", .object([
+                ("name", .string("task_alignment_evaluation")),
+                ("strict", .bool(true)),
+                ("schema", .object([
+                    ("type", .string("object")),
+                    ("additionalProperties", .bool(false)),
+                    ("properties", .object([
+                        ("alignment", .object([
+                            ("type", .string("string")),
+                            ("enum", .array([
+                                .string("aligned"),
+                                .string("unaligned"),
+                                .string("unclear")
+                            ]))
+                        ])),
+                        ("progress", .object([
+                            ("type", .string("string")),
+                            ("enum", .array([
+                                .string("progressing"),
+                                .string("stalled"),
+                                .string("unclear")
+                            ]))
+                        ])),
+                        ("focusTargetID", .object([
+                            ("type", .array([.string("string"), .string("null")]))
+                        ])),
+                        ("reason", .object([("type", .string("string"))]))
+                    ])),
+                    ("required", .array([
+                        .string("alignment"),
+                        .string("progress"),
+                        .string("focusTargetID"),
+                        .string("reason")
                     ]))
                 ]))
             ]))

@@ -217,6 +217,59 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertFalse((schema["required"] as? [String])?.contains("confidence") == true)
     }
 
+    func testCompletionRequestCanConstrainSplitEvaluationToJSONSchemas() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestBodies: [[String: Any]] = []
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                requestBodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]))
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+            usesResponseFormat: true,
+            session: session
+        )
+
+        _ = try await engine.complete(
+            messages: [LLMMessage(role: .user, content: [.text("presence")])],
+            responseFormat: .userPresenceEvaluation
+        )
+        _ = try await engine.complete(
+            messages: [LLMMessage(role: .user, content: [.text("task")])],
+            responseFormat: .taskAlignmentEvaluation
+        )
+
+        let presenceBody = try XCTUnwrap(requestBodies.first)
+        XCTAssertEqual(presenceBody["max_tokens"] as? Int, 180)
+        let presenceFormat = try XCTUnwrap(presenceBody["response_format"] as? [String: Any])
+        let presenceSchema = try XCTUnwrap(presenceFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(presenceSchema["name"] as? String, "user_presence_evaluation")
+        let presenceProperties = try XCTUnwrap((presenceSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
+        XCTAssertEqual((presenceProperties["presence"] as? [String: Any])?["enum"] as? [String], ["present", "away", "resting", "unclear"])
+        XCTAssertEqual((presenceProperties["engagement"] as? [String: Any])?["enum"] as? [String], ["engaged", "disengaged", "unclear"])
+
+        let taskBody = try XCTUnwrap(requestBodies.last)
+        XCTAssertEqual(taskBody["max_tokens"] as? Int, 220)
+        let taskFormat = try XCTUnwrap(taskBody["response_format"] as? [String: Any])
+        let taskSchema = try XCTUnwrap(taskFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(taskSchema["name"] as? String, "task_alignment_evaluation")
+        let taskProperties = try XCTUnwrap((taskSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
+        XCTAssertEqual((taskProperties["alignment"] as? [String: Any])?["enum"] as? [String], ["aligned", "unaligned", "unclear"])
+        XCTAssertEqual((taskProperties["progress"] as? [String: Any])?["enum"] as? [String], ["progressing", "stalled", "unclear"])
+        XCTAssertEqual((taskProperties["focusTargetID"] as? [String: Any])?["type"] as? [String], ["string", "null"])
+    }
+
     func testPrewarmFocusEvaluationPromptUsesSingleTokenStructuredRequest() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]

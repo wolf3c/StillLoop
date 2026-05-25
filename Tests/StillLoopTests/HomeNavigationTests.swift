@@ -554,11 +554,15 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledModelRuntimePrewarmsPromptCacheAfterPreparation() async {
         let runtime = FakeBundledRuntime()
-        let engine = PrewarmingLLMEngine()
+        var engines: [PrewarmingLLMEngine] = []
         let model = makeModel(
             bundledModelRuntime: runtime,
             withBundledModelFiles: true,
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = PrewarmingLLMEngine()
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -566,19 +570,23 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engine.prewarmCallCount, 1)
-        XCTAssertEqual(engine.lastResponseFormat, .focusEvaluation)
-        XCTAssertEqual(engine.callCount, 0)
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1])
+        XCTAssertEqual(engines.map(\.lastResponseFormat), [.userPresenceEvaluation, .taskAlignmentEvaluation])
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 0)
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
     }
 
     func testBundledModelRuntimeWarmupFailureDoesNotBlockPreparation() async {
         let runtime = FakeBundledRuntime()
-        let engine = PrewarmingLLMEngine(prewarmError: URLError(.timedOut))
+        var engines: [PrewarmingLLMEngine] = []
         let model = makeModel(
             bundledModelRuntime: runtime,
             withBundledModelFiles: true,
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = PrewarmingLLMEngine(prewarmError: URLError(.timedOut))
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -586,7 +594,7 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1])
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }
@@ -668,29 +676,17 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledInferenceFailureFallsBackWithoutRuntimeRestartOrRetry() async {
         let runtime = FakeBundledRuntime()
-        let engine = SequencedLLMEngine(outcomes: [
-            .failure(URLError(.timedOut)),
-            .success("""
-            {
-              "analysis": {
-                "userEngaged": true,
-                "taskAligned": true,
-                "userEngagement": "用户在场并操作电脑。",
-                "screenContent": "WorkFlowy Today 页面显示日记内容。",
-                "observedActivity": "用户正在查看当天日记页面。",
-                "taskAlignment": "页面内容与写日记任务匹配。",
-                "decisionRationale": "用户参与且可见内容包含日记任务证据。"
-              },
-              "state":"focused",
-              "reason":"Diary writing is visible",
-              "nudge":null
-            }
-            """)
-        ])
+        var engines: [SequencedLLMEngine] = []
         let model = makeModel(
             bundledModelRuntime: runtime,
             withBundledModelFiles: true,
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SequencedLLMEngine(outcomes: [
+                    .failure(URLError(.timedOut))
+                ])
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -713,19 +709,22 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：请求超时）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engine.callCount, 1)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
     func testBundledInferenceFallbackRecordsFailureReasonInEvaluator() async {
         let runtime = FakeBundledRuntime()
-        let engine = SequencedLLMEngine(outcomes: [
-            .success("not json"),
-            .success("still not json")
-        ])
+        var engines: [SequencedLLMEngine] = []
         let model = makeModel(
             bundledModelRuntime: runtime,
             withBundledModelFiles: true,
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SequencedLLMEngine(outcomes: [
+                    .success("not json")
+                ])
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -748,7 +747,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：JSON 解析失败）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engine.callCount, 1)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
     func testEvaluationContextUsesOnlyLatestMinuteAndKeepsVisualSamplingLimit() {

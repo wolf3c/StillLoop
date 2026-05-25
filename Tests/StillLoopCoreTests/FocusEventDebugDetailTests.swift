@@ -198,6 +198,70 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertFalse(detail.environmentContext[1].contains("#section"))
     }
 
+    func testMakeStoresSplitEvaluationDetailAndRouteMetrics() {
+        let result = LLMEvaluationResult(
+            state: .distracted,
+            reason: "屏幕内容偏离任务。",
+            shouldNudge: true,
+            nudge: "先回到：开发 stillloop",
+            evaluator: "自带模型",
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 1,
+                imageCount: 2,
+                textSnapshotCount: 2,
+                previousEventCount: 3,
+                responseChars: 120,
+                inputTextCharacterCount: 900
+            ),
+            presenceRequestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 1,
+                imageCount: 1,
+                textSnapshotCount: 0,
+                previousEventCount: 0,
+                responseChars: 40,
+                inputTextCharacterCount: 120
+            ),
+            taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 1,
+                imageCount: 1,
+                textSnapshotCount: 2,
+                previousEventCount: 3,
+                responseChars: 80,
+                inputTextCharacterCount: 780
+            ),
+            splitAnalysis: LLMSplitFocusAnalysis(
+                userPresence: LLMUserPresenceEvaluation(
+                    presence: .present,
+                    engagement: .engaged,
+                    reason: "用户在场。"
+                ),
+                taskAlignment: LLMTaskAlignmentEvaluation(
+                    alignment: .unaligned,
+                    progress: .stalled,
+                    focusTargetID: "T2",
+                    reason: "屏幕内容与开发任务不匹配。"
+                )
+            )
+        )
+
+        let detail = FocusEventDebugDetail.make(
+            task: "开发 stillloop",
+            evaluator: result.evaluator,
+            snapshots: [],
+            result: result
+        )
+
+        XCTAssertEqual(detail.splitAnalysis?.userPresence?.presence, .present)
+        XCTAssertEqual(detail.splitAnalysis?.userPresence?.engagement, .engaged)
+        XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.alignment, .unaligned)
+        XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.progress, .stalled)
+        XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.focusTargetID, "T2")
+        XCTAssertEqual(detail.presenceRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(detail.presenceRequestDebugMetrics?.textSnapshotCount, 0)
+        XCTAssertEqual(detail.taskAlignmentRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(detail.taskAlignmentRequestDebugMetrics?.textSnapshotCount, 2)
+    }
+
     func testRecognitionDebugClipboardTextShowsSplitContextSections() {
         let event = FocusEvent(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -228,6 +292,59 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("环境上下文\nCurrent task:\n开发 stillloop"))
         XCTAssertTrue(text.contains("视觉上下文\nvisual sample[1]\ntargetID: T2"))
         XCTAssertFalse(text.contains("采样上下文"))
+    }
+
+    func testRecognitionDebugClipboardTextShowsSplitEvaluatorResults() {
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            state: .distracted,
+            context: "Codex",
+            nudge: "先回到：开发 stillloop",
+            debugDetail: FocusEventDebugDetail(
+                task: "开发 stillloop",
+                evaluator: "自带模型",
+                resultState: .distracted,
+                reason: "屏幕内容偏离任务。",
+                shouldNudge: true,
+                nudge: "先回到：开发 stillloop",
+                presenceRequestDebugMetrics: LLMRequestDebugMetrics(
+                    visualCaptureCount: 1,
+                    imageCount: 1,
+                    textSnapshotCount: 0,
+                    previousEventCount: 0,
+                    responseChars: 40,
+                    inputTextCharacterCount: 120
+                ),
+                taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics(
+                    visualCaptureCount: 1,
+                    imageCount: 1,
+                    textSnapshotCount: 2,
+                    previousEventCount: 3,
+                    responseChars: 80,
+                    inputTextCharacterCount: 780
+                ),
+                splitAnalysis: LLMSplitFocusAnalysis(
+                    userPresence: LLMUserPresenceEvaluation(
+                        presence: .present,
+                        engagement: .engaged,
+                        reason: "用户在场。"
+                    ),
+                    taskAlignment: LLMTaskAlignmentEvaluation(
+                        alignment: .unaligned,
+                        progress: .stalled,
+                        focusTargetID: "T2",
+                        reason: "屏幕内容与开发任务不匹配。"
+                    )
+                )
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "18:46:31")
+
+        XCTAssertTrue(text.contains("用户状态判断\npresence：present\nengagement：engaged\n原因：用户在场。"))
+        XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=1, textSnapshotCount=0, previousEventCount=0"))
+        XCTAssertTrue(text.contains("任务匹配判断\nalignment：unaligned\nprogress：stalled\nfocusTargetID：T2\n原因：屏幕内容与开发任务不匹配。"))
+        XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=1, textSnapshotCount=2, previousEventCount=3"))
     }
 
     func testRecognitionDebugClipboardTextFallsBackToLegacyCapturedContext() {

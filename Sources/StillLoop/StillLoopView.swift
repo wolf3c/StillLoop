@@ -1281,7 +1281,33 @@ private struct TimelineEventDebugPopover: View {
                         }
                     }
 
-                    if let analysis = detail.analysis {
+                    if let presence = detail.splitAnalysis?.userPresence {
+                        TimelineDebugSection(title: "用户状态判断") {
+                            ForEach(FocusEventDebugDetail.formattedUserPresenceLines(presence), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                            if let metrics = detail.presenceRequestDebugMetrics {
+                                ForEach(FocusEventDebugDetail.formattedRequestMetricLines(metrics), id: \.self) { line in
+                                    TimelineDebugText(line)
+                                }
+                            }
+                        }
+                    }
+
+                    if let taskAlignment = detail.splitAnalysis?.taskAlignment {
+                        TimelineDebugSection(title: "任务匹配判断") {
+                            ForEach(FocusEventDebugDetail.formattedTaskAlignmentLines(taskAlignment), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                            if let metrics = detail.taskAlignmentRequestDebugMetrics {
+                                ForEach(FocusEventDebugDetail.formattedRequestMetricLines(metrics), id: \.self) { line in
+                                    TimelineDebugText(line)
+                                }
+                            }
+                        }
+                    }
+
+                    if detail.splitAnalysis == nil, let analysis = detail.analysis {
                         TimelineDebugSection(title: "模型分析") {
                             TimelineDebugText("用户状态：\(analysis.userEngagement)")
                             TimelineDebugText("页面内容：\(analysis.screenContent)")

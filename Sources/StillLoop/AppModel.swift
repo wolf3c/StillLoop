@@ -1584,9 +1584,13 @@ final class AppModel: ObservableObject {
             persistManualModelConfiguration()
             return
         }
-        let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-        llmEngine = engine
-        llmEvaluator = LLMFocusEvaluator(engine: engine)
+        let presenceEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        let taskAlignmentEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        llmEngine = taskAlignmentEngine
+        llmEvaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskAlignmentEngine
+        )
         localLLMStatus = "当前评估：手动模型 \(effectiveBaseURLText)"
         persistManualModelConfiguration()
     }
@@ -1860,12 +1864,16 @@ final class AppModel: ObservableObject {
                 bundledModelRuntime.stop()
                 return false
             }
-            let engine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
-            let evaluator = LLMFocusEvaluator(engine: engine)
-            llmEngine = engine
+            let presenceEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            let taskAlignmentEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            let evaluator = LLMFocusEvaluator(
+                userPresenceEngine: presenceEngine,
+                taskAlignmentEngine: taskAlignmentEngine
+            )
+            llmEngine = taskAlignmentEngine
             llmEvaluator = evaluator
             await prewarmBundledPromptCacheIfSupported(evaluator)
-            await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: engine)
+            await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: taskAlignmentEngine)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
             shouldValidateBundledRuntimeForActiveRun = false
@@ -2272,61 +2280,67 @@ final class AppModel: ObservableObject {
         return fields
     }
 
-    private static func llmDiagnosticFields(from metrics: LLMRequestDebugMetrics?) -> [String: DiagnosticLogValue] {
+    private static func llmDiagnosticFields(
+        from metrics: LLMRequestDebugMetrics?,
+        prefix: String = "llm",
+        includeDeviceFields: Bool = true
+    ) -> [String: DiagnosticLogValue] {
         guard let metrics else { return [:] }
         var fields: [String: DiagnosticLogValue] = [
-            "llmVisualCaptureCount": .int(metrics.visualCaptureCount),
-            "llmImageCount": .int(metrics.imageCount),
-            "llmTextSnapshotCount": .int(metrics.textSnapshotCount),
-            "llmPreviousEventCount": .int(metrics.previousEventCount),
-            "llmResponseChars": .int(metrics.responseChars),
-            "llmInputTextCharacterCount": .int(metrics.inputTextCharacterCount)
+            "\(prefix)VisualCaptureCount": .int(metrics.visualCaptureCount),
+            "\(prefix)ImageCount": .int(metrics.imageCount),
+            "\(prefix)TextSnapshotCount": .int(metrics.textSnapshotCount),
+            "\(prefix)PreviousEventCount": .int(metrics.previousEventCount),
+            "\(prefix)ResponseChars": .int(metrics.responseChars),
+            "\(prefix)InputTextCharacterCount": .int(metrics.inputTextCharacterCount)
         ]
         if let payloadBytes = metrics.payloadBytes {
-            fields["llmPayloadBytes"] = .int(payloadBytes)
+            fields["\(prefix)PayloadBytes"] = .int(payloadBytes)
         }
         if let inputTextTokenCount = metrics.inputTextTokenCount {
-            fields["llmInputTextTokenCount"] = .int(inputTextTokenCount)
+            fields["\(prefix)InputTextTokenCount"] = .int(inputTextTokenCount)
         }
-        fields.merge(
-            devicePowerDiagnosticFields(
-                powerStatus: metrics.powerStatus,
-                visualSampleLimit: metrics.visualSampleLimit
-            )
-        ) { current, _ in current }
+        if includeDeviceFields {
+            fields.merge(
+                devicePowerDiagnosticFields(
+                    powerStatus: metrics.powerStatus,
+                    visualSampleLimit: metrics.visualSampleLimit
+                )
+            ) { current, _ in current }
+        }
         if let created = metrics.created {
-            fields["llmCreated"] = .int(created)
+            fields["\(prefix)Created"] = .int(created)
         }
         if let cachedTokens = metrics.usage?.diagnosticInt(at: ["prompt_tokens_details", "cached_tokens"]) {
-            fields["llmCachedTokens"] = .int(cachedTokens)
+            fields["\(prefix)CachedTokens"] = .int(cachedTokens)
         }
         if let timings = metrics.timings {
             if let cacheN = timings.diagnosticInt(at: ["cache_n"]) {
-                fields["llmCacheN"] = .int(cacheN)
+                fields["\(prefix)CacheN"] = .int(cacheN)
             }
             if let promptN = timings.diagnosticInt(at: ["prompt_n"]) {
-                fields["llmPromptN"] = .int(promptN)
+                fields["\(prefix)PromptN"] = .int(promptN)
             }
             if let promptMS = timings.diagnosticDouble(at: ["prompt_ms"]) {
-                fields["llmPromptMS"] = .double(promptMS)
+                fields["\(prefix)PromptMS"] = .double(promptMS)
             }
             if let promptPerTokenMS = timings.diagnosticDouble(at: ["prompt_per_token_ms"]) {
-                fields["llmPromptPerTokenMS"] = .double(promptPerTokenMS)
+                fields["\(prefix)PromptPerTokenMS"] = .double(promptPerTokenMS)
             }
             if let promptPerSecond = timings.diagnosticDouble(at: ["prompt_per_second"]) {
-                fields["llmPromptPerSecond"] = .double(promptPerSecond)
+                fields["\(prefix)PromptPerSecond"] = .double(promptPerSecond)
             }
             if let predictedN = timings.diagnosticInt(at: ["predicted_n"]) {
-                fields["llmPredictedN"] = .int(predictedN)
+                fields["\(prefix)PredictedN"] = .int(predictedN)
             }
             if let predictedMS = timings.diagnosticDouble(at: ["predicted_ms"]) {
-                fields["llmPredictedMS"] = .double(predictedMS)
+                fields["\(prefix)PredictedMS"] = .double(predictedMS)
             }
             if let predictedPerTokenMS = timings.diagnosticDouble(at: ["predicted_per_token_ms"]) {
-                fields["llmPredictedPerTokenMS"] = .double(predictedPerTokenMS)
+                fields["\(prefix)PredictedPerTokenMS"] = .double(predictedPerTokenMS)
             }
             if let predictedPerSecond = timings.diagnosticDouble(at: ["predicted_per_second"]) {
-                fields["llmPredictedPerSecond"] = .double(predictedPerSecond)
+                fields["\(prefix)PredictedPerSecond"] = .double(predictedPerSecond)
             }
         }
         return fields
@@ -2472,25 +2486,28 @@ final class AppModel: ObservableObject {
                     )
                 } catch {
                     let failure = Self.modelInferenceFailurePresentation(for: error)
+                    let splitFailureFields = Self.splitModelFailureDiagnosticFields(for: error)
+                    let failureFields: [String: DiagnosticLogValue] = [
+                        "modelSource": .string("bundled"),
+                        "failureKind": .string(failure.debugText)
+                    ].merging(splitFailureFields) { current, _ in current }
+                    let fallbackFields: [String: DiagnosticLogValue] = [
+                        "modelSource": .string("bundled"),
+                        "fallback": .string("ruleBased"),
+                        "failureKind": .string(failure.debugText)
+                    ].merging(splitFailureFields) { current, _ in current }
                     diagnosticLogger.record(
                         "model.evaluation.failed",
                         fields: diagnosticFields(
                             snapshots: visualSnapshots,
-                            extra: [
-                                "modelSource": .string("bundled"),
-                                "failureKind": .string(failure.debugText)
-                            ]
+                            extra: failureFields
                         )
                     )
                     diagnosticLogger.record(
                         "model.evaluation.fallback",
                         fields: diagnosticFields(
                             snapshots: visualSnapshots,
-                            extra: [
-                                "modelSource": .string("bundled"),
-                                "fallback": .string("ruleBased"),
-                                "failureKind": .string(failure.debugText)
-                            ]
+                            extra: fallbackFields
                         )
                     )
                     localLLMStatus = "当前评估：基础规则（自带模型：\(failure.statusText)）"
@@ -2547,6 +2564,7 @@ final class AppModel: ObservableObject {
                 return result
             } catch {
                 let failure = Self.modelInferenceFailurePresentation(for: error)
+                let splitFailureFields = Self.splitModelFailureDiagnosticFields(for: error)
                 diagnosticLogger.record(
                     "model.evaluation.fallback",
                     fields: diagnosticFields(
@@ -2555,7 +2573,7 @@ final class AppModel: ObservableObject {
                             "modelSource": .string("manual"),
                             "fallback": .string("ruleBased"),
                             "failureKind": .string(failure.debugText)
-                        ]
+                        ].merging(splitFailureFields) { current, _ in current }
                     )
                 )
                 localLLMStatus = "当前评估：基础规则（手动模型：\(failure.statusText)）"
@@ -2608,6 +2626,21 @@ final class AppModel: ObservableObject {
             visualSampleLimit: visualSampleLimit
         )
         result.evaluator = "自带模型"
+        var llmDiagnosticFields = Self.llmDiagnosticFields(from: result.requestDebugMetrics)
+        llmDiagnosticFields.merge(
+            Self.llmDiagnosticFields(
+                from: result.presenceRequestDebugMetrics,
+                prefix: "presenceLLM",
+                includeDeviceFields: false
+            )
+        ) { current, _ in current }
+        llmDiagnosticFields.merge(
+            Self.llmDiagnosticFields(
+                from: result.taskAlignmentRequestDebugMetrics,
+                prefix: "taskLLM",
+                includeDeviceFields: false
+            )
+        ) { current, _ in current }
         diagnosticLogger.record(
             "model.evaluation.succeeded",
             fields: diagnosticFields(
@@ -2615,7 +2648,7 @@ final class AppModel: ObservableObject {
                 extra: [
                     "modelSource": .string("bundled"),
                     "state": .string(result.state.rawValue)
-                ].merging(Self.llmDiagnosticFields(from: result.requestDebugMetrics)) { current, _ in current }
+                ].merging(llmDiagnosticFields) { current, _ in current }
             )
         )
         localLLMStatus = "当前评估：自带模型已连接"
@@ -2658,7 +2691,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private static func splitModelFailureDiagnosticFields(for error: Error) -> [String: DiagnosticLogValue] {
+        guard let splitError = error as? LLMSplitFocusEvaluationError else { return [:] }
+        return [
+            "presenceFailureKind": .string(modelInferenceFailurePresentation(for: splitError.presenceError).debugText),
+            "taskAlignmentFailureKind": .string(modelInferenceFailurePresentation(for: splitError.taskAlignmentError).debugText)
+        ]
+    }
+
     private static func modelInferenceFailureKind(for error: Error) -> LLMFocusFailureKind {
+        if let splitError = error as? LLMSplitFocusEvaluationError {
+            return modelInferenceFailureKind(for: splitError.presenceError)
+        }
         if let llmError = error as? LLMFocusEvaluationError {
             return llmError.kind
         }

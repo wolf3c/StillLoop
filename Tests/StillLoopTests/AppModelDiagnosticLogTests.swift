@@ -16,9 +16,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testBundledModelTimeoutWritesFailureAndFallbackDiagnosticsWithoutRetry() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
-        let engine = SequencedDiagnosticLLMEngine(outcomes: [
-            .failure(URLError(.timedOut))
-        ])
+        var engines: [SequencedDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -26,7 +24,13 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             devicePowerStatusProvider: StubDevicePowerStatusProvider(
                 status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
             ),
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SequencedDiagnosticLLMEngine(outcomes: [
+                    .failure(URLError(.timedOut))
+                ])
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -57,12 +61,18 @@ final class AppModelDiagnosticLogTests: XCTestCase {
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.started" })
-        XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.failed" && $0["failureKind"] as? String == "请求超时" })
+        let failed = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.failed" })
+        XCTAssertEqual(failed["failureKind"] as? String, "请求超时")
+        XCTAssertEqual(failed["presenceFailureKind"] as? String, "请求超时")
+        XCTAssertEqual(failed["taskAlignmentFailureKind"] as? String, "请求超时")
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" })
-        XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.fallback" && $0["fallback"] as? String == "ruleBased" })
+        let fallback = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.fallback" })
+        XCTAssertEqual(fallback["fallback"] as? String, "ruleBased")
+        XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
+        XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
         XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_000 && $0["cameraBytes"] as? Int == 9_000 })
-        XCTAssertEqual(engine.callCount, 1)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
     }
@@ -70,7 +80,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testSuccessfulBundledModelWritesCacheAndTimingDiagnostics() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
-        let engine = SuccessfulDiagnosticLLMEngine()
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -78,7 +88,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             devicePowerStatusProvider: StubDevicePowerStatusProvider(
                 status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
             ),
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -117,26 +131,32 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmPreviousEventCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 452_010)
-        XCTAssertEqual(succeeded["llmResponseChars"] as? Int, engine.response.count)
-        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 1_295)
-        XCTAssertEqual(succeeded["llmCreated"] as? Int, 1_779_348_997)
-        XCTAssertEqual(succeeded["llmCachedTokens"] as? Int, 221)
-        XCTAssertEqual(succeeded["llmCacheN"] as? Int, 221)
-        XCTAssertEqual(succeeded["llmPromptN"] as? Int, 3_478)
-        XCTAssertEqual(try XCTUnwrap(succeeded["llmPromptMS"] as? Double), 5_877.439, accuracy: 0.001)
-        XCTAssertEqual(succeeded["llmPredictedN"] as? Int, 336)
-        XCTAssertEqual(try XCTUnwrap(succeeded["llmPredictedMS"] as? Double), 6_763.672, accuracy: 0.001)
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 904_020)
+        XCTAssertEqual(succeeded["llmResponseChars"] as? Int, result.requestDebugMetrics?.responseChars)
+        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 2_590)
+        XCTAssertEqual(succeeded["presenceLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
+        XCTAssertEqual(succeeded["presenceLLMPreviousEventCount"] as? Int, 0)
+        XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["presenceLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["presenceLLMCacheN"] as? Int, 221)
+        XCTAssertEqual(succeeded["taskLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["taskLLMTextSnapshotCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["taskLLMPreviousEventCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["taskLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["taskLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["taskLLMCacheN"] as? Int, 221)
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
     func testBatteryPowerLimitsBundledEvaluationToLatestVisualSampleButKeepsTextContext() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
-        let engine = SuccessfulDiagnosticLLMEngine()
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -144,7 +164,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             devicePowerStatusProvider: StubDevicePowerStatusProvider(
                 status: DevicePowerStatus(powerSource: .battery, lowPowerMode: false, thermalState: .fair)
             ),
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -159,8 +183,9 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .battery)
         XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
-        XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]\ntargetID: T4\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
-        XCTAssertFalse(engine.flattenedPrompt.contains("visual sample[1]\ntargetID: T3\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
+        let taskEngine = try XCTUnwrap(engines.last)
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("visual sample[1]\ntargetID: T4\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("visual sample[1]\ntargetID: T3\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
@@ -171,6 +196,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(started["visualSampleLimit"] as? Int, 1)
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 4)
+        XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
+        XCTAssertEqual(succeeded["taskLLMTextSnapshotCount"] as? Int, 4)
         XCTAssertEqual(succeeded["powerSource"] as? String, "battery")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
     }
@@ -178,7 +205,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testLowPowerModeLimitsVisualSamplesEvenOnACPower() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
-        let engine = SuccessfulDiagnosticLLMEngine()
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -186,7 +213,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             devicePowerStatusProvider: StubDevicePowerStatusProvider(
                 status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: true, thermalState: .serious)
             ),
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -206,7 +237,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testUnknownPowerSourceKeepsDefaultVisualSampleLimitUnlessLowPowerModeIsEnabled() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
-        let engine = SuccessfulDiagnosticLLMEngine()
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -214,7 +245,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             devicePowerStatusProvider: StubDevicePowerStatusProvider(
                 status: DevicePowerStatus(powerSource: .unknown, lowPowerMode: false, thermalState: .unknown)
             ),
-            bundledLLMEngineFactory: { _, _ in engine }
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
         )
         model.selectModelSource(.bundled)
 
@@ -247,7 +282,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.prewarmCallCount, 2)
         XCTAssertEqual(engine.probeCallCount, 4)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let probes = events.filter { $0["event"] as? String == "model.promptCacheProbe.completed" }
@@ -287,7 +322,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 1)
+        XCTAssertEqual(engine.prewarmCallCount, 2)
         XCTAssertEqual(engine.probeCallCount, 0)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.promptCacheProbe.completed" })
@@ -390,12 +425,16 @@ private final class SequencedDiagnosticLLMEngine: LocalLLMEngine {
 }
 
 private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding {
-    let response = """
-    {"state":"focused","reason":"Working on llama cache optimization","nudge":null}
+    static let presenceResponse = """
+    {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+    """
+    static let taskAlignmentResponse = """
+    {"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"Working on llama cache optimization"}
     """
 
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
     private(set) var lastMessages: [LLMMessage] = []
+    private(set) var callCount = 0
     var flattenedPrompt: String {
         lastMessages
             .flatMap(\.content)
@@ -413,6 +452,15 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
     }
 
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        callCount += 1
+        let response = switch responseFormat {
+        case .userPresenceEvaluation:
+            Self.presenceResponse
+        case .taskAlignmentEvaluation:
+            Self.taskAlignmentResponse
+        default:
+            Self.taskAlignmentResponse
+        }
         lastMessages = messages
         lastRequestTransportMetrics = LLMRequestTransportMetrics(
             payloadBytes: 452_010,

@@ -37,7 +37,7 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--mmproj", "/tmp/StillLoop Models/mmproj.gguf",
             "--host", "/tmp/stillloop-runtime.sock",
             "--ctx-size", "4096",
-            "--parallel", "1",
+            "--parallel", "2",
             "--n-gpu-layers", "99",
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
@@ -95,7 +95,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--ubatch-size"))
         XCTAssertFalse(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "2")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--n-gpu-layers")! + 1], "99")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-k")! + 1], "q4_1")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")

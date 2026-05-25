@@ -14,6 +14,9 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("public var debugDetail: FocusEventDebugDetail?"))
         XCTAssertTrue(source.contains("public var analysis: LLMFocusAnalysis?"))
         XCTAssertTrue(source.contains("public var requestDebugMetrics: LLMRequestDebugMetrics?"))
+        XCTAssertTrue(source.contains("public var splitAnalysis: LLMSplitFocusAnalysis?"))
+        XCTAssertTrue(source.contains("public var presenceRequestDebugMetrics: LLMRequestDebugMetrics?"))
+        XCTAssertTrue(source.contains("public var taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics?"))
     }
 
     func testRecognitionDebugPopoverShowsModelAnalysis() throws {
@@ -45,6 +48,17 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(coreSource.contains("输入规模："))
         XCTAssertTrue(coreSource.contains("LLM created："))
         XCTAssertTrue(coreSource.contains("LLM timings："))
+    }
+
+    func testRecognitionDebugPopoverShowsSplitEvaluatorResults() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("用户状态判断"))
+        XCTAssertTrue(source.contains("formattedUserPresenceLines"))
+        XCTAssertTrue(source.contains("任务匹配判断"))
+        XCTAssertTrue(source.contains("formattedTaskAlignmentLines"))
+        XCTAssertTrue(source.contains("presenceRequestDebugMetrics"))
+        XCTAssertTrue(source.contains("taskAlignmentRequestDebugMetrics"))
     }
 
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {

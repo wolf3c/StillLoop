@@ -434,7 +434,21 @@ public extension FocusEvent {
             }
             sections.append((["运算返回结果"] + resultLines).joined(separator: "\n"))
 
-            if let analysis = debugDetail.analysis {
+            if let presence = debugDetail.splitAnalysis?.userPresence {
+                var presenceLines = FocusEventDebugDetail.formattedUserPresenceLines(presence)
+                if let metrics = debugDetail.presenceRequestDebugMetrics {
+                    presenceLines.append(contentsOf: FocusEventDebugDetail.formattedRequestMetricLines(metrics))
+                }
+                sections.append((["用户状态判断"] + presenceLines).joined(separator: "\n"))
+            }
+            if let taskAlignment = debugDetail.splitAnalysis?.taskAlignment {
+                var taskLines = FocusEventDebugDetail.formattedTaskAlignmentLines(taskAlignment)
+                if let metrics = debugDetail.taskAlignmentRequestDebugMetrics {
+                    taskLines.append(contentsOf: FocusEventDebugDetail.formattedRequestMetricLines(metrics))
+                }
+                sections.append((["任务匹配判断"] + taskLines).joined(separator: "\n"))
+            }
+            if debugDetail.splitAnalysis == nil, let analysis = debugDetail.analysis {
                 sections.append([
                     "模型分析",
                     "用户状态：\(analysis.userEngagement)",
@@ -472,7 +486,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var nudge: String?
     public var modelRunDurationSeconds: TimeInterval?
     public var requestDebugMetrics: LLMRequestDebugMetrics?
+    public var presenceRequestDebugMetrics: LLMRequestDebugMetrics?
+    public var taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics?
     public var analysis: LLMFocusAnalysis?
+    public var splitAnalysis: LLMSplitFocusAnalysis?
 
     public init(
         task: String,
@@ -486,7 +503,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         nudge: String?,
         modelRunDurationSeconds: TimeInterval? = nil,
         requestDebugMetrics: LLMRequestDebugMetrics? = nil,
-        analysis: LLMFocusAnalysis? = nil
+        presenceRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
+        taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
+        analysis: LLMFocusAnalysis? = nil,
+        splitAnalysis: LLMSplitFocusAnalysis? = nil
     ) {
         self.task = task
         self.evaluator = evaluator
@@ -499,7 +519,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.nudge = nudge
         self.modelRunDurationSeconds = modelRunDurationSeconds
         self.requestDebugMetrics = requestDebugMetrics
+        self.presenceRequestDebugMetrics = presenceRequestDebugMetrics
+        self.taskAlignmentRequestDebugMetrics = taskAlignmentRequestDebugMetrics
         self.analysis = analysis
+        self.splitAnalysis = splitAnalysis
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -514,7 +537,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         case nudge
         case modelRunDurationSeconds
         case requestDebugMetrics
+        case presenceRequestDebugMetrics
+        case taskAlignmentRequestDebugMetrics
         case analysis
+        case splitAnalysis
     }
 
     public init(from decoder: Decoder) throws {
@@ -530,7 +556,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         nudge = try container.decodeIfPresent(String.self, forKey: .nudge)
         modelRunDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .modelRunDurationSeconds)
         requestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .requestDebugMetrics)
+        presenceRequestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .presenceRequestDebugMetrics)
+        taskAlignmentRequestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .taskAlignmentRequestDebugMetrics)
         analysis = try container.decodeIfPresent(LLMFocusAnalysis.self, forKey: .analysis)
+        splitAnalysis = try container.decodeIfPresent(LLMSplitFocusAnalysis.self, forKey: .splitAnalysis)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -552,7 +581,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         try container.encodeIfPresent(nudge, forKey: .nudge)
         try container.encodeIfPresent(modelRunDurationSeconds, forKey: .modelRunDurationSeconds)
         try container.encodeIfPresent(requestDebugMetrics, forKey: .requestDebugMetrics)
+        try container.encodeIfPresent(presenceRequestDebugMetrics, forKey: .presenceRequestDebugMetrics)
+        try container.encodeIfPresent(taskAlignmentRequestDebugMetrics, forKey: .taskAlignmentRequestDebugMetrics)
         try container.encodeIfPresent(analysis, forKey: .analysis)
+        try container.encodeIfPresent(splitAnalysis, forKey: .splitAnalysis)
     }
 
     public static func formattedModelRunDuration(_ duration: TimeInterval) -> String {
@@ -579,6 +611,23 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             lines.append("LLM timings：\(timings)")
         }
         return lines
+    }
+
+    public static func formattedUserPresenceLines(_ presence: LLMUserPresenceEvaluation) -> [String] {
+        [
+            "presence：\(presence.presence.rawValue)",
+            "engagement：\(presence.engagement.rawValue)",
+            "原因：\(presence.reason)"
+        ]
+    }
+
+    public static func formattedTaskAlignmentLines(_ taskAlignment: LLMTaskAlignmentEvaluation) -> [String] {
+        [
+            "alignment：\(taskAlignment.alignment.rawValue)",
+            "progress：\(taskAlignment.progress.rawValue)",
+            "focusTargetID：\(taskAlignment.focusTargetID ?? "-")",
+            "原因：\(taskAlignment.reason)"
+        ]
     }
 
     private static func optionalIntText(_ value: Int?) -> String {
@@ -632,7 +681,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             nudge: result.nudge,
             modelRunDurationSeconds: result.modelRunDurationSeconds,
             requestDebugMetrics: result.requestDebugMetrics,
-            analysis: result.analysis
+            presenceRequestDebugMetrics: result.presenceRequestDebugMetrics,
+            taskAlignmentRequestDebugMetrics: result.taskAlignmentRequestDebugMetrics,
+            analysis: result.analysis,
+            splitAnalysis: result.splitAnalysis
         )
     }
 }
