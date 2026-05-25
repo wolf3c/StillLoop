@@ -56,7 +56,10 @@ struct WorkspaceFocusReturnTargetApplicationOpener: FocusReturnTargetApplication
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
             return false
         }
-        return NSWorkspace.shared.open(appURL)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+        return true
     }
 
     func activateRunningApplication(named appName: String) -> Bool {
@@ -282,6 +285,9 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         if let bundleIdentifier = target.appBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
            !bundleIdentifier.isEmpty {
             if applicationOpener.activateRunningApplication(bundleIdentifier: bundleIdentifier) {
+                if !hasSpecificWindowTarget(target) {
+                    _ = applicationOpener.openApplication(bundleIdentifier: bundleIdentifier)
+                }
                 return true
             }
             if applicationOpener.openApplication(bundleIdentifier: bundleIdentifier) {
@@ -290,6 +296,16 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
         }
 
         return applicationOpener.activateRunningApplication(named: target.appName)
+    }
+
+    private func hasSpecificWindowTarget(_ target: FocusReturnTarget) -> Bool {
+        guard target.processIdentifier != nil,
+              target.windowNumber != nil,
+              target.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else {
+            return false
+        }
+        return true
     }
 
     @discardableResult

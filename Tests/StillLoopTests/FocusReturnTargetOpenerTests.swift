@@ -289,7 +289,7 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         XCTAssertTrue(runner.sources.isEmpty)
     }
 
-    func testAppTargetActivatesRunningBundleBeforeOpeningApplication() {
+    func testAppTargetRequestsReopenWhenActivationSucceedsWithoutSpecificWindowTarget() {
         let runner = RecordingAppleScriptRunner(result: true)
         let appOpener = RecordingReturnTargetApplicationOpener(
             activateBundleResult: true,
@@ -306,7 +306,10 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         )
 
         XCTAssertTrue(opener.open(target))
-        XCTAssertEqual(appOpener.actions, ["activateBundle:com.openai.codex"])
+        XCTAssertEqual(appOpener.actions, [
+            "activateBundle:com.openai.codex",
+            "openBundle:com.openai.codex"
+        ])
         XCTAssertTrue(runner.sources.isEmpty)
     }
 }

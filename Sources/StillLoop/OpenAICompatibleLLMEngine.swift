@@ -1,9 +1,297 @@
 import Foundation
 import StillLoopCore
 
+protocol OpenAICompatibleHTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+private struct URLSessionOpenAICompatibleHTTPTransport: OpenAICompatibleHTTPTransport {
+    var session: URLSession
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await session.data(for: request)
+    }
+}
+
+final class UnixSocketOpenAICompatibleHTTPTransport: OpenAICompatibleHTTPTransport {
+    private let socketURL: URL
+
+    init(socketURL: URL) {
+        self.socketURL = socketURL
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try perform(request)
+    }
+
+    private func perform(_ request: URLRequest) throws -> (Data, URLResponse) {
+        let socketDescriptor = try connectSocket()
+        defer { close(socketDescriptor) }
+
+        try setSocketTimeouts(socketDescriptor, timeout: request.timeoutInterval)
+        try writeAll(requestData(for: request), to: socketDescriptor)
+        let responseData = try readAll(from: socketDescriptor)
+        return try parseHTTPResponse(responseData, requestURL: request.url)
+    }
+
+    private func connectSocket() throws -> Int32 {
+        let socketDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard socketDescriptor >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        do {
+            var address = sockaddr_un()
+            address.sun_family = sa_family_t(AF_UNIX)
+            let pathBytes = Array(socketURL.path.utf8CString)
+            let pathCapacity = MemoryLayout.size(ofValue: address.sun_path)
+            guard pathBytes.count <= pathCapacity else {
+                throw URLError(.badURL)
+            }
+            _ = socketURL.path.withCString { source in
+                withUnsafeMutablePointer(to: &address.sun_path.0) { destination in
+                    strlcpy(destination, source, pathCapacity)
+                }
+            }
+            let pathOffset = MemoryLayout<sockaddr_un>.offset(of: \.sun_path) ?? 0
+            address.sun_len = UInt8(pathOffset + pathBytes.count)
+            let addressLength = socklen_t(address.sun_len)
+            let connectResult = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                    connect(socketDescriptor, sockaddrPointer, addressLength)
+                }
+            }
+            guard connectResult == 0 else {
+                throw socketError()
+            }
+            return socketDescriptor
+        } catch {
+            close(socketDescriptor)
+            throw error
+        }
+    }
+
+    private func setSocketTimeouts(_ socketDescriptor: Int32, timeout: TimeInterval) throws {
+        guard timeout > 0 else { return }
+        var value = timeval(
+            tv_sec: __darwin_time_t(timeout.rounded(.down)),
+            tv_usec: __darwin_suseconds_t((timeout.truncatingRemainder(dividingBy: 1)) * 1_000_000)
+        )
+        let length = socklen_t(MemoryLayout<timeval>.size)
+        let receiveResult = withUnsafePointer(to: &value) { pointer in
+            pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<timeval>.size) { reboundPointer in
+                setsockopt(socketDescriptor, SOL_SOCKET, SO_RCVTIMEO, reboundPointer, length)
+            }
+        }
+        guard receiveResult == 0 else {
+            throw socketError()
+        }
+        let sendResult = withUnsafePointer(to: &value) { pointer in
+            pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<timeval>.size) { reboundPointer in
+                setsockopt(socketDescriptor, SOL_SOCKET, SO_SNDTIMEO, reboundPointer, length)
+            }
+        }
+        guard sendResult == 0 else {
+            throw socketError()
+        }
+    }
+
+    private func requestData(for request: URLRequest) throws -> Data {
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+        let method = request.httpMethod ?? "GET"
+        let path = url.path.isEmpty ? "/" : url.path
+        let pathAndQuery = url.query.map { "\(path)?\($0)" } ?? path
+        let body = try httpBodyData(for: request)
+        var lines = [
+            "\(method) \(pathAndQuery) HTTP/1.1",
+            "Host: localhost",
+            "Connection: close"
+        ]
+        for (key, value) in request.allHTTPHeaderFields ?? [:] {
+            let normalizedKey = key.lowercased()
+            guard normalizedKey != "host",
+                  normalizedKey != "connection",
+                  normalizedKey != "content-length"
+            else {
+                continue
+            }
+            lines.append("\(key): \(value)")
+        }
+        if !body.isEmpty {
+            lines.append("Content-Length: \(body.count)")
+        }
+        return Data((lines.joined(separator: "\r\n") + "\r\n\r\n").utf8) + body
+    }
+
+    private func httpBodyData(for request: URLRequest) throws -> Data {
+        if let httpBody = request.httpBody {
+            return httpBody
+        }
+        guard let stream = request.httpBodyStream else {
+            return Data()
+        }
+
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        let bufferSize = 16_384
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while stream.hasBytesAvailable {
+            let count = stream.read(buffer, maxLength: bufferSize)
+            if count > 0 {
+                data.append(buffer, count: count)
+            } else if count < 0 {
+                throw stream.streamError ?? URLError(.cannotDecodeRawData)
+            } else {
+                break
+            }
+        }
+        return data
+    }
+
+    private func writeAll(_ data: Data, to socketDescriptor: Int32) throws {
+        try data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let written = send(socketDescriptor, baseAddress.advanced(by: offset), buffer.count - offset, 0)
+                if written > 0 {
+                    offset += written
+                } else if written < 0, errno == EINTR {
+                    continue
+                } else {
+                    throw socketError()
+                }
+            }
+        }
+    }
+
+    private func readAll(from socketDescriptor: Int32) throws -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        while true {
+            let count = recv(socketDescriptor, &buffer, buffer.count, 0)
+            if count > 0 {
+                data.append(buffer, count: count)
+            } else if count == 0 {
+                return data
+            } else if errno == EINTR {
+                continue
+            } else {
+                throw socketError()
+            }
+        }
+    }
+
+    private func parseHTTPResponse(_ responseData: Data, requestURL: URL?) throws -> (Data, URLResponse) {
+        guard
+            let headerRange = responseData.range(of: Data("\r\n\r\n".utf8)),
+            let headerText = String(data: responseData[..<headerRange.lowerBound], encoding: .utf8)
+        else {
+            throw URLError(.badServerResponse)
+        }
+
+        let lines = headerText.components(separatedBy: "\r\n")
+        guard
+            let statusLine = lines.first,
+            let statusCodeText = statusLine.split(separator: " ", maxSplits: 2).dropFirst().first,
+            let statusCode = Int(statusCodeText)
+        else {
+            throw URLError(.badServerResponse)
+        }
+
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let separator = line.firstIndex(of: ":") else { continue }
+            let key = String(line[..<separator])
+            let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+            headers[key] = value
+        }
+
+        let rawBody = responseData[headerRange.upperBound...]
+        let body = try decodedBody(rawBody, headers: headers)
+        guard
+            let url = requestURL,
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: headers
+            )
+        else {
+            throw URLError(.badServerResponse)
+        }
+        return (body, response)
+    }
+
+    private func decodedBody(_ rawBody: Data.SubSequence, headers: [String: String]) throws -> Data {
+        if headerValue("Transfer-Encoding", in: headers)?.lowercased().contains("chunked") == true {
+            return try decodeChunkedBody(Data(rawBody))
+        }
+        if let contentLengthText = headerValue("Content-Length", in: headers),
+           let contentLength = Int(contentLengthText),
+           rawBody.count >= contentLength {
+            return Data(rawBody.prefix(contentLength))
+        }
+        return Data(rawBody)
+    }
+
+    private func decodeChunkedBody(_ data: Data) throws -> Data {
+        var decoded = Data()
+        var offset = data.startIndex
+        let newline = Data("\r\n".utf8)
+
+        while offset < data.endIndex {
+            guard let sizeRange = data.range(of: newline, in: offset..<data.endIndex) else {
+                throw URLError(.badServerResponse)
+            }
+            let sizeLine = String(decoding: data[offset..<sizeRange.lowerBound], as: UTF8.self)
+                .split(separator: ";", maxSplits: 1)
+                .first
+                .map(String.init) ?? ""
+            guard let size = Int(sizeLine.trimmingCharacters(in: .whitespacesAndNewlines), radix: 16) else {
+                throw URLError(.badServerResponse)
+            }
+            offset = sizeRange.upperBound
+            if size == 0 {
+                return decoded
+            }
+            let chunkEnd = offset + size
+            guard chunkEnd <= data.endIndex else {
+                throw URLError(.badServerResponse)
+            }
+            decoded.append(data[offset..<chunkEnd])
+            offset = chunkEnd
+            guard data.range(of: newline, in: offset..<min(offset + newline.count, data.endIndex)) != nil else {
+                throw URLError(.badServerResponse)
+            }
+            offset += newline.count
+        }
+
+        return decoded
+    }
+
+    private func headerValue(_ key: String, in headers: [String: String]) -> String? {
+        headers.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
+    }
+
+    private func socketError() -> Error {
+        if errno == EAGAIN || errno == EWOULDBLOCK {
+            return URLError(.timedOut)
+        }
+        return POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+}
+
 final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
     private static let defaultMaxTokens = 900
     private static let focusEvaluationMaxTokens = 420
+    private static let unixSocketScheme = "http+unix"
 
     enum VisualCapability: Equatable {
         case supported
@@ -102,7 +390,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
     private let baseURL: URL
     private let model: String
     private let apiKey: String?
-    private let session: URLSession
+    private let transport: OpenAICompatibleHTTPTransport
     private let disablesReasoning: Bool
     private let usesResponseFormat: Bool
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
@@ -113,14 +401,52 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         apiKey: String? = nil,
         disablesReasoning: Bool = false,
         usesResponseFormat: Bool = false,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        transport: OpenAICompatibleHTTPTransport? = nil
     ) {
         self.baseURL = baseURL
         self.model = model
         self.apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        self.session = session
+        if let transport {
+            self.transport = transport
+        } else if let socketURL = Self.unixSocketURL(from: baseURL) {
+            self.transport = UnixSocketOpenAICompatibleHTTPTransport(socketURL: socketURL)
+        } else {
+            self.transport = URLSessionOpenAICompatibleHTTPTransport(session: session)
+        }
         self.disablesReasoning = disablesReasoning
         self.usesResponseFormat = usesResponseFormat
+    }
+
+    static func unixSocketBaseURL(socketURL: URL) -> URL {
+        let socketPath = socketURL.path
+        let encodedPath = socketPath.utf8.map { String(format: "%02x", $0) }.joined()
+        return URL(string: "\(unixSocketScheme)://\(encodedPath)/v1")!
+    }
+
+    static func unixSocketURL(from baseURL: URL) -> URL? {
+        guard
+            baseURL.scheme == unixSocketScheme,
+            let encodedPath = baseURL.host,
+            encodedPath.count.isMultiple(of: 2)
+        else {
+            return nil
+        }
+
+        var bytes: [UInt8] = []
+        var index = encodedPath.startIndex
+        while index < encodedPath.endIndex {
+            let nextIndex = encodedPath.index(index, offsetBy: 2)
+            guard let byte = UInt8(encodedPath[index..<nextIndex], radix: 16) else {
+                return nil
+            }
+            bytes.append(byte)
+            index = nextIndex
+        }
+        guard let path = String(bytes: bytes, encoding: .utf8), !path.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: path)
     }
 
     func checkConnection() async throws {
@@ -164,7 +490,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         request.httpMethod = "GET"
         request.timeoutInterval = 6
         applyAuthentication(to: &request)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
@@ -260,7 +586,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         )
         request.httpBody = payload
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
@@ -392,7 +718,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             request.timeoutInterval = 2
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(TokenizeRequest(content: text))
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await transport.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 return nil
             }
@@ -403,6 +729,9 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
     }
 
     private var isLocalBaseURL: Bool {
+        if baseURL.scheme == Self.unixSocketScheme {
+            return true
+        }
         guard let host = baseURL.host?.lowercased() else {
             return false
         }

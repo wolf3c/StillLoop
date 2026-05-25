@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import StillLoop
@@ -12,6 +13,51 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
     override func tearDown() {
         URLProtocolStub.requestHandler = nil
         super.tearDown()
+    }
+
+    func testUnixSocketBaseURLSendsCompletionThroughUnixSocket() async throws {
+        let socketURL = URL(fileURLWithPath: "/tmp/sl-\(UUID().uuidString.prefix(8)).sock")
+        let server = try OneShotUnixSocketHTTPServer(
+            socketURL: socketURL,
+            responseBody: Data(#"{"choices":[{"message":{"content":"socket-ok"}}]}"#.utf8)
+        )
+        try server.start()
+        defer { server.stop() }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: OpenAICompatibleLLMEngine.unixSocketBaseURL(socketURL: socketURL),
+            model: "manual-model"
+        )
+
+        let response = try await engine.complete(messages: [
+            LLMMessage(role: .user, content: [.text("status")])
+        ])
+
+        let requestText = try server.capturedRequestText()
+        XCTAssertEqual(response, "socket-ok")
+        XCTAssertTrue(requestText.hasPrefix("POST /v1/chat/completions HTTP/1.1"))
+        XCTAssertTrue(requestText.contains("Host: localhost"))
+        XCTAssertTrue(requestText.contains(#""model":"manual-model""#))
+    }
+
+    func testUnixSocketTransportHonorsRequestTimeoutWhenServerDoesNotReply() async throws {
+        let socketURL = URL(fileURLWithPath: "/tmp/sl-\(UUID().uuidString.prefix(8)).sock")
+        let server = try OneShotUnixSocketHTTPServer(socketURL: socketURL, responseBody: nil)
+        try server.start()
+        defer { server.stop() }
+
+        var request = URLRequest(url: URL(string: "http://localhost/v1/models")!)
+        request.timeoutInterval = 0.05
+        let transport = UnixSocketOpenAICompatibleHTTPTransport(socketURL: socketURL)
+        let startedAt = Date()
+
+        do {
+            _ = try await transport.data(for: request)
+            XCTFail("Expected Unix socket request to time out")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+            XCTAssertLessThan(Date().timeIntervalSince(startedAt), 1)
+        }
     }
 
     func testCompletionRequestUsesRecommendedQwenSamplingSettings() async throws {
@@ -580,6 +626,173 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
             AppModel.resolvedModelSetupSelection(useLocalLLM: false),
             ModelSetupSelection(source: .bundled, manualService: .localHTTP)
         )
+    }
+}
+
+private final class OneShotUnixSocketHTTPServer {
+    private let socketURL: URL
+    private let responseBody: Data?
+    private let lock = NSLock()
+    private var listenSocket: Int32 = -1
+    private var requestData = Data()
+    private var requestError: Error?
+
+    init(socketURL: URL, responseBody: Data?) throws {
+        self.socketURL = socketURL
+        self.responseBody = responseBody
+        try? FileManager.default.removeItem(at: socketURL)
+    }
+
+    func start() throws {
+        let socketDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard socketDescriptor >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        listenSocket = socketDescriptor
+
+        do {
+            var address = sockaddr_un()
+            address.sun_family = sa_family_t(AF_UNIX)
+            let pathBytes = Array(socketURL.path.utf8CString)
+            let pathCapacity = MemoryLayout.size(ofValue: address.sun_path)
+            guard pathBytes.count <= pathCapacity else {
+                throw URLError(.badURL)
+            }
+            _ = socketURL.path.withCString { source in
+                withUnsafeMutablePointer(to: &address.sun_path.0) { destination in
+                    strlcpy(destination, source, pathCapacity)
+                }
+            }
+            let pathOffset = MemoryLayout<sockaddr_un>.offset(of: \.sun_path) ?? 0
+            address.sun_len = UInt8(pathOffset + pathBytes.count)
+            let addressLength = socklen_t(address.sun_len)
+            let bindResult = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                    bind(socketDescriptor, sockaddrPointer, addressLength)
+                }
+            }
+            guard bindResult == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            guard listen(socketDescriptor, 1) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        } catch {
+            stop()
+            throw error
+        }
+
+        Thread.detachNewThread { [weak self] in
+            self?.acceptOneRequest()
+        }
+    }
+
+    func stop() {
+        if listenSocket >= 0 {
+            close(listenSocket)
+            listenSocket = -1
+        }
+        try? FileManager.default.removeItem(at: socketURL)
+    }
+
+    func capturedRequestText() throws -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let requestError {
+            throw requestError
+        }
+        return String(decoding: requestData, as: UTF8.self)
+    }
+
+    private func acceptOneRequest() {
+        let clientSocket = accept(listenSocket, nil, nil)
+        guard clientSocket >= 0 else {
+            record(error: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+            return
+        }
+        defer { close(clientSocket) }
+
+        do {
+            let request = try readHTTPRequest(from: clientSocket)
+            record(request: request)
+            guard let responseBody else {
+                Thread.sleep(forTimeInterval: 1)
+                return
+            }
+            let header = "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: application/json\r\n"
+                + "Content-Length: \(responseBody.count)\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
+            try writeAll(Data(header.utf8) + responseBody, to: clientSocket)
+        } catch {
+            record(error: error)
+        }
+    }
+
+    private func readHTTPRequest(from socketDescriptor: Int32) throws -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while true {
+            let count = recv(socketDescriptor, &buffer, buffer.count, 0)
+            if count > 0 {
+                data.append(buffer, count: count)
+                if let headerRange = data.range(of: Data("\r\n\r\n".utf8)) {
+                    let bodyStart = headerRange.upperBound
+                    let headerText = String(decoding: data[..<headerRange.lowerBound], as: UTF8.self)
+                    let contentLength = Self.contentLength(from: headerText)
+                    if data.count >= bodyStart + contentLength {
+                        return data
+                    }
+                }
+            } else if count == 0 {
+                return data
+            } else if errno == EINTR {
+                continue
+            } else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        }
+    }
+
+    private func writeAll(_ data: Data, to socketDescriptor: Int32) throws {
+        try data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let written = send(socketDescriptor, baseAddress.advanced(by: offset), buffer.count - offset, 0)
+                if written > 0 {
+                    offset += written
+                } else if written < 0, errno == EINTR {
+                    continue
+                } else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+            }
+        }
+    }
+
+    private func record(request: Data) {
+        lock.lock()
+        requestData = request
+        lock.unlock()
+    }
+
+    private func record(error: Error) {
+        lock.lock()
+        requestError = error
+        lock.unlock()
+    }
+
+    private static func contentLength(from headerText: String) -> Int {
+        for line in headerText.components(separatedBy: "\r\n") {
+            guard let separator = line.firstIndex(of: ":") else { continue }
+            let key = line[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key.caseInsensitiveCompare("Content-Length") == .orderedSame else { continue }
+            let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return Int(value) ?? 0
+        }
+        return 0
     }
 }
 

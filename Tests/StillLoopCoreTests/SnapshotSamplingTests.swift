@@ -3,11 +3,11 @@ import XCTest
 
 final class SnapshotSamplingTests: XCTestCase {
     func testKeepsAllSnapshotsWhenWithinLimit() {
-        let snapshots = makeSnapshots(count: 3)
+        let snapshots = makeSnapshots(count: 1)
 
         let selected = SnapshotSampler.select(snapshots)
 
-        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-2", "app-3"])
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1"])
     }
 
     func testSamplesMostRecentSnapshotsWhenBacklogExceedsLimit() {
@@ -15,7 +15,7 @@ final class SnapshotSamplingTests: XCTestCase {
 
         let selected = SnapshotSampler.select(snapshots)
 
-        XCTAssertEqual(selected.map(\.activeAppName), ["app-16", "app-17", "app-18"])
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-18"])
     }
 
     func testLimitOneSelectsOnlyMostRecentSnapshot() {
@@ -30,12 +30,12 @@ final class SnapshotSamplingTests: XCTestCase {
         let snapshots = makeSnapshots(count: 10)
 
         let selected = SnapshotSampler.select(snapshots)
-        let sampledRecent = try XCTUnwrap(selected.first { $0.activeAppName == "app-9" })
+        let sampledRecent = try XCTUnwrap(selected.first { $0.activeAppName == "app-10" })
 
         XCTAssertEqual(sampledRecent.screenshotMimeType, "image/jpeg")
-        XCTAssertEqual(sampledRecent.screenshotData, Data([9]))
+        XCTAssertEqual(sampledRecent.screenshotData, Data([10]))
         XCTAssertEqual(sampledRecent.cameraMimeType, "image/jpeg")
-        XCTAssertEqual(sampledRecent.cameraData, Data([109]))
+        XCTAssertEqual(sampledRecent.cameraData, Data([110]))
     }
 
     private func makeSnapshots(count: Int) -> [ContextSnapshot] {

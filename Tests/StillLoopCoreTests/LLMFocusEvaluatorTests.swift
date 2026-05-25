@@ -226,7 +226,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("targetID: T1"))
         XCTAssertTrue(engine.flattenedPrompt.contains("targetID: T2"))
         XCTAssertTrue(engine.flattenedPrompt.contains("Return only strict JSON:"))
-        XCTAssertTrue(engine.flattenedPrompt.contains(#""focusTargetID":"T1 or null""#))
+        XCTAssertTrue(engine.flattenedPrompt.contains(#""focusTargetID" must be a current targetID when state is focused; otherwise null."#))
     }
 
     func testInputTextTokenCountingDoesNotInflateModelRunDuration() async throws {
@@ -488,18 +488,59 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("User engagement alone is not enough"))
         XCTAssertTrue(prompt.contains("visible activity appears to support the task"))
         XCTAssertTrue(prompt.contains("do not invent task-specific content"))
+        XCTAssertTrue(prompt.contains("App names, user presence, prior focused events, and capture metadata are not enough for focused"))
+        XCTAssertTrue(prompt.contains("If taskAligned is false or unclear, state cannot be focused"))
+        XCTAssertTrue(prompt.contains("For StillLoop development tasks, developer tools count only when current visible content shows StillLoop development"))
         XCTAssertFalse(prompt.contains("Developer tools such as Codex"))
         XCTAssertFalse(prompt.contains("Example:"))
-        XCTAssertTrue(prompt.contains("- focused: current activity appears to support the task."))
+        XCTAssertFalse(prompt.contains("short observable summary"))
+        XCTAssertFalse(prompt.contains("short high-level summary"))
+        XCTAssertFalse(prompt.contains("short progress summary"))
+        XCTAssertFalse(prompt.contains("short reason"))
+        XCTAssertTrue(prompt.contains("- focused: current screenshot/metadata visibly supports the task."))
         XCTAssertTrue(prompt.contains("- uncertain: signals are ambiguous or only weakly connected to the task."))
         XCTAssertTrue(prompt.contains("- distracted: one of:"))
         XCTAssertTrue(prompt.contains("content is clearly unrelated to the task"))
-        XCTAssertFalse(prompt.contains("Decision rule:"))
-        XCTAssertFalse(prompt.contains("Never use userEngaged alone to choose focused"))
-        XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=true -> focused"))
-        XCTAssertFalse(prompt.contains("userEngaged=true and taskAligned=false -> distracted"))
-        XCTAssertFalse(prompt.contains("Do not let the final state contradict userEngaged or taskAligned"))
-        XCTAssertTrue(prompt.contains("\"analysis\":{\"userEngagement\":\"short observable summary\",\"userEngaged\":true,\"screenContent\":\"short high-level summary\",\"observedActivity\":\"short progress summary\",\"taskAlignment\":\"short alignment summary\",\"taskAligned\":true},\"reason\":\"short reason\",\"state\":\"focused|uncertain|distracted|stuck|resting|away\",\"focusTargetID\""))
+        XCTAssertTrue(prompt.contains(#"Return a JSON object with keys: "analysis", "reason", "state", "focusTargetID", "nudge"."#))
+    }
+
+    func testPromptSeparatesCurrentEvidenceRulesFromRecentHistory() async throws {
+        let engine = StubEngine(response: """
+        {"state":"uncertain","reason":"Ambiguous","nudge":null}
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
+
+        _ = try await evaluator.evaluate(
+            task: "开发 StillLoop",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Google Chrome",
+                    windowTitle: "Home / X",
+                    browserTitle: "Home / X",
+                    browserURL: "https://x.com/home",
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .focused, context: "Codex", nudge: nil)
+            ]
+        )
+
+        let firstUserPrompt = try XCTUnwrap(engine.lastMessages.first { $0.role == .user }?.content.compactMap { content -> String? in
+            if case .text(let text) = content {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n"))
+        XCTAssertTrue(firstUserPrompt.contains("Current evidence checklist"))
+        XCTAssertTrue(firstUserPrompt.contains("Do not use prior focused records to justify focused"))
+        XCTAssertTrue(firstUserPrompt.contains("Social feeds, X/Home, or generic browser home pages are unrelated unless"))
+        XCTAssertLessThan(
+            try XCTUnwrap(firstUserPrompt.range(of: "Current evidence checklist")?.lowerBound),
+            try XCTUnwrap(firstUserPrompt.range(of: "Recent state log")?.lowerBound)
+        )
     }
 
     func testParsesAwayStateForUserLeavingScene() async throws {
@@ -1063,6 +1104,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[3]"))
         XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[1]"))
         XCTAssertTrue(engine.flattenedPrompt.contains("visual sample[2]"))
+        XCTAssertTrue(engine.flattenedPrompt.contains("Internal evaluator labels only: targetID, visual sample, visualOrder, screenshot, camera, pixel sizes, and byte counts are not user-visible activity."))
         XCTAssertTrue(engine.flattenedPrompt.contains("visualOrder: screenshot image first, then camera image for this same capture timestamp"))
         XCTAssertFalse(engine.flattenedPrompt.contains("screenshot: available 511x332 11000B"))
         XCTAssertTrue(engine.flattenedPrompt.contains("screenshot: available 511x332 12000B"))

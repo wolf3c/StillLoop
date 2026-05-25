@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SnapshotSampler {
-    public static let defaultLimit = 3
+    public static let defaultLimit = 1
     public static let defaultTrailingCount = 2
 
     public static func select(

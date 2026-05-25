@@ -13,6 +13,9 @@ HELPER_EXECUTABLE_NAME="stillloop-llama-server"
 BUNDLE_IDENTIFIER="local.StillLoop.dev"
 CODESIGN_IDENTITY="${STILLLOOP_CODESIGN_IDENTITY:--}"
 DESIGNATED_REQUIREMENT="=designated => identifier \"$BUNDLE_IDENTIFIER\""
+RUN_APP_STORE_SANDBOX="${STILLLOOP_RUN_APP_STORE_SANDBOX:-0}"
+ENTITLEMENTS_FILE="$ROOT_DIR/.build/StillLoop-run.generated.entitlements"
+HELPER_ENTITLEMENTS_FILE="$ROOT_DIR/.build/StillLoop-run-helper.generated.entitlements"
 
 export STILLLOOP_SKIP_MODEL_DOWNLOAD=1
 
@@ -64,12 +67,53 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </plist>
 PLIST
 
-CODESIGN_ARGS=(--force --deep --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_IDENTIFIER")
+CODESIGN_ARGS=(--force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_IDENTIFIER")
+if [[ "$RUN_APP_STORE_SANDBOX" != "1" ]]; then
+  CODESIGN_ARGS+=(--deep)
+fi
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   CODESIGN_ARGS+=(--requirements "$DESIGNATED_REQUIREMENT")
 fi
+if [[ "$RUN_APP_STORE_SANDBOX" == "1" ]]; then
+  cat > "$ENTITLEMENTS_FILE" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+  plutil -lint "$ENTITLEMENTS_FILE" >/dev/null
+
+  cat > "$HELPER_ENTITLEMENTS_FILE" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.inherit</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+  plutil -lint "$HELPER_ENTITLEMENTS_FILE" >/dev/null
+  CODESIGN_ARGS+=(--entitlements "$ENTITLEMENTS_FILE")
+fi
 if [[ -f "$HELPERS_DIR/$HELPER_EXECUTABLE_NAME" ]]; then
-  find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" {} \;
+  if [[ "$RUN_APP_STORE_SANDBOX" == "1" ]]; then
+    find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" --entitlements "$HELPER_ENTITLEMENTS_FILE" {} \;
+  else
+    find "$HELPERS_DIR" -type f \( -name "$HELPER_EXECUTABLE_NAME" -o -name "lib*.dylib" \) -exec /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" {} \;
+  fi
 fi
 /usr/bin/codesign "${CODESIGN_ARGS[@]}" "$APP_DIR"
 
@@ -98,6 +142,10 @@ fi
 
 if [[ -n "${STILLLOOP_RUN_PROMPT_CACHE_PROBE:-}" ]]; then
   OPEN_ARGS+=(--env "STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE")
+fi
+
+if [[ -n "${STILLLOOP_DISABLE_PROMPT_CACHE:-}" ]]; then
+  OPEN_ARGS+=(--env "STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE")
 fi
 
 /usr/bin/open "${OPEN_ARGS[@]}"

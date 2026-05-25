@@ -23,7 +23,9 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("CODESIGN_IDENTITY=\"${STILLLOOP_CODESIGN_IDENTITY:--}\""))
         XCTAssertTrue(script.contains("DESIGNATED_REQUIREMENT=\"=designated => identifier \\\"$BUNDLE_IDENTIFIER\\\"\""))
         XCTAssertTrue(script.contains("<string>$BUNDLE_IDENTIFIER</string>"))
-        XCTAssertTrue(script.contains("CODESIGN_ARGS=(--force --deep --sign \"$CODESIGN_IDENTITY\" --identifier \"$BUNDLE_IDENTIFIER\")"))
+        XCTAssertTrue(script.contains("CODESIGN_ARGS=(--force --sign \"$CODESIGN_IDENTITY\" --identifier \"$BUNDLE_IDENTIFIER\")"))
+        XCTAssertTrue(script.contains("if [[ \"$RUN_APP_STORE_SANDBOX\" != \"1\" ]]; then"))
+        XCTAssertTrue(script.contains("CODESIGN_ARGS+=(--deep)"))
         XCTAssertTrue(script.contains("if [[ \"$CODESIGN_IDENTITY\" == \"-\" ]]; then"))
         XCTAssertTrue(script.contains("CODESIGN_ARGS+=(--requirements \"$DESIGNATED_REQUIREMENT\")"))
         XCTAssertTrue(script.contains("/usr/bin/codesign \"${CODESIGN_ARGS[@]}\" \"$APP_DIR\""))
@@ -40,6 +42,24 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("cp -R \"$RUNTIME_SOURCE_DIR\"/lib*.dylib \"$HELPERS_DIR\"/"))
         XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec chmod 755 {} \\;"))
         XCTAssertTrue(script.contains("find \"$HELPERS_DIR\" -type f \\( -name \"$HELPER_EXECUTABLE_NAME\" -o -name \"lib*.dylib\" \\) -exec /usr/bin/codesign --force --sign \"$CODESIGN_IDENTITY\" {} \\;"))
+    }
+
+    func testRunAppCanUseSandboxEntitlementsWithoutChangingDevelopmentIdentity() throws {
+        let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
+
+        XCTAssertTrue(script.contains("RUN_APP_STORE_SANDBOX=\"${STILLLOOP_RUN_APP_STORE_SANDBOX:-0}\""))
+        XCTAssertTrue(script.contains("ENTITLEMENTS_FILE=\"$ROOT_DIR/.build/StillLoop-run.generated.entitlements\""))
+        XCTAssertTrue(script.contains("HELPER_ENTITLEMENTS_FILE=\"$ROOT_DIR/.build/StillLoop-run-helper.generated.entitlements\""))
+        XCTAssertTrue(script.contains("BUNDLE_IDENTIFIER=\"local.StillLoop.dev\""))
+        XCTAssertTrue(script.contains("<string>StillLoop Dev</string>"))
+        XCTAssertTrue(script.contains("<key>com.apple.security.app-sandbox</key>"))
+        XCTAssertTrue(script.contains("<key>com.apple.security.device.camera</key>"))
+        XCTAssertTrue(script.contains("<key>com.apple.security.network.client</key>"))
+        XCTAssertTrue(script.contains("<key>com.apple.security.automation.apple-events</key>"))
+        XCTAssertTrue(script.contains("<key>com.apple.security.inherit</key>"))
+        XCTAssertTrue(script.contains("CODESIGN_ARGS+=(--entitlements \"$ENTITLEMENTS_FILE\")"))
+        XCTAssertTrue(script.contains("/usr/bin/codesign --force --sign \"$CODESIGN_IDENTITY\" --entitlements \"$HELPER_ENTITLEMENTS_FILE\" {} \\;"))
+        XCTAssertFalse(script.contains("<key>com.apple.security.network.server</key>"))
     }
 
     func testRunAppUsesDistinctDevelopmentDisplayName() throws {
@@ -66,6 +86,7 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_LLM_BASE_URL=$STILLLOOP_LLM_BASE_URL\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_LLM_MODEL=$STILLLOOP_LLM_MODEL\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE\""))
+        XCTAssertTrue(script.contains("--env \"STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE\""))
     }
 
     func testAppStoreEntitlementsUseMinimumRequiredSandboxCapabilities() throws {

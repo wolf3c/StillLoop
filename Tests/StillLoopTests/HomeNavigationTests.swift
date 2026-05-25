@@ -605,19 +605,6 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
     }
 
-    func testBundledRuntimePortExhaustionIsVisibleAndFallsBackToRules() async {
-        let runtime = FakeBundledRuntime()
-        runtime.startError = BundledModelRuntime.RuntimeError.noAvailablePort(17_631...17_640)
-        let model = makeModel(bundledModelRuntime: runtime, withBundledModelFiles: true)
-        model.selectModelSource(.bundled)
-
-        let isPrepared = await model.prepareBundledModelForEvaluation()
-
-        XCTAssertFalse(isPrepared)
-        XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：可用端口不足")
-        XCTAssertTrue(model.localLLMStatus.contains("基础规则"))
-    }
-
     func testTransientBundledRuntimeFailureRetriesOnNextEvaluationAttempt() async {
         let runtime = FakeBundledRuntime()
         runtime.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
@@ -787,8 +774,6 @@ final class HomeNavigationTests: XCTestCase {
             "recent-now"
         ])
         XCTAssertEqual(visualSnapshots.map(\.activeAppName), [
-            "recent-30",
-            "recent-15",
             "recent-now"
         ])
     }

@@ -130,7 +130,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
-        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 3)
+        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
     }
 
     func testBatteryPowerLimitsBundledEvaluationToLatestVisualSampleButKeepsTextContext() async throws {
@@ -224,11 +224,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
-        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 6)
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 2)
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .unknown)
-        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 3)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
     }
 
     func testBundledPromptCacheProbeWritesScalarDiagnosticsWhenEnabled() async throws {

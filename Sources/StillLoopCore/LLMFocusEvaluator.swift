@@ -673,7 +673,7 @@ public struct LLMFocusEvaluator {
         Consider the screenshot, camera image, app/window/browser metadata, current task, and recent state log together.
 
         State definitions (choose exactly one):
-        - focused: current activity appears to support the task.
+        - focused: current screenshot/metadata visibly supports the task.
         - uncertain: signals are ambiguous or only weakly connected to the task.
         - distracted: one of:
           a) current content is clearly unrelated to the task;
@@ -685,14 +685,18 @@ public struct LLMFocusEvaluator {
         Current captures are the source of truth. The recent state log is only background and may contain earlier mistakes; never preserve or repeat a prior "focused" judgement when current captures do not support it.
         User engagement alone is not enough; judge whether the visible activity appears to support the task.
         If the visible text is unreadable or ambiguous, do not invent task-specific content. Use only observable evidence.
+        App names, user presence, prior focused events, and capture metadata are not enough for focused.
+        For focused, current captures must show task-relevant content, work artifacts, or progress signals.
+        If taskAligned is false or unclear, state cannot be focused; choose uncertain, distracted, or stuck based on the current captures.
+        For StillLoop development tasks, developer tools count only when current visible content shows StillLoop development, debugging, tests, code, project discussion, or release work.
 
         Use the analysis object to briefly explain the judgement:
         - userEngagement: whether the user is present and appears attentive.
         - screenContent: high-level summary of visible page/app content.
         - observedActivity: visible operation or progress signals across captures.
         - taskAlignment: whether visible content matches the current task.
-        - userEngaged: boolean, whether the user appears present and active, or null if unclear.
-        - taskAligned: boolean, whether visible work appears to support the current task, or null if unclear.
+        - userEngaged: boolean, whether the user appears present and active; use false if unclear.
+        - taskAligned: boolean, whether visible work appears to support the current task; use false if unclear or weak.
 
         Also choose focusTargetID:
         - Each current capture includes a targetID such as T1 or T2.
@@ -702,11 +706,15 @@ public struct LLMFocusEvaluator {
 
         Do not quote or transcribe private page text verbatim. Summarize only what is necessary for diagnosis.
         The state value must stay one English token exactly. Use concise Chinese for analysis, reason, and nudge. Keep every analysis string to one short sentence.
-        String fields must be actual concise observations, not copied labels, placeholders, or instructions.
+        String fields must be actual concise observations, not copied labels, placeholders, template values, or instructions.
         Output exactly one JSON object. Do not add Markdown, comments, or explanatory text outside JSON.
         Be gentle and non-judgmental.
         Return only strict JSON:
-        {"analysis":{"userEngagement":"short observable summary","userEngaged":true,"screenContent":"short high-level summary","observedActivity":"short progress summary","taskAlignment":"short alignment summary","taskAligned":true},"reason":"short reason","state":"focused|uncertain|distracted|stuck|resting|away","focusTargetID":"T1 or null","nudge":"short Chinese nudge or null"}
+        Return a JSON object with keys: "analysis", "reason", "state", "focusTargetID", "nudge".
+        "analysis" must contain keys: "userEngagement", "userEngaged", "screenContent", "observedActivity", "taskAlignment", "taskAligned".
+        "state" must be one of: focused, uncertain, distracted, stuck, resting, away.
+        "focusTargetID" must be a current targetID when state is focused; otherwise null.
+        "nudge" should be null when state is focused; otherwise use a concise Chinese return cue or null.
         """
     }
 
@@ -761,6 +769,14 @@ public struct LLMFocusEvaluator {
             "- \(event.state.rawValue): \(event.context) nudge=\(event.nudge ?? "none")"
         }.joined(separator: "\n")
         return """
+        Current evidence checklist:
+        - Judge current captures first; use history only as background.
+        - App names, user presence, prior focused events, and capture metadata are not enough for focused.
+        - Focused requires current visible task evidence: relevant content, work artifacts, or progress signals.
+        - Do not use prior focused records to justify focused.
+        - Social feeds, X/Home, or generic browser home pages are unrelated unless the task is to use that site or visible content directly supports the task.
+        - Internal evaluator labels only: targetID, visual sample, visualOrder, screenshot, camera, pixel sizes, and byte counts are not user-visible activity.
+
         Current task:
         \(task)
 
