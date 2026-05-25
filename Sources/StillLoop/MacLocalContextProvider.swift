@@ -27,7 +27,10 @@ final class MacLocalContextProvider: ContextProvider {
         let focusedWindow = focusedWindowReader.bestFocusedWindow()
         let appName = focusedWindow.appName
         let windowTitle = focusedWindow.title
-        await browserAutomationNoticePresenter.presentBrowserAutomationNoticeIfNeeded(for: appName)
+        await browserAutomationNoticePresenter.presentBrowserAutomationNoticeIfNeeded(
+            for: appName,
+            bundleIdentifier: focusedWindow.bundleIdentifier
+        )
         let browserMetadata = browserMetadataReader.currentTabMetadata(for: appName)
         let screenshot = visualCapture.captureCompressedScreenshot()
         let camera = await visualCapture.captureCameraStill()
@@ -58,11 +61,17 @@ final class MacLocalContextProvider: ContextProvider {
 }
 
 protocol BrowserAutomationNoticePresenting {
-    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String, bundleIdentifier: String?) async
+}
+
+extension BrowserAutomationNoticePresenting {
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {
+        await presentBrowserAutomationNoticeIfNeeded(for: appName, bundleIdentifier: nil)
+    }
 }
 
 struct NoBrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
-    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {}
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String, bundleIdentifier: String?) async {}
 }
 
 struct FocusedWindow: Equatable {

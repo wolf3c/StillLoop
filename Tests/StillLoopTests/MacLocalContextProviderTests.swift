@@ -42,6 +42,29 @@ final class MacLocalContextProviderTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["notice:Google Chrome", "read:Google Chrome"])
     }
 
+    func testCapturePassesBrowserBundleIdentifierToAutomationNotice() async {
+        let recorder = BrowserAutomationNoticeRequestRecorder()
+        let provider = MacLocalContextProvider(
+            browserMetadataReader: StubBrowserMetadataReader(
+                metadata: BrowserTabMetadata(title: "OpenAI Platform", url: "https://platform.openai.com/docs")
+            ),
+            focusedWindowReader: StubFocusedWindowReader(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                title: "当前窗口"
+            ),
+            visualCapture: StubVisualCapture(),
+            browserAutomationNoticePresenter: RecordingBrowserAutomationNoticePresenter(recorder: recorder)
+        )
+
+        _ = await provider.capture()
+
+        XCTAssertEqual(
+            recorder.requests,
+            [BrowserAutomationNoticeRequest(appName: "Google Chrome", bundleIdentifier: "com.google.Chrome")]
+        )
+    }
+
     func testFocusedWindowReaderRecognizesProductionAndDevelopmentAppNames() {
         XCTAssertTrue(CGWindowFocusedWindowReader.isStillLoopAppName("StillLoop"))
         XCTAssertTrue(CGWindowFocusedWindowReader.isStillLoopAppName("StillLoop Dev"))
@@ -191,8 +214,29 @@ private struct OrderedBrowserMetadataReader: BrowserTabMetadataReading {
 private struct OrderedBrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
     let recorder: CaptureOrderRecorder
 
-    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String, bundleIdentifier: String?) async {
         recorder.append("notice:\(appName)")
+    }
+}
+
+private struct BrowserAutomationNoticeRequest: Equatable {
+    var appName: String
+    var bundleIdentifier: String?
+}
+
+private final class BrowserAutomationNoticeRequestRecorder {
+    private(set) var requests: [BrowserAutomationNoticeRequest] = []
+
+    func append(_ request: BrowserAutomationNoticeRequest) {
+        requests.append(request)
+    }
+}
+
+private struct RecordingBrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting {
+    let recorder: BrowserAutomationNoticeRequestRecorder
+
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String, bundleIdentifier: String?) async {
+        recorder.append(BrowserAutomationNoticeRequest(appName: appName, bundleIdentifier: bundleIdentifier))
     }
 }
 

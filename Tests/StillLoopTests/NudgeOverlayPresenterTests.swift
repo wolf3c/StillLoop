@@ -416,6 +416,80 @@ final class NudgeOverlayPresenterTests: XCTestCase {
         XCTAssertEqual(waitCount, 1)
     }
 
+    func testBrowserAutomationNoticeHonorsExistingBundleIdentifierRecord() async {
+        let suiteName = "BrowserAutomationNotice-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(["bundle:com.google.Chrome"], forKey: "shownBrowserAutomationNoticeIdentifiers")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var messages: [String] = []
+        var waitCount = 0
+        let presenter = BrowserAutomationNoticePresenter(
+            userDefaults: defaults,
+            showNotice: { messages.append($0) },
+            waitBeforeAutomationPrompt: { _ in waitCount += 1 }
+        )
+
+        await presenter.presentBrowserAutomationNoticeIfNeeded(
+            for: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome"
+        )
+
+        XCTAssertEqual(messages, [])
+        XCTAssertEqual(waitCount, 0)
+    }
+
+    func testBrowserAutomationNoticeHonorsLegacyShownAppNameRecord() async {
+        let suiteName = "BrowserAutomationNotice-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(["Google Chrome"], forKey: "shownBrowserAutomationNoticeAppNames")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var messages: [String] = []
+        var waitCount = 0
+        let presenter = BrowserAutomationNoticePresenter(
+            userDefaults: defaults,
+            showNotice: { messages.append($0) },
+            waitBeforeAutomationPrompt: { _ in waitCount += 1 }
+        )
+
+        await presenter.presentBrowserAutomationNoticeIfNeeded(
+            for: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome"
+        )
+
+        XCTAssertEqual(messages, [])
+        XCTAssertEqual(waitCount, 0)
+    }
+
+    func testBrowserAutomationNoticePersistsAliasesAcrossPresenterRecreation() async {
+        let suiteName = "BrowserAutomationNotice-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var messages: [String] = []
+        let firstPresenter = BrowserAutomationNoticePresenter(
+            userDefaults: defaults,
+            showNotice: { messages.append($0) },
+            waitBeforeAutomationPrompt: { _ in }
+        )
+
+        await firstPresenter.presentBrowserAutomationNoticeIfNeeded(
+            for: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome"
+        )
+
+        let secondPresenter = BrowserAutomationNoticePresenter(
+            userDefaults: defaults,
+            showNotice: { messages.append($0) },
+            waitBeforeAutomationPrompt: { _ in }
+        )
+        await secondPresenter.presentBrowserAutomationNoticeIfNeeded(for: "Google Chrome")
+
+        XCTAssertEqual(messages, ["读取 Chrome 当前标签标题和网址，仅用于本机判断"])
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "shownBrowserAutomationNoticeIdentifiers") ?? []),
+            ["Google Chrome", "app:Google Chrome", "bundle:com.google.Chrome"]
+        )
+    }
+
     private func scrollEvent(deltaX: Int32 = 0, deltaY: Int32 = 0, units: CGScrollEventUnit) throws -> NSEvent {
         let source = CGEventSource(stateID: .hidSystemState)
         let event = CGEvent(

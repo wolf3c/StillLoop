@@ -722,14 +722,17 @@ final class BrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting 
     typealias WaitBeforeAutomationPrompt = (Duration) async -> Void
 
     private static let shownBrowserAutomationNoticeKey = "shownBrowserAutomationNoticeAppNames"
+    private static let shownBrowserAutomationNoticeIdentifiersKey = "shownBrowserAutomationNoticeIdentifiers"
     private static let delayBeforeAutomationPrompt: Duration = .milliseconds(900)
 
     private let userDefaults: UserDefaults
     private let showNotice: ShowNotice
     private let waitBeforeAutomationPrompt: WaitBeforeAutomationPrompt
+    private var shownBrowserAutomationNoticeIdentifiers: Set<String>
 
     init(userDefaults: UserDefaults, overlayPresenter: NudgeOverlayPresenter) {
         self.userDefaults = userDefaults
+        self.shownBrowserAutomationNoticeIdentifiers = Self.storedNoticeIdentifiers(in: userDefaults)
         self.showNotice = { message in
             await MainActor.run {
                 overlayPresenter.show(message: message, intensity: .permission)
@@ -748,17 +751,44 @@ final class BrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting 
         self.userDefaults = userDefaults
         self.showNotice = showNotice
         self.waitBeforeAutomationPrompt = waitBeforeAutomationPrompt
+        self.shownBrowserAutomationNoticeIdentifiers = Self.storedNoticeIdentifiers(in: userDefaults)
     }
 
-    func presentBrowserAutomationNoticeIfNeeded(for appName: String) async {
+    func presentBrowserAutomationNoticeIfNeeded(for appName: String, bundleIdentifier: String? = nil) async {
         guard AppleScriptBrowserTabMetadataReader.supportsMetadata(for: appName) else { return }
-        var shownAppNames = Set(userDefaults.stringArray(forKey: Self.shownBrowserAutomationNoticeKey) ?? [])
-        guard !shownAppNames.contains(appName) else { return }
+        let noticeIdentifiers = Self.noticeIdentifiers(appName: appName, bundleIdentifier: bundleIdentifier)
+        var shownIdentifiers = shownBrowserAutomationNoticeIdentifiers
+        shownIdentifiers.formUnion(Self.storedNoticeIdentifiers(in: userDefaults))
+        guard shownIdentifiers.isDisjoint(with: noticeIdentifiers) else {
+            shownBrowserAutomationNoticeIdentifiers = shownIdentifiers
+            return
+        }
 
+        shownIdentifiers.formUnion(noticeIdentifiers)
+        shownBrowserAutomationNoticeIdentifiers = shownIdentifiers
+        userDefaults.set(Array(shownIdentifiers).sorted(), forKey: Self.shownBrowserAutomationNoticeIdentifiersKey)
+        var shownAppNames = Set(userDefaults.stringArray(forKey: Self.shownBrowserAutomationNoticeKey) ?? [])
         shownAppNames.insert(appName)
-        userDefaults.set(Array(shownAppNames), forKey: Self.shownBrowserAutomationNoticeKey)
+        userDefaults.set(Array(shownAppNames).sorted(), forKey: Self.shownBrowserAutomationNoticeKey)
         await showNotice(Self.noticeMessage(for: appName))
         await waitBeforeAutomationPrompt(Self.delayBeforeAutomationPrompt)
+    }
+
+    private static func storedNoticeIdentifiers(in userDefaults: UserDefaults) -> Set<String> {
+        var identifiers = Set(userDefaults.stringArray(forKey: shownBrowserAutomationNoticeIdentifiersKey) ?? [])
+        for appName in userDefaults.stringArray(forKey: shownBrowserAutomationNoticeKey) ?? [] {
+            identifiers.formUnion(noticeIdentifiers(appName: appName, bundleIdentifier: nil))
+        }
+        return identifiers
+    }
+
+    private static func noticeIdentifiers(appName: String, bundleIdentifier: String?) -> Set<String> {
+        var identifiers: Set<String> = [appName, "app:\(appName)"]
+        if let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !bundleIdentifier.isEmpty {
+            identifiers.insert("bundle:\(bundleIdentifier)")
+        }
+        return identifiers
     }
 
     private static func noticeMessage(for appName: String) -> String {
