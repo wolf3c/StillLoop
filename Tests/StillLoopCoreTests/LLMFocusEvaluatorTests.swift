@@ -23,9 +23,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             ),
             taskAlignment: LLMTaskAlignmentEvaluation(
                 alignment: .aligned,
-                progress: .progressing,
                 focusTargetID: "T1",
                 reason: "屏幕显示 StillLoop 开发工作。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .progressing,
+                comparisonBasis: "visible_forward_movement",
+                reason: "截图显示开发工作有推进。"
             ),
             focusedSnapshot: snapshot
         )
@@ -43,9 +47,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             ),
             taskAlignment: LLMTaskAlignmentEvaluation(
                 alignment: .aligned,
-                progress: .progressing,
                 focusTargetID: "T1",
                 reason: "屏幕显示 StillLoop 开发工作。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .progressing,
+                comparisonBasis: "visible_forward_movement",
+                reason: "截图显示开发工作有推进。"
             ),
             focusedSnapshot: snapshot
         )
@@ -68,9 +76,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             presence: present,
             taskAlignment: LLMTaskAlignmentEvaluation(
                 alignment: .unaligned,
-                progress: .unclear,
                 focusTargetID: nil,
                 reason: "屏幕显示代码调试，不是小说写作。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .progressing,
+                comparisonBasis: "visible_forward_movement",
+                reason: "屏幕有变化但任务不匹配。"
             ),
             focusedSnapshot: nil
         )
@@ -82,8 +94,12 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             presence: present,
             taskAlignment: LLMTaskAlignmentEvaluation(
                 alignment: .aligned,
-                progress: .stalled,
                 focusTargetID: "T1",
+                reason: "文档打开但没有明显新增内容。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .stalled,
+                comparisonBasis: "same_task_no_visible_change",
                 reason: "文档打开但没有明显新增内容。"
             ),
             focusedSnapshot: nil
@@ -96,14 +112,54 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             presence: present,
             taskAlignment: LLMTaskAlignmentEvaluation(
                 alignment: .unclear,
-                progress: .unclear,
                 focusTargetID: nil,
                 reason: "屏幕内容不清楚。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .stalled,
+                comparisonBasis: "same_task_no_visible_change",
+                reason: "截图看起来没有变化。"
             ),
             focusedSnapshot: nil
         )
         XCTAssertEqual(uncertain.state, .uncertain)
         XCTAssertFalse(uncertain.shouldNudge)
+
+        let alignedUnclearProgress = synthesizer.synthesize(
+            task: "学习 Ogden's Basic English",
+            presence: present,
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .aligned,
+                focusTargetID: "T1",
+                reason: "屏幕显示 Ogden 学习页面，但单帧无法判断进展。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .unclear,
+                comparisonBasis: "single_screenshot",
+                reason: "单帧无法判断进展。"
+            ),
+            focusedSnapshot: nil
+        )
+        XCTAssertEqual(alignedUnclearProgress.state, .focused)
+        XCTAssertFalse(alignedUnclearProgress.shouldNudge)
+
+        let returnedToTask = synthesizer.synthesize(
+            task: "学习 Ogden's Basic English",
+            presence: present,
+            taskAlignment: LLMTaskAlignmentEvaluation(
+                alignment: .aligned,
+                focusTargetID: "T2",
+                reason: "末图回到 Ogden 学习页面。"
+            ),
+            taskProgress: LLMTaskProgressEvaluation(
+                progress: .unclear,
+                comparisonBasis: "returned_to_task",
+                reason: "首图离开任务，末图回到任务，不能比较学习内容推进。"
+            ),
+            focusedSnapshot: nil
+        )
+        XCTAssertEqual(returnedToTask.state, .focused)
+        XCTAssertFalse(returnedToTask.shouldNudge)
     }
 
     func testSplitEvaluatorKeepsPresenceAndTaskPromptsIsolated() async throws {
@@ -111,11 +167,15 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         {"presence":"present","engagement":"engaged","reason":"用户在场。"}
         """)
         let taskEngine = StructuredStubEngine(response: """
-        {"alignment":"aligned","progress":"progressing","focusTargetID":"T1","reason":"屏幕显示 StillLoop 开发。"}
+        {"alignment":"aligned","focusTargetID":"T1","reason":"屏幕显示 StillLoop 开发。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示工作推进。"}
         """)
         let evaluator = LLMFocusEvaluator(
             userPresenceEngine: presenceEngine,
-            taskAlignmentEngine: taskEngine
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
         )
         let snapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -149,15 +209,175 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(taskEngine.flattenedPrompt.contains("targetID: T1"))
         XCTAssertTrue(taskEngine.lastMessages.containsImageData(Data([1, 2, 3])))
         XCTAssertFalse(taskEngine.lastMessages.containsImageData(Data([4, 5, 6])))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("progressing"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("Progress comparison"))
         XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("user appears"))
         XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("physical presence"))
         XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera"))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("camera:"))
+
+        XCTAssertEqual(progressEngine.lastResponseFormat, .taskProgressEvaluation)
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("Progress comparison"))
+        XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([1, 2, 3])))
+        XCTAssertFalse(progressEngine.lastMessages.containsImageData(Data([4, 5, 6])))
+        XCTAssertFalse(progressEngine.flattenedPrompt.localizedCaseInsensitiveContains("physical presence"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera:"))
+    }
+
+    func testSplitEvaluatorUsesSeparateTaskVisualSnapshotsForScreenProgress() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T3","reason":"末图显示学习页面。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"returned_to_task","reason":"首图和末图不能比较学习推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let firstTaskSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Google Chrome",
+            windowTitle: "Ogden's Basic English",
+            browserTitle: "Ogden's Basic English",
+            browserURL: "https://ogden.munch.love/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 1, 1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let middleTextSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 2),
+            activeAppName: "Google Chrome",
+            windowTitle: "Ogden's Basic English",
+            browserTitle: "Ogden's Basic English",
+            browserURL: "https://ogden.munch.love/",
+            screenshotAvailable: false,
+            cameraFrameAvailable: false
+        )
+        let lastTaskSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 3),
+            activeAppName: "Google Chrome",
+            windowTitle: "Ogden's Basic English",
+            browserTitle: "Ogden's Basic English",
+            browserURL: "https://ogden.munch.love/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([3, 3, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([103])
+        )
+        let presenceSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 4),
+            activeAppName: "Google Chrome",
+            windowTitle: "Ogden's Basic English",
+            browserTitle: "Ogden's Basic English",
+            browserURL: "https://ogden.munch.love/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([9, 9, 9]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([204])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "学习 Ogden's Basic English",
+            textSnapshots: [firstTaskSnapshot, middleTextSnapshot, lastTaskSnapshot],
+            visualSnapshots: [presenceSnapshot],
+            taskVisualSnapshots: [firstTaskSnapshot, lastTaskSnapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualCaptureCount, 2)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.imageCount, 2)
+        XCTAssertTrue(presenceEngine.lastMessages.containsImageData(Data([204])))
+        XCTAssertFalse(presenceEngine.lastMessages.containsImageData(Data([1, 1, 1])))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("Current task:"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("progressing"))
+
+        XCTAssertFalse(taskEngine.lastMessages.containsImageData(Data([1, 1, 1])))
+        XCTAssertTrue(taskEngine.lastMessages.containsImageData(Data([3, 3, 3])))
+        XCTAssertFalse(taskEngine.lastMessages.containsImageData(Data([204])))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("visual sample[1] is the first screen screenshot"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("Progress comparison"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:01Z"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("App names, prior focused events, and capture metadata are not enough for aligned."))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("Specific app, window, browser title, or URL metadata can support aligned when it matches the task and current screenshots do not contradict it."))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("Generic UI stability or coherence is not task evidence."))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera sample"))
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("camera:"))
+
+        XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([1, 1, 1])))
+        XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([3, 3, 3])))
+        XCTAssertFalse(progressEngine.lastMessages.containsImageData(Data([204])))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("Progress comparison"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[2]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[3]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera sample"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera:"))
+    }
+
+    func testSplitEvaluatorNormalizesIncomparableProgressToUnclear() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"末图显示 Ogden 学习页面。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"stalled","comparisonBasis":"returned_to_task","reason":"首图和末图不能比较学习推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Google Chrome",
+            windowTitle: "Ogden's Basic English",
+            browserTitle: "Ogden's Basic English",
+            browserURL: "https://ogden.munch.love/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "学习 Ogden's Basic English",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            taskVisualSnapshots: [snapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.progress, .unclear)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.comparisonBasis, "single_screenshot")
     }
 
     func testDecodedTaskAlignmentTrimsEmptyFocusTargetID() throws {
         let data = Data("""
-        {"alignment":"unaligned","progress":"unclear","focusTargetID":"   ","reason":"屏幕不匹配。"}
+        {"alignment":"unaligned","focusTargetID":"   ","reason":"屏幕不匹配。"}
         """.utf8)
 
         let evaluation = try JSONDecoder().decode(LLMTaskAlignmentEvaluation.self, from: data)
@@ -165,14 +385,29 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertNil(evaluation.focusTargetID)
     }
 
+    func testDecodedTaskProgressIncludesComparisonBasis() throws {
+        let data = Data("""
+        {"progress":"unclear","comparisonBasis":"returned_to_task","reason":"首图离开任务，末图回到任务。"}
+        """.utf8)
+
+        let evaluation = try JSONDecoder().decode(LLMTaskProgressEvaluation.self, from: data)
+
+        XCTAssertEqual(evaluation.progress, .unclear)
+        XCTAssertEqual(evaluation.comparisonBasis, "returned_to_task")
+    }
+
     func testPresenceFailureSyntheticMetricsDoNotIncludeTaskHistory() async throws {
         let presenceEngine = FailingStructuredStubEngine(error: LLMFocusEvaluationError(kind: .timeout))
         let taskEngine = StructuredStubEngine(response: """
-        {"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"屏幕显示 StillLoop 开发。"}
+        {"alignment":"aligned","focusTargetID":null,"reason":"屏幕显示 StillLoop 开发。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}
         """)
         let evaluator = LLMFocusEvaluator(
             userPresenceEngine: presenceEngine,
-            taskAlignmentEngine: taskEngine
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
         )
         let snapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
@@ -197,20 +432,26 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.presenceRequestDebugMetrics?.textSnapshotCount, 0)
         XCTAssertEqual(result.presenceRequestDebugMetrics?.previousEventCount, 0)
         XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.previousEventCount, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.previousEventCount, 1)
     }
 
-    func testSplitEvaluatorRunsPresenceAndTaskRequestsConcurrently() async throws {
+    func testSplitEvaluatorRunsPresenceAlignmentAndProgressRequestsConcurrently() async throws {
         let presenceEngine = DelayedStructuredStubEngine(
             response: #"{"presence":"present","engagement":"engaged","reason":"用户在场。"}"#,
             delay: .milliseconds(200)
         )
         let taskEngine = DelayedStructuredStubEngine(
-            response: #"{"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"屏幕显示任务内容。"}"#,
+            response: #"{"alignment":"aligned","focusTargetID":null,"reason":"屏幕显示任务内容。"}"#,
+            delay: .milliseconds(200)
+        )
+        let progressEngine = DelayedStructuredStubEngine(
+            response: #"{"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}"#,
             delay: .milliseconds(200)
         )
         let evaluator = LLMFocusEvaluator(
             userPresenceEngine: presenceEngine,
-            taskAlignmentEngine: taskEngine
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
         )
 
         let startedAt = Date()
@@ -233,6 +474,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.35)
         XCTAssertEqual(presenceEngine.callCount, 1)
         XCTAssertEqual(taskEngine.callCount, 1)
+        XCTAssertEqual(progressEngine.callCount, 1)
     }
 
     func testSuccessfulModelEvaluationRecordsRequestDuration() async throws {

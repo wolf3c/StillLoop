@@ -17,6 +17,7 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("public var splitAnalysis: LLMSplitFocusAnalysis?"))
         XCTAssertTrue(source.contains("public var presenceRequestDebugMetrics: LLMRequestDebugMetrics?"))
         XCTAssertTrue(source.contains("public var taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics?"))
+        XCTAssertTrue(source.contains("public var taskProgressRequestDebugMetrics: LLMRequestDebugMetrics?"))
     }
 
     func testRecognitionDebugPopoverShowsModelAnalysis() throws {
@@ -57,8 +58,11 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("formattedUserPresenceLines"))
         XCTAssertTrue(source.contains("任务匹配判断"))
         XCTAssertTrue(source.contains("formattedTaskAlignmentLines"))
+        XCTAssertTrue(source.contains("任务进展判断"))
+        XCTAssertTrue(source.contains("formattedTaskProgressLines"))
         XCTAssertTrue(source.contains("presenceRequestDebugMetrics"))
         XCTAssertTrue(source.contains("taskAlignmentRequestDebugMetrics"))
+        XCTAssertTrue(source.contains("taskProgressRequestDebugMetrics"))
     }
 
     func testRecognitionDebugPopoverCanCopyAllDetails() throws {

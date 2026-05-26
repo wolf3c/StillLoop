@@ -26,6 +26,22 @@ final class SnapshotSamplingTests: XCTestCase {
         XCTAssertEqual(selected.map(\.activeAppName), ["app-5"])
     }
 
+    func testSelectFirstAndLastSamplesCurrentEvaluationRange() {
+        let snapshots = makeSnapshots(count: 5)
+
+        let selected = SnapshotSampler.selectFirstAndLast(snapshots)
+
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-5"])
+    }
+
+    func testSelectFirstAndLastDoesNotDuplicateSingleSnapshot() {
+        let snapshots = makeSnapshots(count: 1)
+
+        let selected = SnapshotSampler.selectFirstAndLast(snapshots)
+
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1"])
+    }
+
     func testPreservesCompleteSnapshotContentsWhenSampling() throws {
         let snapshots = makeSnapshots(count: 10)
 
@@ -36,6 +52,44 @@ final class SnapshotSamplingTests: XCTestCase {
         XCTAssertEqual(sampledRecent.screenshotData, Data([10]))
         XCTAssertEqual(sampledRecent.cameraMimeType, "image/jpeg")
         XCTAssertEqual(sampledRecent.cameraData, Data([110]))
+    }
+
+    func testFirstAndLastPreserveCompleteSnapshotContentsWhenSampling() throws {
+        let snapshots = makeSnapshots(count: 10)
+
+        let selected = SnapshotSampler.selectFirstAndLast(snapshots)
+        let sampledFirst = try XCTUnwrap(selected.first { $0.activeAppName == "app-1" })
+        let sampledLast = try XCTUnwrap(selected.first { $0.activeAppName == "app-10" })
+
+        XCTAssertEqual(sampledFirst.screenshotMimeType, "image/jpeg")
+        XCTAssertEqual(sampledFirst.screenshotData, Data([1]))
+        XCTAssertEqual(sampledFirst.cameraMimeType, "image/jpeg")
+        XCTAssertEqual(sampledFirst.cameraData, Data([101]))
+        XCTAssertEqual(sampledLast.screenshotMimeType, "image/jpeg")
+        XCTAssertEqual(sampledLast.screenshotData, Data([10]))
+        XCTAssertEqual(sampledLast.cameraMimeType, "image/jpeg")
+        XCTAssertEqual(sampledLast.cameraData, Data([110]))
+    }
+
+    func testSelectEvenlySpacedSamplesFirstMiddleAndLast() {
+        let snapshots = makeSnapshots(count: 5)
+
+        let selected = SnapshotSampler.selectEvenlySpaced(snapshots, maxCount: 3)
+
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-3", "app-5"])
+    }
+
+    func testSelectEvenlySpacedDoesNotDuplicateWhenBelowLimit() {
+        XCTAssertEqual(SnapshotSampler.selectEvenlySpaced(makeSnapshots(count: 1), maxCount: 3).map(\.activeAppName), ["app-1"])
+        XCTAssertEqual(SnapshotSampler.selectEvenlySpaced(makeSnapshots(count: 2), maxCount: 3).map(\.activeAppName), ["app-1", "app-2"])
+    }
+
+    func testSelectEvenlySpacedSortsByTimestampBeforeSampling() {
+        let snapshots = makeSnapshots(count: 5).reversed()
+
+        let selected = SnapshotSampler.selectEvenlySpaced(Array(snapshots), maxCount: 3)
+
+        XCTAssertEqual(selected.map(\.activeAppName), ["app-1", "app-3", "app-5"])
     }
 
     private func makeSnapshots(count: Int) -> [ContextSnapshot] {

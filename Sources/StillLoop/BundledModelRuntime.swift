@@ -199,7 +199,7 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             "-m", modelURL.path,
             "--host", selectedSocketURL.path,
             "--ctx-size", String(spec.recommendedContextSize),
-            "--parallel", "2",
+            "--parallel", String(spec.recommendedParallelSlots),
             "--n-gpu-layers", "99",
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV

@@ -8,6 +8,7 @@ public struct ModelDownloadSpec: Equatable {
     public let localServerModelID: String
     public let localServerPort: Int
     public let recommendedContextSize: Int
+    public let recommendedParallelSlots: Int
     public let recommendedCacheTypeK: String
     public let recommendedCacheTypeV: String
     public let recommendedPromptCacheReuse: Int
@@ -68,7 +69,8 @@ public struct ModelDownloadSpec: Equatable {
         localSubdirectory: "Qwen3.5VL-0.8B-ImageExplainer-GGUF",
         localServerModelID: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
         localServerPort: 17_631,
-        recommendedContextSize: 4_096,
+        recommendedContextSize: 12_288,
+        recommendedParallelSlots: 3,
         recommendedCacheTypeK: "q4_1",
         recommendedCacheTypeV: "q4_1",
         recommendedPromptCacheReuse: 64,

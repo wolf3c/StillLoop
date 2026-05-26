@@ -249,6 +249,10 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
             messages: [LLMMessage(role: .user, content: [.text("task")])],
             responseFormat: .taskAlignmentEvaluation
         )
+        _ = try await engine.complete(
+            messages: [LLMMessage(role: .user, content: [.text("progress")])],
+            responseFormat: .taskProgressEvaluation
+        )
 
         let presenceBody = try XCTUnwrap(requestBodies.first)
         XCTAssertEqual(presenceBody["max_tokens"] as? Int, 180)
@@ -259,15 +263,24 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual((presenceProperties["presence"] as? [String: Any])?["enum"] as? [String], ["present", "away", "resting", "unclear"])
         XCTAssertEqual((presenceProperties["engagement"] as? [String: Any])?["enum"] as? [String], ["engaged", "disengaged", "unclear"])
 
-        let taskBody = try XCTUnwrap(requestBodies.last)
+        let taskBody = try XCTUnwrap(requestBodies.dropFirst().first)
         XCTAssertEqual(taskBody["max_tokens"] as? Int, 220)
         let taskFormat = try XCTUnwrap(taskBody["response_format"] as? [String: Any])
         let taskSchema = try XCTUnwrap(taskFormat["json_schema"] as? [String: Any])
         XCTAssertEqual(taskSchema["name"] as? String, "task_alignment_evaluation")
         let taskProperties = try XCTUnwrap((taskSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
         XCTAssertEqual((taskProperties["alignment"] as? [String: Any])?["enum"] as? [String], ["aligned", "unaligned", "unclear"])
-        XCTAssertEqual((taskProperties["progress"] as? [String: Any])?["enum"] as? [String], ["progressing", "stalled", "unclear"])
+        XCTAssertNil(taskProperties["progress"])
         XCTAssertEqual((taskProperties["focusTargetID"] as? [String: Any])?["type"] as? [String], ["string", "null"])
+
+        let progressBody = try XCTUnwrap(requestBodies.last)
+        XCTAssertEqual(progressBody["max_tokens"] as? Int, 220)
+        let progressFormat = try XCTUnwrap(progressBody["response_format"] as? [String: Any])
+        let progressSchema = try XCTUnwrap(progressFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(progressSchema["name"] as? String, "task_progress_evaluation")
+        let progressProperties = try XCTUnwrap((progressSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
+        XCTAssertEqual((progressProperties["progress"] as? [String: Any])?["enum"] as? [String], ["progressing", "stalled", "unclear"])
+        XCTAssertEqual((progressProperties["comparisonBasis"] as? [String: Any])?["type"] as? String, "string")
     }
 
     func testPrewarmFocusEvaluationPromptUsesSingleTokenStructuredRequest() async throws {

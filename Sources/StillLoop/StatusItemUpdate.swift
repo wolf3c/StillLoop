@@ -2,6 +2,7 @@ import Foundation
 
 enum StatusItemMode: String {
     case idle
+    case analyzing
     case focused
     case uncertain
     case distracted
@@ -14,6 +15,7 @@ enum StatusItemMode: String {
     var title: String {
         switch self {
         case .idle: return " StillLoop"
+        case .analyzing: return " 判断中"
         case .focused: return " 专注中"
         case .uncertain: return " 轻微跑偏"
         case .distracted: return " 跑偏"
@@ -28,6 +30,7 @@ enum StatusItemMode: String {
     var symbolName: String {
         switch self {
         case .idle: return "circle.dotted"
+        case .analyzing: return "hourglass"
         case .focused: return "checkmark.circle"
         case .uncertain: return "circle.lefthalf.filled"
         case .distracted: return "exclamationmark.triangle"

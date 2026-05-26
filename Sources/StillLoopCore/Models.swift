@@ -448,6 +448,13 @@ public extension FocusEvent {
                 }
                 sections.append((["任务匹配判断"] + taskLines).joined(separator: "\n"))
             }
+            if let taskProgress = debugDetail.splitAnalysis?.taskProgress {
+                var progressLines = FocusEventDebugDetail.formattedTaskProgressLines(taskProgress)
+                if let metrics = debugDetail.taskProgressRequestDebugMetrics {
+                    progressLines.append(contentsOf: FocusEventDebugDetail.formattedRequestMetricLines(metrics))
+                }
+                sections.append((["任务进展判断"] + progressLines).joined(separator: "\n"))
+            }
             if debugDetail.splitAnalysis == nil, let analysis = debugDetail.analysis {
                 sections.append([
                     "模型分析",
@@ -488,6 +495,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var requestDebugMetrics: LLMRequestDebugMetrics?
     public var presenceRequestDebugMetrics: LLMRequestDebugMetrics?
     public var taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics?
+    public var taskProgressRequestDebugMetrics: LLMRequestDebugMetrics?
     public var analysis: LLMFocusAnalysis?
     public var splitAnalysis: LLMSplitFocusAnalysis?
 
@@ -505,6 +513,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         requestDebugMetrics: LLMRequestDebugMetrics? = nil,
         presenceRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
         taskAlignmentRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
+        taskProgressRequestDebugMetrics: LLMRequestDebugMetrics? = nil,
         analysis: LLMFocusAnalysis? = nil,
         splitAnalysis: LLMSplitFocusAnalysis? = nil
     ) {
@@ -521,6 +530,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.requestDebugMetrics = requestDebugMetrics
         self.presenceRequestDebugMetrics = presenceRequestDebugMetrics
         self.taskAlignmentRequestDebugMetrics = taskAlignmentRequestDebugMetrics
+        self.taskProgressRequestDebugMetrics = taskProgressRequestDebugMetrics
         self.analysis = analysis
         self.splitAnalysis = splitAnalysis
     }
@@ -539,6 +549,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         case requestDebugMetrics
         case presenceRequestDebugMetrics
         case taskAlignmentRequestDebugMetrics
+        case taskProgressRequestDebugMetrics
         case analysis
         case splitAnalysis
     }
@@ -558,6 +569,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         requestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .requestDebugMetrics)
         presenceRequestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .presenceRequestDebugMetrics)
         taskAlignmentRequestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .taskAlignmentRequestDebugMetrics)
+        taskProgressRequestDebugMetrics = try container.decodeIfPresent(LLMRequestDebugMetrics.self, forKey: .taskProgressRequestDebugMetrics)
         analysis = try container.decodeIfPresent(LLMFocusAnalysis.self, forKey: .analysis)
         splitAnalysis = try container.decodeIfPresent(LLMSplitFocusAnalysis.self, forKey: .splitAnalysis)
     }
@@ -583,6 +595,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         try container.encodeIfPresent(requestDebugMetrics, forKey: .requestDebugMetrics)
         try container.encodeIfPresent(presenceRequestDebugMetrics, forKey: .presenceRequestDebugMetrics)
         try container.encodeIfPresent(taskAlignmentRequestDebugMetrics, forKey: .taskAlignmentRequestDebugMetrics)
+        try container.encodeIfPresent(taskProgressRequestDebugMetrics, forKey: .taskProgressRequestDebugMetrics)
         try container.encodeIfPresent(analysis, forKey: .analysis)
         try container.encodeIfPresent(splitAnalysis, forKey: .splitAnalysis)
     }
@@ -624,9 +637,16 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public static func formattedTaskAlignmentLines(_ taskAlignment: LLMTaskAlignmentEvaluation) -> [String] {
         [
             "alignment：\(taskAlignment.alignment.rawValue)",
-            "progress：\(taskAlignment.progress.rawValue)",
             "focusTargetID：\(taskAlignment.focusTargetID ?? "-")",
             "原因：\(taskAlignment.reason)"
+        ]
+    }
+
+    public static func formattedTaskProgressLines(_ taskProgress: LLMTaskProgressEvaluation) -> [String] {
+        [
+            "progress：\(taskProgress.progress.rawValue)",
+            "comparisonBasis：\(taskProgress.comparisonBasis)",
+            "原因：\(taskProgress.reason)"
         ]
     }
 
@@ -683,6 +703,7 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             requestDebugMetrics: result.requestDebugMetrics,
             presenceRequestDebugMetrics: result.presenceRequestDebugMetrics,
             taskAlignmentRequestDebugMetrics: result.taskAlignmentRequestDebugMetrics,
+            taskProgressRequestDebugMetrics: result.taskProgressRequestDebugMetrics,
             analysis: result.analysis,
             splitAnalysis: result.splitAnalysis
         )

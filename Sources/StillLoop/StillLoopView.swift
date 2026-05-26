@@ -684,7 +684,7 @@ private struct FocusRunningView: View {
     private var metrics: some View {
         HStack(spacing: 16) {
             Metric(title: "已专注", value: formatted(model.elapsed))
-            Metric(title: "当前状态", value: model.currentState.displayName)
+            Metric(title: "当前状态", value: model.currentStateDisplayName)
             Metric(title: "提醒", value: model.lastNudge)
         }
     }
@@ -1300,6 +1300,19 @@ private struct TimelineEventDebugPopover: View {
                                 TimelineDebugText(line)
                             }
                             if let metrics = detail.taskAlignmentRequestDebugMetrics {
+                                ForEach(FocusEventDebugDetail.formattedRequestMetricLines(metrics), id: \.self) { line in
+                                    TimelineDebugText(line)
+                                }
+                            }
+                        }
+                    }
+
+                    if let taskProgress = detail.splitAnalysis?.taskProgress {
+                        TimelineDebugSection(title: "任务进展判断") {
+                            ForEach(FocusEventDebugDetail.formattedTaskProgressLines(taskProgress), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                            if let metrics = detail.taskProgressRequestDebugMetrics {
                                 ForEach(FocusEventDebugDetail.formattedRequestMetricLines(metrics), id: \.self) { line in
                                     TimelineDebugText(line)
                                 }

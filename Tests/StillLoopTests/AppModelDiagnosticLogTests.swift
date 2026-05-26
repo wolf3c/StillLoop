@@ -65,14 +65,16 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(failed["failureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["taskAlignmentFailureKind"] as? String, "请求超时")
+        XCTAssertEqual(failed["taskProgressFailureKind"] as? String, "请求超时")
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" })
         let fallback = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.fallback" })
         XCTAssertEqual(fallback["fallback"] as? String, "ruleBased")
         XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
+        XCTAssertEqual(fallback["taskProgressFailureKind"] as? String, "请求超时")
         XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_000 && $0["cameraBytes"] as? Int == 9_000 })
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
     }
@@ -128,32 +130,38 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
+        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 3)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmPreviousEventCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 904_020)
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 1_356_030)
         XCTAssertEqual(succeeded["llmResponseChars"] as? Int, result.requestDebugMetrics?.responseChars)
-        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 2_590)
+        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 3_885)
         XCTAssertEqual(succeeded["presenceLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPreviousEventCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["presenceLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["presenceLLMCacheN"] as? Int, 221)
-        XCTAssertEqual(succeeded["taskLLMImageCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["taskLLMTextSnapshotCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["taskLLMPreviousEventCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["taskLLMPayloadBytes"] as? Int, 452_010)
-        XCTAssertEqual(succeeded["taskLLMInputTextTokenCount"] as? Int, 1_295)
-        XCTAssertEqual(succeeded["taskLLMCacheN"] as? Int, 221)
+        XCTAssertEqual(succeeded["alignmentLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["alignmentLLMTextSnapshotCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["alignmentLLMPreviousEventCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["alignmentLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["alignmentLLMCacheN"] as? Int, 221)
+        XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMPreviousEventCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["progressLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["progressLLMCacheN"] as? Int, 221)
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
     }
 
-    func testBatteryPowerLimitsBundledEvaluationToLatestVisualSampleButKeepsTextContext() async throws {
+    func testBundledEvaluationKeepsPresenceLatestAlignmentLatestAndProgressScreensEvenlySpaced() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         var engines: [SuccessfulDiagnosticLLMEngine] = []
@@ -178,14 +186,41 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
-        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 2)
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 5)
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .battery)
-        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
-        let taskEngine = try XCTUnwrap(engines.last)
-        XCTAssertTrue(taskEngine.flattenedPrompt.contains("visual sample[1]\ntargetID: T4\ntime: 1970-01-01T00:00:04Z\napp: app-4"))
-        XCTAssertFalse(taskEngine.flattenedPrompt.contains("visual sample[1]\ntargetID: T3\ntime: 1970-01-01T00:00:03Z\napp: app-3"))
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.textSnapshotCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.imageCount, 3)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.textSnapshotCount, 4)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualSampleLimit, 3)
+        let presenceEngine = try XCTUnwrap(engines.first)
+        let alignmentEngine = try XCTUnwrap(engines.dropFirst().first)
+        let progressEngine = try XCTUnwrap(engines.last)
+        XCTAssertTrue(presenceEngine.flattenedPrompt.contains("camera sample[1]"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("Current task:"))
+        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("visual sample[1]"))
+        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:04Z\napp: app-4"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:01Z\napp: app-1"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("Progress comparison"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("camera sample"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("visual sample[1]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:01Z\napp: app-1"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("visual sample[2]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:03Z\napp: app-3"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("visual sample[3]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:04Z\napp: app-4"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[4]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera sample"))
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
@@ -194,15 +229,27 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(started["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(started["thermalState"] as? String, "fair")
         XCTAssertEqual(started["visualSampleLimit"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
+        XCTAssertEqual(started["alignmentVisualSampleCount"] as? Int, 1)
+        XCTAssertEqual(started["progressVisualSampleCount"] as? Int, 3)
+        XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 3)
+        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 5)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 4)
+        XCTAssertEqual(succeeded["presenceLLMVisualCaptureCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["presenceLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
-        XCTAssertEqual(succeeded["taskLLMTextSnapshotCount"] as? Int, 4)
+        XCTAssertEqual(succeeded["alignmentLLMVisualCaptureCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["alignmentLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["alignmentLLMTextSnapshotCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMVisualCaptureCount"] as? Int, 3)
+        XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 3)
+        XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 4)
         XCTAssertEqual(succeeded["powerSource"] as? String, "battery")
-        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
+        XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 3)
+        XCTAssertEqual(succeeded["alignmentVisualSampleCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressVisualSampleCount"] as? Int, 3)
     }
 
-    func testLowPowerModeLimitsVisualSamplesEvenOnACPower() async throws {
+    func testLowPowerModeLimitsPresenceSamplesButKeepsTaskScreensFirstLast() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         var engines: [SuccessfulDiagnosticLLMEngine] = []
@@ -227,11 +274,17 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .acPower)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.lowPowerMode, true)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.thermalState, .serious)
-        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 3)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualSampleLimit, 3)
     }
 
     func testUnknownPowerSourceKeepsDefaultVisualSampleLimitUnlessLowPowerModeIsEnabled() async throws {
@@ -259,11 +312,14 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
-        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 2)
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 5)
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 4)
         XCTAssertEqual(result.requestDebugMetrics?.powerStatus?.powerSource, .unknown)
-        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.requestDebugMetrics?.visualSampleLimit, 3)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskAlignmentRequestDebugMetrics?.visualSampleLimit, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualSampleLimit, 3)
     }
 
     func testBundledPromptCacheProbeWritesScalarDiagnosticsWhenEnabled() async throws {
@@ -282,7 +338,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 2)
+        XCTAssertEqual(engine.prewarmCallCount, 3)
         XCTAssertEqual(engine.probeCallCount, 4)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let probes = events.filter { $0["event"] as? String == "model.promptCacheProbe.completed" }
@@ -322,7 +378,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 2)
+        XCTAssertEqual(engine.prewarmCallCount, 3)
         XCTAssertEqual(engine.probeCallCount, 0)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.promptCacheProbe.completed" })
@@ -429,7 +485,10 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
     {"presence":"present","engagement":"engaged","reason":"用户在场。"}
     """
     static let taskAlignmentResponse = """
-    {"alignment":"aligned","progress":"progressing","focusTargetID":null,"reason":"Working on llama cache optimization"}
+    {"alignment":"aligned","focusTargetID":null,"reason":"Working on llama cache optimization"}
+    """
+    static let taskProgressResponse = """
+    {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"Visible progress across screenshots"}
     """
 
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
@@ -458,6 +517,8 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             Self.presenceResponse
         case .taskAlignmentEvaluation:
             Self.taskAlignmentResponse
+        case .taskProgressEvaluation:
+            Self.taskProgressResponse
         default:
             Self.taskAlignmentResponse
         }
@@ -496,8 +557,17 @@ private struct StubDevicePowerStatusProvider: DevicePowerStatusProviding {
 }
 
 private final class PromptCacheProbeDiagnosticLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
-    private(set) var prewarmCallCount = 0
-    private(set) var probeCallCount = 0
+    private let lock = NSLock()
+    private var storedPrewarmCallCount = 0
+    private var storedProbeCallCount = 0
+
+    var prewarmCallCount: Int {
+        lock.withLock { storedPrewarmCallCount }
+    }
+
+    var probeCallCount: Int {
+        lock.withLock { storedProbeCallCount }
+    }
 
     func complete(messages: [LLMMessage]) async throws -> String {
         """
@@ -509,14 +579,19 @@ private final class PromptCacheProbeDiagnosticLLMEngine: LocalLLMEngine, LLMFocu
         messages: [LLMMessage],
         responseFormat: LLMResponseFormat?
     ) async throws {
-        prewarmCallCount += 1
+        lock.withLock {
+            storedPrewarmCallCount += 1
+        }
     }
 
     func runFocusPromptCacheProbe(
         messages: [LLMMessage],
         responseFormat: LLMResponseFormat?
     ) async throws -> LLMRequestTransportMetrics {
-        probeCallCount += 1
+        let probeCallCount = lock.withLock {
+            storedProbeCallCount += 1
+            return storedProbeCallCount
+        }
         let cacheN = probeCallCount * 101
         return LLMRequestTransportMetrics(
             payloadBytes: 40_000 + probeCallCount,

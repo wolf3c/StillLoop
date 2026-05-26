@@ -629,6 +629,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             return userPresenceEvaluationMaxTokens
         case .taskAlignmentEvaluation:
             return taskAlignmentEvaluationMaxTokens
+        case .taskProgressEvaluation:
+            return taskAlignmentEvaluationMaxTokens
         case nil:
             return defaultMaxTokens
         }
@@ -671,6 +673,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             return userPresenceEvaluationResponseFormatJSON()
         case .taskAlignmentEvaluation:
             return taskAlignmentEvaluationResponseFormatJSON()
+        case .taskProgressEvaluation:
+            return taskProgressEvaluationResponseFormatJSON()
         }
     }
 
@@ -790,6 +794,31 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                                 .string("unclear")
                             ]))
                         ])),
+                        ("focusTargetID", .object([
+                            ("type", .array([.string("string"), .string("null")]))
+                        ])),
+                        ("reason", .object([("type", .string("string"))]))
+                    ])),
+                    ("required", .array([
+                        .string("alignment"),
+                        .string("focusTargetID"),
+                        .string("reason")
+                    ]))
+                ]))
+            ]))
+        ])
+    }
+
+    private static func taskProgressEvaluationResponseFormatJSON() -> OrderedJSONValue {
+        .object([
+            ("type", .string("json_schema")),
+            ("json_schema", .object([
+                ("name", .string("task_progress_evaluation")),
+                ("strict", .bool(true)),
+                ("schema", .object([
+                    ("type", .string("object")),
+                    ("additionalProperties", .bool(false)),
+                    ("properties", .object([
                         ("progress", .object([
                             ("type", .string("string")),
                             ("enum", .array([
@@ -798,15 +827,12 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                                 .string("unclear")
                             ]))
                         ])),
-                        ("focusTargetID", .object([
-                            ("type", .array([.string("string"), .string("null")]))
-                        ])),
+                        ("comparisonBasis", .object([("type", .string("string"))])),
                         ("reason", .object([("type", .string("string"))]))
                     ])),
                     ("required", .array([
-                        .string("alignment"),
                         .string("progress"),
-                        .string("focusTargetID"),
+                        .string("comparisonBasis"),
                         .string("reason")
                     ]))
                 ]))

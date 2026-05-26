@@ -108,24 +108,85 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.requestDebugMetrics?.powerStatus?.powerSource, .battery)
         XCTAssertEqual(detail.requestDebugMetrics?.visualSampleLimit, 1)
         XCTAssertTrue(detail.capturedContext.isEmpty)
-        XCTAssertEqual(detail.environmentContext.count, 3)
-        XCTAssertTrue(detail.environmentContext[0].contains("Current task:\n调优识别能力"))
-        XCTAssertTrue(detail.environmentContext[0].contains("- focused: Codex -> Safari nudge=none"))
-        XCTAssertTrue(detail.environmentContext[1].contains("Text timeline: all pending captures, metadata only"))
-        XCTAssertTrue(detail.environmentContext[1].contains("targetID: T1"))
-        XCTAssertTrue(detail.environmentContext[1].contains("app: Safari"))
-        XCTAssertTrue(detail.environmentContext[1].contains("browserURL: https://example.com/search"))
-        XCTAssertFalse(detail.environmentContext[1].contains("q=private"))
-        XCTAssertFalse(detail.environmentContext[1].contains("#section"))
-        XCTAssertTrue(detail.environmentContext[2].contains("visual sample[1]"))
-        XCTAssertTrue(detail.environmentContext[2].contains("targetID: T2"))
-        XCTAssertTrue(detail.environmentContext[2].contains("app: Codex"))
-        XCTAssertEqual(detail.visualContext.count, 1)
-        XCTAssertTrue(detail.visualContext[0].contains("visual sample[1]"))
-        XCTAssertTrue(detail.visualContext[0].contains("targetID: T2"))
-        XCTAssertTrue(detail.visualContext[0].contains("visualOrder: screenshot image first, then camera image"))
-        XCTAssertTrue(detail.visualContext[0].contains("screenshot: available 1024x665 48843B"))
-        XCTAssertTrue(detail.visualContext[0].contains("camera: available 512x288 3252B"))
+        let environmentText = detail.environmentContext.joined(separator: "\n")
+        let visualText = detail.visualContext.joined(separator: "\n")
+        XCTAssertTrue(environmentText.contains("Three-line split evaluation context:"))
+        XCTAssertTrue(environmentText.contains("Current task:\n调优识别能力"))
+        XCTAssertTrue(environmentText.contains("- focused: Codex -> Safari nudge=none"))
+        XCTAssertTrue(environmentText.contains("Text timeline: all pending captures, metadata only"))
+        XCTAssertTrue(environmentText.contains("targetID: T1"))
+        XCTAssertTrue(environmentText.contains("app: Safari"))
+        XCTAssertTrue(environmentText.contains("browserURL: https://example.com/search"))
+        XCTAssertFalse(environmentText.contains("q=private"))
+        XCTAssertFalse(environmentText.contains("#section"))
+        XCTAssertTrue(visualText.contains("screen-alignment visual sample[1]"))
+        XCTAssertTrue(visualText.contains("screen-progress visual sample[1]"))
+        XCTAssertTrue(visualText.contains("targetID: T2"))
+        XCTAssertTrue(visualText.contains("app: Codex"))
+        XCTAssertTrue(visualText.contains("screenshot: available 1024x665 48843B"))
+        XCTAssertFalse(visualText.contains("visualOrder:"))
+        XCTAssertFalse(visualText.contains("camera:"))
+    }
+
+    func testMakeShowsThreeLinePromptContextForSplitEvaluation() {
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotPixelWidth: 1280,
+            screenshotPixelHeight: 832,
+            screenshotCompressedBytes: 94_639
+        )
+        let result = LLMEvaluationResult(
+            state: .focused,
+            reason: "单张任务截图无法比较进展。",
+            shouldNudge: false,
+            nudge: nil,
+            splitAnalysis: LLMSplitFocusAnalysis(
+                userPresence: LLMUserPresenceEvaluation(
+                    presence: .present,
+                    engagement: .engaged,
+                    reason: "用户在场。"
+                ),
+                taskAlignment: LLMTaskAlignmentEvaluation(
+                    alignment: .aligned,
+                    focusTargetID: "T1",
+                    reason: "末图显示学习页面。"
+                ),
+                taskProgress: LLMTaskProgressEvaluation(
+                    progress: .unclear,
+                    comparisonBasis: "single_screenshot",
+                    reason: "只有一张图，无法判断进展。"
+                )
+            )
+        )
+
+        let detail = FocusEventDebugDetail.make(
+            task: "学习 Ogden's Basic English",
+            evaluator: "自带模型",
+            environmentSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            previousEvents: [],
+            result: result
+        )
+        let environmentText = detail.environmentContext.joined(separator: "\n")
+        let visualText = detail.visualContext.joined(separator: "\n")
+
+        XCTAssertTrue(environmentText.contains("Three-line split evaluation context:"))
+        XCTAssertTrue(environmentText.contains("screen-alignment: latest screenshot metadata only"))
+        XCTAssertTrue(environmentText.contains("screen-progress: current-round screenshot comparison"))
+        XCTAssertTrue(environmentText.contains("Current screen alignment checklist:"))
+        XCTAssertTrue(environmentText.contains("Current screen progress checklist:"))
+        XCTAssertFalse(environmentText.contains("visual sample[1] is the first screen screenshot from the current pending evaluation captures."))
+        XCTAssertFalse(environmentText.contains("Progress requires comparing first and last screen screenshots; use unclear when only one screenshot is available or comparison is not possible."))
+        XCTAssertTrue(visualText.contains("screen-alignment visual sample[1]"))
+        XCTAssertTrue(visualText.contains("screen-progress visual sample[1]"))
+        XCTAssertFalse(visualText.contains("visualOrder: screenshot image first, then camera"))
+        XCTAssertFalse(visualText.contains("camera:"))
     }
 
     func testDecodesLegacyDebugDetailWithoutAnalysis() throws {
@@ -193,9 +254,10 @@ final class FocusEventDebugDetailTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(detail.environmentContext[1].contains("https://example.com/search"))
-        XCTAssertFalse(detail.environmentContext[1].contains("q=private"))
-        XCTAssertFalse(detail.environmentContext[1].contains("#section"))
+        let environmentText = detail.environmentContext.joined(separator: "\n")
+        XCTAssertTrue(environmentText.contains("https://example.com/search"))
+        XCTAssertFalse(environmentText.contains("q=private"))
+        XCTAssertFalse(environmentText.contains("#section"))
     }
 
     func testMakeStoresSplitEvaluationDetailAndRouteMetrics() {
@@ -229,6 +291,14 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 responseChars: 80,
                 inputTextCharacterCount: 780
             ),
+            taskProgressRequestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 3,
+                imageCount: 3,
+                textSnapshotCount: 4,
+                previousEventCount: 3,
+                responseChars: 60,
+                inputTextCharacterCount: 620
+            ),
             splitAnalysis: LLMSplitFocusAnalysis(
                 userPresence: LLMUserPresenceEvaluation(
                     presence: .present,
@@ -237,9 +307,13 @@ final class FocusEventDebugDetailTests: XCTestCase {
                 ),
                 taskAlignment: LLMTaskAlignmentEvaluation(
                     alignment: .unaligned,
-                    progress: .stalled,
                     focusTargetID: "T2",
                     reason: "屏幕内容与开发任务不匹配。"
+                ),
+                taskProgress: LLMTaskProgressEvaluation(
+                    progress: .stalled,
+                    comparisonBasis: "same_task_no_visible_change",
+                    reason: "截图没有显示推进。"
                 )
             )
         )
@@ -254,12 +328,15 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.splitAnalysis?.userPresence?.presence, .present)
         XCTAssertEqual(detail.splitAnalysis?.userPresence?.engagement, .engaged)
         XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.alignment, .unaligned)
-        XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.progress, .stalled)
         XCTAssertEqual(detail.splitAnalysis?.taskAlignment?.focusTargetID, "T2")
+        XCTAssertEqual(detail.splitAnalysis?.taskProgress?.progress, .stalled)
+        XCTAssertEqual(detail.splitAnalysis?.taskProgress?.comparisonBasis, "same_task_no_visible_change")
         XCTAssertEqual(detail.presenceRequestDebugMetrics?.imageCount, 1)
         XCTAssertEqual(detail.presenceRequestDebugMetrics?.textSnapshotCount, 0)
         XCTAssertEqual(detail.taskAlignmentRequestDebugMetrics?.imageCount, 1)
         XCTAssertEqual(detail.taskAlignmentRequestDebugMetrics?.textSnapshotCount, 2)
+        XCTAssertEqual(detail.taskProgressRequestDebugMetrics?.imageCount, 3)
+        XCTAssertEqual(detail.taskProgressRequestDebugMetrics?.textSnapshotCount, 4)
     }
 
     func testRecognitionDebugClipboardTextShowsSplitContextSections() {
@@ -323,6 +400,14 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     responseChars: 80,
                     inputTextCharacterCount: 780
                 ),
+                taskProgressRequestDebugMetrics: LLMRequestDebugMetrics(
+                    visualCaptureCount: 3,
+                    imageCount: 3,
+                    textSnapshotCount: 4,
+                    previousEventCount: 3,
+                    responseChars: 60,
+                    inputTextCharacterCount: 620
+                ),
                 splitAnalysis: LLMSplitFocusAnalysis(
                     userPresence: LLMUserPresenceEvaluation(
                         presence: .present,
@@ -331,9 +416,13 @@ final class FocusEventDebugDetailTests: XCTestCase {
                     ),
                     taskAlignment: LLMTaskAlignmentEvaluation(
                         alignment: .unaligned,
-                        progress: .stalled,
                         focusTargetID: "T2",
                         reason: "屏幕内容与开发任务不匹配。"
+                    ),
+                    taskProgress: LLMTaskProgressEvaluation(
+                        progress: .stalled,
+                        comparisonBasis: "same_task_no_visible_change",
+                        reason: "截图没有显示推进。"
                     )
                 )
             )
@@ -343,8 +432,10 @@ final class FocusEventDebugDetailTests: XCTestCase {
 
         XCTAssertTrue(text.contains("用户状态判断\npresence：present\nengagement：engaged\n原因：用户在场。"))
         XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=1, textSnapshotCount=0, previousEventCount=0"))
-        XCTAssertTrue(text.contains("任务匹配判断\nalignment：unaligned\nprogress：stalled\nfocusTargetID：T2\n原因：屏幕内容与开发任务不匹配。"))
+        XCTAssertTrue(text.contains("任务匹配判断\nalignment：unaligned\nfocusTargetID：T2\n原因：屏幕内容与开发任务不匹配。"))
         XCTAssertTrue(text.contains("请求规模：visualCaptureCount=1, imageCount=1, textSnapshotCount=2, previousEventCount=3"))
+        XCTAssertTrue(text.contains("任务进展判断\nprogress：stalled\ncomparisonBasis：same_task_no_visible_change\n原因：截图没有显示推进。"))
+        XCTAssertTrue(text.contains("请求规模：visualCaptureCount=3, imageCount=3, textSnapshotCount=4, previousEventCount=3"))
     }
 
     func testRecognitionDebugClipboardTextFallsBackToLegacyCapturedContext() {

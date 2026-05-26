@@ -112,7 +112,7 @@ final class HomeNavigationTests: XCTestCase {
     }
 
     func testOpenHomeRoutesIdleUserToTaskSetup() {
-        let model = makeModel()
+        let model = makeModel(withBundledModelFiles: true)
         model.screen = .settings
         model.status = .idle
         model.currentSession = nil
@@ -552,6 +552,42 @@ final class HomeNavigationTests: XCTestCase {
         model.pauseSession()
     }
 
+    func testNewSessionShowsJudgingStateBeforeFirstEvaluationResult() {
+        let model = makeModel(withBundledModelFiles: true)
+        model.startPermissionDecisionOverride = .proceed
+        model.taskText = "学习 Ogden's Basic English"
+        var postedModes: [StatusItemMode] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .stillLoopStatusItemModeDidChange,
+            object: nil,
+            queue: nil
+        ) { notification in
+            guard
+                let rawMode = notification.userInfo?["mode"] as? String,
+                let mode = StatusItemMode(rawValue: rawMode)
+            else { return }
+            postedModes.append(mode)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        model.startSession()
+
+        XCTAssertEqual(model.status, .running)
+        XCTAssertEqual(model.currentState, .uncertain)
+        XCTAssertEqual(model.currentStateDisplayName, "判断中")
+        XCTAssertEqual(postedModes.last, .analyzing)
+
+        model.pauseSession()
+        XCTAssertEqual(postedModes.last, .paused)
+
+        model.resumeSession()
+        XCTAssertEqual(model.status, .running)
+        XCTAssertEqual(model.currentStateDisplayName, "判断中")
+        XCTAssertEqual(postedModes.last, .analyzing)
+
+        model.pauseSession()
+    }
+
     func testBundledModelRuntimePrewarmsPromptCacheAfterPreparation() async {
         let runtime = FakeBundledRuntime()
         var engines: [PrewarmingLLMEngine] = []
@@ -570,8 +606,12 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1])
-        XCTAssertEqual(engines.map(\.lastResponseFormat), [.userPresenceEvaluation, .taskAlignmentEvaluation])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1])
+        XCTAssertEqual(engines.map(\.lastResponseFormat), [
+            .userPresenceEvaluation,
+            .taskAlignmentEvaluation,
+            .taskProgressEvaluation
+        ])
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 0)
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
     }
@@ -594,7 +634,7 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1])
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }
@@ -709,7 +749,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：请求超时）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
     }
 
     func testBundledInferenceFallbackRecordsFailureReasonInEvaluator() async {
@@ -747,7 +787,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：JSON 解析失败）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
     }
 
     func testEvaluationContextUsesOnlyLatestMinuteAndKeepsVisualSamplingLimit() {

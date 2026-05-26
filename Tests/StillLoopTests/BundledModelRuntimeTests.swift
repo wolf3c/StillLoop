@@ -36,8 +36,8 @@ final class BundledModelRuntimeTests: XCTestCase {
             "-m", "/tmp/StillLoop Models/model.gguf",
             "--mmproj", "/tmp/StillLoop Models/mmproj.gguf",
             "--host", "/tmp/stillloop-runtime.sock",
-            "--ctx-size", "4096",
-            "--parallel", "2",
+            "--ctx-size", "12288",
+            "--parallel", "3",
             "--n-gpu-layers", "99",
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
@@ -94,8 +94,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--batch-size"))
         XCTAssertFalse(arguments.contains("--ubatch-size"))
         XCTAssertFalse(arguments.contains("--metrics"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "2")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "12288")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "3")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--n-gpu-layers")! + 1], "99")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-k")! + 1], "q4_1")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")
@@ -117,7 +117,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--cache-reuse"))
         XCTAssertFalse(arguments.contains("--cache-ram"))
         XCTAssertTrue(arguments.contains("--metrics"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "12288")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "3")
     }
 
     func testDefaultTuningCanDisablePromptCacheFromEnvironmentForRuntimeComparison() {

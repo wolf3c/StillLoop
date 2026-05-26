@@ -220,6 +220,7 @@ final class AppModel: ObservableObject {
     @Published var status: SessionStatus = .idle
     @Published var currentSession: FocusSession?
     @Published var currentState: FocusState = .uncertain
+    @Published private(set) var isAwaitingInitialEvaluation = false
     @Published var lastNudge: String = "暂无提醒"
     @Published var lastFocusedReturnTarget: FocusReturnTarget?
     @Published var elapsed: TimeInterval = 0
@@ -269,6 +270,10 @@ final class AppModel: ObservableObject {
     let normalEvaluationCooldownSeconds: TimeInterval = 10
     let powerSavingEvaluationCooldownSeconds: TimeInterval = 60
     nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
+
+    var currentStateDisplayName: String {
+        isAwaitingInitialEvaluation ? "判断中" : currentState.displayName
+    }
 
     private let evaluator = FocusEvaluator()
     private var llmEvaluator: LLMFocusEvaluator?
@@ -1111,6 +1116,7 @@ final class AppModel: ObservableObject {
         contextSourceDescription = "上下文来源：真实本机"
         status = .running
         currentState = .uncertain
+        isAwaitingInitialEvaluation = true
         lastNudge = "暂无提醒"
         lastFocusedReturnTarget = nil
         elapsed = 0
@@ -1129,7 +1135,7 @@ final class AppModel: ObservableObject {
                 cameraAllowed: cameraPermission == "已允许"
             )
         )
-        postStatusItemMode(.uncertain)
+        postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
     }
@@ -1154,7 +1160,7 @@ final class AppModel: ObservableObject {
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
         status = .running
-        postStatusItemMode(mode(for: currentState))
+        postStatusItemMode(isAwaitingInitialEvaluation ? .analyzing : mode(for: currentState))
         startCaptureLoop()
         startEvaluationLoop()
         telemetry.record(
@@ -1192,6 +1198,7 @@ final class AppModel: ObservableObject {
         try? store.save(session: session)
         summaries = (try? store.loadSummaries()) ?? [summary]
         status = .ended
+        isAwaitingInitialEvaluation = false
         screen = .review
         evaluationLoopDescription = "任务已结束，已停止采集"
         analysisPhase = .idle
@@ -1211,6 +1218,7 @@ final class AppModel: ObservableObject {
         taskText = ""
         status = .idle
         currentState = .uncertain
+        isAwaitingInitialEvaluation = false
         lastNudge = "暂无提醒"
         elapsed = 0
         isSuspendedForSystemInactivity = false
@@ -1253,6 +1261,7 @@ final class AppModel: ObservableObject {
         status = .running
         shouldValidateBundledRuntimeForActiveRun = modelSetupSelection.source == .bundled && !isCurrentSessionUsingRuleBasedModelFallback
         currentState = .uncertain
+        isAwaitingInitialEvaluation = true
         lastNudge = "暂无提醒"
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
@@ -1265,7 +1274,7 @@ final class AppModel: ObservableObject {
         try? store.update(session: session)
         try? store.removeSummary(id: session.id)
         summaries = (try? store.loadSummaries()) ?? summaries.filter { $0.id != session.id }
-        postStatusItemMode(.uncertain)
+        postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
         telemetry.record(
@@ -1586,10 +1595,12 @@ final class AppModel: ObservableObject {
         }
         let presenceEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
         let taskAlignmentEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-        llmEngine = taskAlignmentEngine
+        let taskProgressEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        llmEngine = taskProgressEngine
         llmEvaluator = LLMFocusEvaluator(
             userPresenceEngine: presenceEngine,
-            taskAlignmentEngine: taskAlignmentEngine
+            taskAlignmentEngine: taskAlignmentEngine,
+            taskProgressEngine: taskProgressEngine
         )
         localLLMStatus = "当前评估：手动模型 \(effectiveBaseURLText)"
         persistManualModelConfiguration()
@@ -1646,6 +1657,7 @@ final class AppModel: ObservableObject {
         elapsed = activeElapsed(at: now)
         status = .paused
         currentState = .away
+        isAwaitingInitialEvaluation = false
         lastNudge = "屏幕已锁定，已暂停运行"
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
@@ -1675,12 +1687,13 @@ final class AppModel: ObservableObject {
         systemSuspendedAt = nil
         status = .running
         currentState = .uncertain
+        isAwaitingInitialEvaluation = true
         lastNudge = "暂无提醒"
         elapsed = activeElapsed(at: now)
         analysisPhase = .idle
         evaluationLoopDescription = "屏幕已唤醒，继续采集"
         contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 0 条"
-        postStatusItemMode(.uncertain)
+        postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
         telemetry.record(
@@ -1866,14 +1879,16 @@ final class AppModel: ObservableObject {
             }
             let presenceEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
             let taskAlignmentEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            let taskProgressEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
             let evaluator = LLMFocusEvaluator(
                 userPresenceEngine: presenceEngine,
-                taskAlignmentEngine: taskAlignmentEngine
+                taskAlignmentEngine: taskAlignmentEngine,
+                taskProgressEngine: taskProgressEngine
             )
-            llmEngine = taskAlignmentEngine
+            llmEngine = taskProgressEngine
             llmEvaluator = evaluator
             await prewarmBundledPromptCacheIfSupported(evaluator)
-            await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: taskAlignmentEngine)
+            await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: taskProgressEngine)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
             shouldValidateBundledRuntimeForActiveRun = false
@@ -2134,17 +2149,22 @@ final class AppModel: ObservableObject {
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit
         )
-        let visualSnapshots = SnapshotSampler.select(contextSnapshots, limit: visualSampleLimit)
+        let presenceVisualSnapshots = SnapshotSampler.select(contextSnapshots, limit: visualSampleLimit)
+        let taskVisualSnapshots = SnapshotSampler.selectEvenlySpaced(contextSnapshots, maxCount: 3)
+        let alignmentVisualSampleCount = SnapshotSampler.select(taskVisualSnapshots, limit: 1).count
+        let progressVisualSampleCount = taskVisualSnapshots.count
         diagnosticLogger.record(
             "evaluation.selected",
             fields: diagnosticFields(
                 sessionID: sessionID,
-                snapshots: visualSnapshots,
+                snapshots: presenceVisualSnapshots,
                 extra: [
                     "pendingCount": .int(pendingCount),
                     "textCount": .int(contextCount),
                     "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds)),
-                    "selectedCount": .int(visualSnapshots.count)
+                    "selectedCount": .int(presenceVisualSnapshots.count),
+                    "alignmentVisualSampleCount": .int(alignmentVisualSampleCount),
+                    "progressVisualSampleCount": .int(progressVisualSampleCount)
                 ].merging(powerFields) { current, _ in current }
             )
         )
@@ -2152,14 +2172,15 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(180))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
-        evaluationLoopDescription = visualSnapshots.count == contextCount
+        evaluationLoopDescription = presenceVisualSnapshots.count == contextCount && taskVisualSnapshots.count == contextCount
             ? "正在分析最近 1 分钟 \(contextCount) 条上下文"
-            : "正在分析最近 1 分钟 \(contextCount) 条文本上下文，抽样 \(visualSnapshots.count) 条视觉采集"
+            : "正在分析最近 1 分钟 \(contextCount) 条文本上下文，抽样 \(presenceVisualSnapshots.count) 条用户照片、\(taskVisualSnapshots.count) 条电脑截图"
         let evaluationStartedAt = Date()
         let result = await evaluateFocus(
             task: session.task,
             snapshots: contextSnapshots,
-            visualSnapshots: visualSnapshots,
+            visualSnapshots: presenceVisualSnapshots,
+            taskVisualSnapshots: taskVisualSnapshots,
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit,
             previousEvents: session.events
@@ -2168,7 +2189,7 @@ final class AppModel: ObservableObject {
             "evaluation.completed",
             fields: diagnosticFields(
                 sessionID: sessionID,
-                snapshots: visualSnapshots,
+                snapshots: presenceVisualSnapshots,
                 extra: [
                     "durationMS": .int(Self.durationMilliseconds(since: evaluationStartedAt)),
                     "evaluator": .string(result.evaluator),
@@ -2176,12 +2197,15 @@ final class AppModel: ObservableObject {
                     "shouldNudge": .bool(result.shouldNudge),
                     "pendingCount": .int(pendingCount),
                     "textCount": .int(contextCount),
-                    "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds))
+                    "contextWindowSeconds": .int(Int(Self.evaluationContextWindowSeconds)),
+                    "alignmentVisualSampleCount": .int(alignmentVisualSampleCount),
+                    "progressVisualSampleCount": .int(progressVisualSampleCount)
                 ].merging(powerFields) { current, _ in current }
             )
         )
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
+        isAwaitingInitialEvaluation = false
         if let returnTarget = result.returnTarget {
             lastFocusedReturnTarget = returnTarget
         }
@@ -2210,7 +2234,7 @@ final class AppModel: ObservableObject {
                 ]
             )
         }
-        let context = visualSnapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
+        let context = taskVisualSnapshots.map(\.diagnosticDisplayText).joined(separator: " -> ")
         latestSession.events.insert(
             FocusEvent(
                 timestamp: Date(),
@@ -2223,7 +2247,7 @@ final class AppModel: ObservableObject {
                     task: session.task,
                     evaluator: result.evaluator,
                     environmentSnapshots: contextSnapshots,
-                    visualSnapshots: visualSnapshots,
+                    visualSnapshots: taskVisualSnapshots,
                     previousEvents: session.events,
                     result: result
                 )
@@ -2445,6 +2469,7 @@ final class AppModel: ObservableObject {
         task: String,
         snapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot]? = nil,
+        taskVisualSnapshots: [ContextSnapshot]? = nil,
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil,
         previousEvents: [FocusEvent]
@@ -2453,6 +2478,10 @@ final class AppModel: ObservableObject {
         let resolvedVisualSampleLimit = visualSampleLimit
             ?? resolvedPowerStatus.visualSampleLimit(defaultLimit: SnapshotSampler.defaultLimit)
         let visualSnapshots = visualSnapshots ?? SnapshotSampler.select(snapshots, limit: resolvedVisualSampleLimit)
+        let taskProgressVisualSnapshots = taskVisualSnapshots ?? SnapshotSampler.selectEvenlySpaced(snapshots, maxCount: 3)
+        let taskAlignmentVisualSnapshots = SnapshotSampler.select(taskProgressVisualSnapshots, limit: 1)
+        let taskAlignmentVisualSampleLimit = taskAlignmentVisualSnapshots.count
+        let taskProgressVisualSampleLimit = taskProgressVisualSnapshots.count
         let powerFields = Self.devicePowerDiagnosticFields(
             powerStatus: resolvedPowerStatus,
             visualSampleLimit: resolvedVisualSampleLimit
@@ -2464,7 +2493,9 @@ final class AppModel: ObservableObject {
                 extra: [
                     "modelSource": .string(modelSetupSelection.source.rawValue),
                     "previousEventCount": .int(previousEvents.count),
-                    "taskLength": .int(task.count)
+                    "taskLength": .int(task.count),
+                    "alignmentVisualSampleCount": .int(taskAlignmentVisualSampleLimit),
+                    "progressVisualSampleCount": .int(taskProgressVisualSampleLimit)
                 ].merging(powerFields) { current, _ in current }
             )
         )
@@ -2486,8 +2517,12 @@ final class AppModel: ObservableObject {
                         task: task,
                         snapshots: snapshots,
                         visualSnapshots: visualSnapshots,
+                        taskVisualSnapshots: taskProgressVisualSnapshots,
                         powerStatus: resolvedPowerStatus,
                         visualSampleLimit: resolvedVisualSampleLimit,
+                        taskVisualSampleLimit: taskProgressVisualSampleLimit,
+                        alignmentVisualSampleCount: taskAlignmentVisualSampleLimit,
+                        progressVisualSampleCount: taskProgressVisualSampleLimit,
                         previousEvents: previousEvents
                     )
                 } catch {
@@ -2561,9 +2596,11 @@ final class AppModel: ObservableObject {
                     task: task,
                     textSnapshots: snapshots,
                     visualSnapshots: visualSnapshots,
+                    taskVisualSnapshots: taskProgressVisualSnapshots,
                     previousEvents: previousEvents,
                     powerStatus: resolvedPowerStatus,
-                    visualSampleLimit: resolvedVisualSampleLimit
+                    visualSampleLimit: resolvedVisualSampleLimit,
+                    taskVisualSampleLimit: taskProgressVisualSampleLimit
                 )
                 result.evaluator = "手动模型"
                 localLLMStatus = "当前评估：手动模型已连接"
@@ -2619,17 +2656,23 @@ final class AppModel: ObservableObject {
         task: String,
         snapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
+        taskVisualSnapshots: [ContextSnapshot],
         powerStatus: DevicePowerStatus,
         visualSampleLimit: Int,
+        taskVisualSampleLimit: Int,
+        alignmentVisualSampleCount: Int,
+        progressVisualSampleCount: Int,
         previousEvents: [FocusEvent]
     ) async throws -> LLMEvaluationResult {
         var result = try await llmEvaluator.evaluate(
             task: task,
             textSnapshots: snapshots,
             visualSnapshots: visualSnapshots,
+            taskVisualSnapshots: taskVisualSnapshots,
             previousEvents: previousEvents,
             powerStatus: powerStatus,
-            visualSampleLimit: visualSampleLimit
+            visualSampleLimit: visualSampleLimit,
+            taskVisualSampleLimit: taskVisualSampleLimit
         )
         result.evaluator = "自带模型"
         var llmDiagnosticFields = Self.llmDiagnosticFields(from: result.requestDebugMetrics)
@@ -2643,7 +2686,14 @@ final class AppModel: ObservableObject {
         llmDiagnosticFields.merge(
             Self.llmDiagnosticFields(
                 from: result.taskAlignmentRequestDebugMetrics,
-                prefix: "taskLLM",
+                prefix: "alignmentLLM",
+                includeDeviceFields: false
+            )
+        ) { current, _ in current }
+        llmDiagnosticFields.merge(
+            Self.llmDiagnosticFields(
+                from: result.taskProgressRequestDebugMetrics,
+                prefix: "progressLLM",
                 includeDeviceFields: false
             )
         ) { current, _ in current }
@@ -2653,7 +2703,9 @@ final class AppModel: ObservableObject {
                 snapshots: visualSnapshots,
                 extra: [
                     "modelSource": .string("bundled"),
-                    "state": .string(result.state.rawValue)
+                    "state": .string(result.state.rawValue),
+                    "alignmentVisualSampleCount": .int(alignmentVisualSampleCount),
+                    "progressVisualSampleCount": .int(progressVisualSampleCount)
                 ].merging(llmDiagnosticFields) { current, _ in current }
             )
         )
@@ -2699,10 +2751,14 @@ final class AppModel: ObservableObject {
 
     private static func splitModelFailureDiagnosticFields(for error: Error) -> [String: DiagnosticLogValue] {
         guard let splitError = error as? LLMSplitFocusEvaluationError else { return [:] }
-        return [
+        var fields: [String: DiagnosticLogValue] = [
             "presenceFailureKind": .string(modelInferenceFailurePresentation(for: splitError.presenceError).debugText),
             "taskAlignmentFailureKind": .string(modelInferenceFailurePresentation(for: splitError.taskAlignmentError).debugText)
         ]
+        if let taskProgressError = splitError.taskProgressError {
+            fields["taskProgressFailureKind"] = .string(modelInferenceFailurePresentation(for: taskProgressError).debugText)
+        }
+        return fields
     }
 
     private static func modelInferenceFailureKind(for error: Error) -> LLMFocusFailureKind {
