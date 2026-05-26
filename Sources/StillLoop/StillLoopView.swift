@@ -1231,32 +1231,6 @@ private struct TimelineEventDebugPopover: View {
                 }
 
                 if let detail = event.debugDetail {
-                    if !detail.environmentContext.isEmpty {
-                        TimelineDebugSection(title: "环境上下文") {
-                            ForEach(Array(detail.environmentContext.enumerated()), id: \.offset) { _, context in
-                                TimelineDebugText(context)
-                            }
-                        }
-                    }
-
-                    if !detail.visualContext.isEmpty {
-                        TimelineDebugSection(title: "视觉上下文") {
-                            ForEach(Array(detail.visualContext.enumerated()), id: \.offset) { _, context in
-                                TimelineDebugText(context)
-                            }
-                        }
-                    }
-
-                    if detail.environmentContext.isEmpty,
-                       detail.visualContext.isEmpty,
-                       !detail.capturedContext.isEmpty {
-                        TimelineDebugSection(title: "采样上下文") {
-                            ForEach(Array(detail.capturedContext.enumerated()), id: \.offset) { _, context in
-                                TimelineDebugText(context)
-                            }
-                        }
-                    }
-
                     TimelineDebugSection(title: "运算返回结果") {
                         TimelineDebugText("评估器：\(detail.evaluator)")
                         TimelineDebugText("任务：\(detail.task)")
@@ -1276,6 +1250,38 @@ private struct TimelineEventDebugPopover: View {
                         }
                         if let target = event.nudgeReturnTarget {
                             ForEach(target.diagnosticLines, id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
+                    }
+
+                    if detail.shouldShowReturnTargetSelection(eventNudge: event.nudge, eventTarget: event.nudgeReturnTarget) {
+                        TimelineDebugSection(title: "提醒目标选择") {
+                            ForEach(detail.formattedReturnTargetSelectionLines(eventTarget: event.nudgeReturnTarget), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
+                    }
+
+                    if !detail.appUsageTimeline.isEmpty {
+                        TimelineDebugSection(title: "前台应用时间轴") {
+                            ForEach(FocusEventDebugDetail.formattedAppUsageTimelineLines(detail.appUsageTimeline), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
+                    }
+
+                    if !detail.targetJudgments.isEmpty {
+                        TimelineDebugSection(title: "独立目标判断") {
+                            ForEach(FocusEventDebugDetail.formattedTargetJudgmentLines(detail.targetJudgments), id: \.self) { line in
+                                TimelineDebugText(line)
+                            }
+                        }
+                    }
+
+                    if !detail.taskRelevantTargets.isEmpty {
+                        TimelineDebugSection(title: "任务相关目标库") {
+                            ForEach(FocusEventDebugDetail.formattedTaskRelevantTargetLines(detail.taskRelevantTargets), id: \.self) { line in
                                 TimelineDebugText(line)
                             }
                         }
@@ -1326,6 +1332,33 @@ private struct TimelineEventDebugPopover: View {
                             TimelineDebugText("页面内容：\(analysis.screenContent)")
                             TimelineDebugText("可见操作：\(analysis.observedActivity)")
                             TimelineDebugText("任务匹配：\(analysis.taskAlignment)")
+                        }
+                    }
+
+                    let environmentContext = detail.environmentContextForDisplay
+                    if !environmentContext.isEmpty {
+                        TimelineDebugSection(title: "环境上下文") {
+                            ForEach(Array(environmentContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
+                        }
+                    }
+
+                    if !detail.visualContext.isEmpty {
+                        TimelineDebugSection(title: "视觉上下文") {
+                            ForEach(Array(detail.visualContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
+                        }
+                    }
+
+                    if environmentContext.isEmpty,
+                       detail.visualContext.isEmpty,
+                       !detail.capturedContext.isEmpty {
+                        TimelineDebugSection(title: "采样上下文") {
+                            ForEach(Array(detail.capturedContext.enumerated()), id: \.offset) { _, context in
+                                TimelineDebugText(context)
+                            }
                         }
                     }
                 } else {

@@ -167,7 +167,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         {"presence":"present","engagement":"engaged","reason":"用户在场。"}
         """)
         let taskEngine = StructuredStubEngine(response: """
-        {"alignment":"aligned","focusTargetID":"T1","reason":"屏幕显示 StillLoop 开发。"}
+        {"alignment":"aligned","focusTargetID":"T2","reason":"屏幕显示 StillLoop 开发。"}
         """)
         let progressEngine = StructuredStubEngine(response: """
         {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示工作推进。"}
@@ -177,7 +177,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             taskAlignmentEngine: taskEngine,
             taskProgressEngine: progressEngine
         )
-        let snapshot = ContextSnapshot(
+        let firstSnapshot = ContextSnapshot(
             timestamp: Date(timeIntervalSince1970: 1),
             activeAppName: "Codex",
             windowTitle: "StillLoop",
@@ -190,11 +190,25 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             cameraMimeType: "image/jpeg",
             cameraData: Data([4, 5, 6])
         )
+        let secondSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 2),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([7, 8, 9]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([10, 11, 12])
+        )
 
         _ = try await evaluator.evaluate(
             task: "开发 StillLoop",
-            textSnapshots: [snapshot],
-            visualSnapshots: [snapshot],
+            textSnapshots: [firstSnapshot, secondSnapshot],
+            visualSnapshots: [firstSnapshot],
+            taskVisualSnapshots: [firstSnapshot, secondSnapshot],
             previousEvents: []
         )
 
@@ -206,8 +220,8 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(taskEngine.lastResponseFormat, .taskAlignmentEvaluation)
         XCTAssertTrue(taskEngine.flattenedPrompt.contains("Current task:"))
-        XCTAssertTrue(taskEngine.flattenedPrompt.contains("targetID: T1"))
-        XCTAssertTrue(taskEngine.lastMessages.containsImageData(Data([1, 2, 3])))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("targetID: T2"))
+        XCTAssertTrue(taskEngine.lastMessages.containsImageData(Data([7, 8, 9])))
         XCTAssertFalse(taskEngine.lastMessages.containsImageData(Data([4, 5, 6])))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("progressing"))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("Progress comparison"))
@@ -219,9 +233,495 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(progressEngine.lastResponseFormat, .taskProgressEvaluation)
         XCTAssertTrue(progressEngine.flattenedPrompt.contains("Progress comparison"))
         XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([1, 2, 3])))
+        XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([7, 8, 9])))
         XCTAssertFalse(progressEngine.lastMessages.containsImageData(Data([4, 5, 6])))
         XCTAssertFalse(progressEngine.flattenedPrompt.localizedCaseInsensitiveContains("physical presence"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera:"))
+    }
+
+    func testSplitEvaluatorSystemPromptsUseExpertRolesAndJSONExamples() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Notes",
+            windowTitle: "产品方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let secondSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 2),
+            activeAppName: "Notes",
+            windowTitle: "产品方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([2]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([102])
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "整理产品方案",
+            textSnapshots: [firstSnapshot, secondSnapshot],
+            visualSnapshots: [secondSnapshot],
+            taskVisualSnapshots: [firstSnapshot, secondSnapshot],
+            previousEvents: []
+        )
+
+        XCTAssertTrue(presenceEngine.flattenedPrompt.contains("You are a focus analysis expert."))
+        XCTAssertTrue(presenceEngine.flattenedPrompt.contains(#"Example output: {"presence":"present","engagement":"engaged","reason":"用户在场并保持参与。"}"#))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("You are a project management expert."))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("evaluating whether the current work matches the stated task"))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains(#"Example output: {"alignment":"aligned","focusTargetID":"T1","reason":"当前屏幕内容支持任务。"}"#))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("You are a project management expert."))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("evaluating task progress from the visible work state"))
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains(#"Example output: {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"只有一张截图，无法比较进展。"}"#))
+    }
+
+    func testPresencePromptSendsOnlyCameraImagesWithoutCameraMetadata() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [snapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(presenceEngine.callCount, 1)
+        XCTAssertTrue(presenceEngine.lastMessages.containsImageData(Data([4, 5, 6])))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("camera sample"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:01Z"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("frame:"))
+    }
+
+    func testPresenceSkipsLLMWhenNoCameraImageDataIsAvailable() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"away","engagement":"disengaged","reason":"不应调用。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"不应调用单图进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: false,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [snapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(presenceEngine.callCount, 0)
+        XCTAssertEqual(result.splitAnalysis?.userPresence?.presence, .unclear)
+        XCTAssertEqual(result.splitAnalysis?.userPresence?.engagement, .unclear)
+        XCTAssertEqual(result.splitAnalysis?.userPresence?.reason, "摄像头照片不可用，未运行用户状态判断。")
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.visualCaptureCount, 0)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.imageCount, 0)
+        XCTAssertEqual(result.presenceRequestDebugMetrics?.responseChars, 0)
+    }
+
+    func testTaskAlignmentUserPromptOrdersTaskJudgmentMetadataThenImage() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示文章页面。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 100),
+            activeAppName: "Google Chrome",
+            activeAppBundleIdentifier: "com.google.Chrome",
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/",
+            processIdentifier: 42,
+            windowNumber: 9001,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([10, 20, 30]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([40, 50, 60])
+        )
+        let matchingJudgment = TaskTargetJudgment(
+            target: ActiveWorkTarget(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                processIdentifier: 42,
+                windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+                browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+                browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/",
+                windowNumber: 9001,
+                spaceIdentifier: nil
+            ),
+            alignment: .aligned,
+            reason: "独立判断认为当前目标支持阅读任务。",
+            judgedAt: Date(timeIntervalSince1970: 90)
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "阅读 中美共同的人工智能焦虑：被未来收割",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            taskVisualSnapshots: [snapshot],
+            previousEvents: [],
+            targetJudgments: [matchingJudgment]
+        )
+
+        let userMessages = taskEngine.lastMessages.filter { $0.role == .user }
+        XCTAssertEqual(userMessages.count, 3)
+        XCTAssertEqual(userMessages[0].textContent.trimmingCharacters(in: .whitespacesAndNewlines), """
+        Current task:
+        阅读 中美共同的人工智能焦虑：被未来收割
+        """)
+        XCTAssertTrue(userMessages[1].textContent.hasPrefix("Target judgment context"))
+        XCTAssertTrue(userMessages[2].textContent.hasPrefix("visual sample[1]"))
+        XCTAssertTrue(userMessages[2].textContent.contains("app: Google Chrome"))
+        XCTAssertTrue(userMessages[2].content.containsImageData(Data([10, 20, 30])))
+    }
+
+    func testTaskAlignmentPromptIncludesAllTargetJudgmentContextEntries() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 100),
+            activeAppName: "Notes",
+            activeAppBundleIdentifier: "com.apple.Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 42,
+            windowNumber: 9001,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+        let judgments = (1...4).map { index in
+            TaskTargetJudgment(
+                target: ActiveWorkTarget(
+                    appName: index == 1 ? "Notes" : "App \(index)",
+                    bundleIdentifier: index == 1 ? "com.apple.Notes" : "com.example.app\(index)",
+                    processIdentifier: index,
+                    windowTitle: index == 1 ? "方案" : "Window \(index)",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    windowNumber: 9000 + index,
+                    spaceIdentifier: nil
+                ),
+                alignment: index == 1 ? .aligned : .unaligned,
+                reason: "判断 \(index)",
+                judgedAt: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+        }
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            taskVisualSnapshots: [snapshot],
+            previousEvents: [],
+            targetJudgments: judgments
+        )
+
+        let prompt = taskEngine.flattenedPrompt
+        XCTAssertTrue(prompt.contains("judgment[1]"))
+        XCTAssertTrue(prompt.contains("judgment[4]"))
+        XCTAssertTrue(prompt.contains("判断 1"))
+        XCTAssertTrue(prompt.contains("判断 4"))
+    }
+
+    func testTaskProgressPromptOrdersTaskThenSelectedScreenshotMetadataAndImages() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T3","reason":"末图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshots = (1...5).map { index in
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
+                activeAppName: "App \(index)",
+                windowTitle: "Window \(index)",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: true,
+                cameraFrameAvailable: true,
+                screenshotMimeType: "image/jpeg",
+                screenshotData: Data([UInt8(index)]),
+                cameraMimeType: "image/jpeg",
+                cameraData: Data([UInt8(100 + index)])
+            )
+        }
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: snapshots,
+            visualSnapshots: [snapshots.last!],
+            taskVisualSnapshots: snapshots,
+            previousEvents: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 0), state: .focused, context: "history", nudge: nil)
+            ]
+        )
+
+        let userMessages = progressEngine.lastMessages.filter { $0.role == .user }
+        XCTAssertEqual(userMessages.count, 4)
+        XCTAssertEqual(userMessages[0].textContent.trimmingCharacters(in: .whitespacesAndNewlines), """
+        Current task:
+        整理方案
+        """)
+        XCTAssertTrue(userMessages[1].textContent.hasPrefix("visual sample[1]"))
+        XCTAssertTrue(userMessages[1].textContent.contains("time: 1970-01-01T00:00:01Z"))
+        XCTAssertTrue(userMessages[1].content.containsImageData(Data([1])))
+        XCTAssertTrue(userMessages[2].textContent.hasPrefix("visual sample[2]"))
+        XCTAssertTrue(userMessages[2].textContent.contains("time: 1970-01-01T00:00:03Z"))
+        XCTAssertTrue(userMessages[2].content.containsImageData(Data([3])))
+        XCTAssertTrue(userMessages[3].textContent.hasPrefix("visual sample[3]"))
+        XCTAssertTrue(userMessages[3].textContent.contains("time: 1970-01-01T00:00:05Z"))
+        XCTAssertTrue(userMessages[3].content.containsImageData(Data([5])))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("Recent state log"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("Text timeline"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("history"))
+    }
+
+    func testTaskProgressSkipsLLMWhenOnlyOneScreenshotIsAvailable() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"stalled","comparisonBasis":"same_task_no_visible_change","reason":"不应调用单图进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [snapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.progress, .unclear)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.comparisonBasis, "single_screenshot")
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.reason, "只有一张截图，无法比较进展。")
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualCaptureCount, 1)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.imageCount, 0)
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.responseChars, 0)
+    }
+
+    func testTaskAlignmentPromptIncludesMatchingTargetJudgmentAsContextOnly() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示文章页面。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断进展。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 100),
+            activeAppName: "Google Chrome",
+            activeAppBundleIdentifier: "com.google.Chrome",
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/?utm_source=test#comments",
+            processIdentifier: 42,
+            windowNumber: 9001,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 2, 3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([4, 5, 6])
+        )
+        let matchingJudgment = TaskTargetJudgment(
+            target: ActiveWorkTarget(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                processIdentifier: 42,
+                windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+                browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+                browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/?utm_source=test#comments",
+                windowNumber: 9001,
+                spaceIdentifier: nil
+            ),
+            alignment: .unaligned,
+            reason: "独立判断认为当前目标不支持阅读任务。",
+            judgedAt: Date(timeIntervalSince1970: 90)
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "阅读 中美共同的人工智能焦虑：被未来收割",
+            textSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            taskVisualSnapshots: [snapshot],
+            previousEvents: [],
+            targetJudgments: [matchingJudgment]
+        )
+
+        let prompt = taskEngine.flattenedPrompt
+        XCTAssertTrue(prompt.contains("Target judgment context"))
+        XCTAssertTrue(prompt.contains("context only"))
+        XCTAssertTrue(prompt.contains("主评估仍以当前截图和当前 metadata 为准"))
+        XCTAssertTrue(prompt.contains("alignment: unaligned"))
+        XCTAssertTrue(prompt.contains("独立判断认为当前目标不支持阅读任务。"))
+        XCTAssertTrue(prompt.contains("https://cn.nytimes.com/business/20260520/ai-anxiety/"))
+        XCTAssertFalse(prompt.contains("utm_source"))
+        XCTAssertFalse(prompt.contains("#comments"))
+    }
+
+    func testTaskAlignmentPromptOmitsTargetJudgmentContextWhenEmpty() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"当前截图显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"unclear","comparisonBasis":"single_screenshot","reason":"单帧无法判断。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            recentSnapshots: [
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    activeAppName: "Notes",
+                    windowTitle: "方案",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true
+                )
+            ],
+            previousEvents: []
+        )
+
+        XCTAssertFalse(taskEngine.flattenedPrompt.contains("Target judgment context"))
     }
 
     func testSplitEvaluatorUsesSeparateTaskVisualSnapshotsForScreenProgress() async throws {
@@ -315,7 +815,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("Progress comparison"))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:01Z"))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("App names, prior focused events, and capture metadata are not enough for aligned."))
-        XCTAssertTrue(taskEngine.flattenedPrompt.contains("Specific app, window, browser title, or URL metadata can support aligned when it matches the task and current screenshots do not contradict it."))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("Matching app, title, or URL metadata can support aligned when the screenshot does not contradict it."))
         XCTAssertTrue(taskEngine.flattenedPrompt.contains("Generic UI stability or coherence is not task evidence."))
         XCTAssertFalse(taskEngine.flattenedPrompt.contains("timeline[1]"))
         XCTAssertFalse(taskEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera sample"))
@@ -325,9 +825,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(progressEngine.lastMessages.containsImageData(Data([3, 3, 3])))
         XCTAssertFalse(progressEngine.lastMessages.containsImageData(Data([204])))
         XCTAssertTrue(progressEngine.flattenedPrompt.contains("Progress comparison"))
-        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[1]"))
-        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[2]"))
-        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[3]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[2]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[3]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:02Z"))
         XCTAssertFalse(progressEngine.flattenedPrompt.localizedCaseInsensitiveContains("camera sample"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera:"))
     }
@@ -373,6 +874,142 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(result.shouldNudge)
         XCTAssertEqual(result.splitAnalysis?.taskProgress?.progress, .unclear)
         XCTAssertEqual(result.splitAnalysis?.taskProgress?.comparisonBasis, "single_screenshot")
+    }
+
+    func testReadingStaticPageShortWindowDoesNotBecomeStuckFromSameScreenshot() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T2","reason":"浏览器标题和页面内容匹配阅读任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"stalled","comparisonBasis":"same_task_no_visible_change","reason":"两张文章截图内容和布局相同。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 100),
+            activeAppName: "Google Chrome",
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1, 1, 1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let secondSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 108),
+            activeAppName: "Google Chrome",
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/",
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([2, 2, 2]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([102])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "阅读 中美共同的人工智能焦虑：被未来收割",
+            textSnapshots: [firstSnapshot, secondSnapshot],
+            visualSnapshots: [secondSnapshot],
+            taskVisualSnapshots: [firstSnapshot, secondSnapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .focused)
+        XCTAssertFalse(result.shouldNudge)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.progress, .unclear)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.comparisonBasis, "reading_static_no_visible_change")
+        XCTAssertTrue(progressEngine.flattenedPrompt.contains("For reading or studying on a relevant static page, unchanged screenshots over a short window can mean the user is reading."))
+    }
+
+    func testProgressPromptOmitsHistoryAndTimelineAfterCurrentTask() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T3","reason":"末图显示任务页面。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 10),
+            activeAppName: "App One",
+            windowTitle: "First",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let middleSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 20),
+            activeAppName: "App Two",
+            windowTitle: "Middle metadata only",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: false,
+            cameraFrameAvailable: false
+        )
+        let lastSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 30),
+            activeAppName: "App Three",
+            windowTitle: "Last",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([3]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([103])
+        )
+        let previousEvents = (1...6).map { index in
+            FocusEvent(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
+                state: .focused,
+                context: "history-\(index)",
+                nudge: nil
+            )
+        }
+
+        _ = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: [firstSnapshot, middleSnapshot, lastSnapshot],
+            visualSnapshots: [lastSnapshot],
+            taskVisualSnapshots: [firstSnapshot, lastSnapshot],
+            previousEvents: previousEvents
+        )
+
+        let prompt = progressEngine.flattenedPrompt
+        XCTAssertFalse(prompt.contains("history-1"))
+        XCTAssertFalse(prompt.contains("history-2"))
+        XCTAssertFalse(prompt.contains("history-3"))
+        XCTAssertFalse(prompt.contains("history-6"))
+        XCTAssertFalse(prompt.contains("Text timeline: selected current captures"))
+        XCTAssertFalse(prompt.contains("timeline[1]"))
+        XCTAssertTrue(prompt.contains("visual sample[1]\ntargetID: T2\ntime: 1970-01-01T00:00:10Z"))
+        XCTAssertTrue(prompt.contains("visual sample[2]\ntargetID: T3\ntime: 1970-01-01T00:00:30Z"))
+        XCTAssertFalse(prompt.contains("Middle metadata only"))
     }
 
     func testDecodedTaskAlignmentTrimsEmptyFocusTargetID() throws {
@@ -435,6 +1072,59 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.previousEventCount, 1)
     }
 
+    func testProgressFailureIsKeptOnSuccessfulSplitResult() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":null,"reason":"屏幕显示 StillLoop 开发。"}
+        """)
+        let progressEngine = FailingStructuredStubEngine(error: LLMFocusEvaluationError(kind: .jsonParse))
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let secondSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 2),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([2]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([102])
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "开发 StillLoop",
+            textSnapshots: [firstSnapshot, secondSnapshot],
+            visualSnapshots: [secondSnapshot],
+            taskVisualSnapshots: [firstSnapshot, secondSnapshot],
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.taskProgressFailureKind, .jsonParse)
+        XCTAssertEqual(result.splitAnalysis?.taskProgress?.comparisonBasis, "progress_evaluation_failed")
+        XCTAssertEqual(result.taskProgressRequestDebugMetrics?.responseChars, 0)
+    }
+
     func testSplitEvaluatorRunsPresenceAlignmentAndProgressRequestsConcurrently() async throws {
         let presenceEngine = DelayedStructuredStubEngine(
             response: #"{"presence":"present","engagement":"engaged","reason":"用户在场。"}"#,
@@ -455,19 +1145,38 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         let startedAt = Date()
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([1]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([101])
+        )
+        let secondSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 2),
+            activeAppName: "Notes",
+            windowTitle: "方案",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([2]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([102])
+        )
+
         _ = try await evaluator.evaluate(
             task: "整理方案",
-            recentSnapshots: [
-                ContextSnapshot(
-                    timestamp: Date(timeIntervalSince1970: 1),
-                    activeAppName: "Notes",
-                    windowTitle: "方案",
-                    browserTitle: nil,
-                    browserURL: nil,
-                    screenshotAvailable: false,
-                    cameraFrameAvailable: false
-                )
-            ],
+            textSnapshots: [firstSnapshot, secondSnapshot],
+            visualSnapshots: [secondSnapshot],
+            taskVisualSnapshots: [firstSnapshot, secondSnapshot],
             previousEvents: []
         )
 
@@ -1834,17 +2543,20 @@ private final class StructuredStubEngine: StructuredLocalLLMEngine {
     let response: String
     private(set) var lastMessages: [LLMMessage] = []
     private(set) var lastResponseFormat: LLMResponseFormat?
+    private(set) var callCount = 0
 
     init(response: String) {
         self.response = response
     }
 
     func complete(messages: [LLMMessage]) async throws -> String {
+        callCount += 1
         lastMessages = messages
         return response
     }
 
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        callCount += 1
         lastMessages = messages
         lastResponseFormat = responseFormat
         return response
@@ -1888,5 +2600,27 @@ private extension Array where Element == LLMMessage {
                 return false
             }
         }
+    }
+}
+
+private extension Array where Element == LLMMessage.Content {
+    func containsImageData(_ expectedData: Data) -> Bool {
+        contains { content in
+            if case .image(_, let data) = content {
+                return data == expectedData
+            }
+            return false
+        }
+    }
+}
+
+private extension LLMMessage {
+    var textContent: String {
+        content.compactMap { content in
+            if case .text(let text) = content {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n")
     }
 }

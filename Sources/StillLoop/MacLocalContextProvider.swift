@@ -80,6 +80,7 @@ struct FocusedWindow: Equatable {
     var title: String
     var processIdentifier: Int? = nil
     var windowNumber: Int? = nil
+    var spaceIdentifier: String? = nil
 }
 
 protocol FocusedWindowReading {
@@ -95,26 +96,7 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
             return FocusedWindow(appName: frontmostApp, bundleIdentifier: frontmostBundleIdentifier, title: "当前窗口")
         }
 
-        let visibleWindows = windows.compactMap { window -> FocusedWindow? in
-            guard
-                let ownerName = window[kCGWindowOwnerName as String] as? String,
-                let layer = window[kCGWindowLayer as String] as? Int,
-                layer == 0
-            else {
-                return nil
-            }
-            let bundleIdentifier = Self.bundleIdentifier(for: window)
-            let processIdentifier = Self.processIdentifier(for: window)
-            let windowNumber = Self.windowNumber(for: window)
-            let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return FocusedWindow(
-                appName: ownerName,
-                bundleIdentifier: bundleIdentifier,
-                title: title?.isEmpty == false ? title! : "当前窗口",
-                processIdentifier: processIdentifier,
-                windowNumber: windowNumber
-            )
-        }
+        let visibleWindows = Self.visibleWindows(from: windows)
 
         if !Self.isStillLoopAppName(frontmostApp) {
             if var focusedWindow = visibleWindows.first(where: { $0.appName == frontmostApp }) {
@@ -140,8 +122,60 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
         )
     }
 
+    func rawFrontmostWindow() -> FocusedWindow {
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        let frontmostApp = frontmostApplication?.localizedName ?? "Unknown"
+        let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+        let frontmostProcessIdentifier = frontmostApplication.map { Int($0.processIdentifier) }
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return FocusedWindow(
+                appName: frontmostApp,
+                bundleIdentifier: frontmostBundleIdentifier,
+                title: "当前窗口",
+                processIdentifier: frontmostProcessIdentifier
+            )
+        }
+        let visibleWindows = Self.visibleWindows(from: windows)
+        if var focusedWindow = visibleWindows.first(where: { $0.processIdentifier == frontmostProcessIdentifier || $0.appName == frontmostApp }) {
+            focusedWindow.bundleIdentifier = focusedWindow.bundleIdentifier ?? frontmostBundleIdentifier
+            focusedWindow.processIdentifier = focusedWindow.processIdentifier ?? frontmostProcessIdentifier
+            return focusedWindow
+        }
+        return FocusedWindow(
+            appName: frontmostApp,
+            bundleIdentifier: frontmostBundleIdentifier,
+            title: "当前窗口",
+            processIdentifier: frontmostProcessIdentifier,
+            windowNumber: nil
+        )
+    }
+
     static func isStillLoopAppName(_ appName: String) -> Bool {
         appName == "StillLoop" || appName == "StillLoop Dev"
+    }
+
+    private static func visibleWindows(from windows: [[String: Any]]) -> [FocusedWindow] {
+        windows.compactMap { window -> FocusedWindow? in
+            guard
+                let ownerName = window[kCGWindowOwnerName as String] as? String,
+                let layer = window[kCGWindowLayer as String] as? Int,
+                layer == 0
+            else {
+                return nil
+            }
+            let bundleIdentifier = Self.bundleIdentifier(for: window)
+            let processIdentifier = Self.processIdentifier(for: window)
+            let windowNumber = Self.windowNumber(for: window)
+            let title = (window[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return FocusedWindow(
+                appName: ownerName,
+                bundleIdentifier: bundleIdentifier,
+                title: title?.isEmpty == false ? title! : "当前窗口",
+                processIdentifier: processIdentifier,
+                windowNumber: windowNumber,
+                spaceIdentifier: Self.spaceIdentifier(for: window)
+            )
+        }
     }
 
     private static func bundleIdentifier(for window: [String: Any]) -> String? {
@@ -172,6 +206,80 @@ struct CGWindowFocusedWindowReader: FocusedWindowReading {
             return windowNumber.intValue
         }
         return nil
+    }
+
+    private static func spaceIdentifier(for window: [String: Any]) -> String? {
+        let rawSpace = window["kCGWindowWorkspace"] ?? window["Workspace"]
+        if let space = rawSpace as? String {
+            let trimmed = space.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let space = rawSpace as? Int {
+            return String(space)
+        }
+        if let space = rawSpace as? NSNumber {
+            return space.stringValue
+        }
+        return nil
+    }
+}
+
+struct ActiveWorkTargetCapture: Equatable {
+    var target: ActiveWorkTarget
+    var screenshot: TaskRelevantTargetScreenshot?
+}
+
+protocol ActiveWorkTargetProviding {
+    func currentActiveWorkTarget() async -> ActiveWorkTargetCapture?
+}
+
+struct MacActiveWorkTargetProvider: ActiveWorkTargetProviding {
+    private let focusedWindowReader: CGWindowFocusedWindowReader
+    private let browserMetadataReader: BrowserTabMetadataReading
+    private let visualCapture: VisualCapture
+    private let browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting
+
+    init(
+        focusedWindowReader: CGWindowFocusedWindowReader = CGWindowFocusedWindowReader(),
+        browserMetadataReader: BrowserTabMetadataReading = AppleScriptBrowserTabMetadataReader(),
+        visualCapture: VisualCapture = SystemVisualCapture(),
+        browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting = NoBrowserAutomationNoticePresenter()
+    ) {
+        self.focusedWindowReader = focusedWindowReader
+        self.browserMetadataReader = browserMetadataReader
+        self.visualCapture = visualCapture
+        self.browserAutomationNoticePresenter = browserAutomationNoticePresenter
+    }
+
+    func currentActiveWorkTarget() async -> ActiveWorkTargetCapture? {
+        let focusedWindow = focusedWindowReader.rawFrontmostWindow()
+        await browserAutomationNoticePresenter.presentBrowserAutomationNoticeIfNeeded(
+            for: focusedWindow.appName,
+            bundleIdentifier: focusedWindow.bundleIdentifier
+        )
+        let browserMetadata = browserMetadataReader.currentTabMetadata(for: focusedWindow.appName)
+        let screenshot = visualCapture.captureCompressedScreenshot().map {
+            TaskRelevantTargetScreenshot(
+                width: $0.width,
+                height: $0.height,
+                compressedBytes: $0.compressedBytes,
+                mimeType: $0.mimeType,
+                data: $0.data
+            )
+        }
+        return ActiveWorkTargetCapture(
+            target: ActiveWorkTarget(
+                appName: focusedWindow.appName,
+                bundleIdentifier: focusedWindow.bundleIdentifier,
+                processIdentifier: focusedWindow.processIdentifier,
+                windowTitle: focusedWindow.title,
+                browserTitle: browserMetadata?.title,
+                browserURL: browserMetadata?.url,
+                windowNumber: focusedWindow.windowNumber,
+                spaceIdentifier: focusedWindow.spaceIdentifier
+            ),
+            screenshot: screenshot
+        )
     }
 }
 

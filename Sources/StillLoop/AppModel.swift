@@ -270,6 +270,7 @@ final class AppModel: ObservableObject {
     let normalEvaluationCooldownSeconds: TimeInterval = 10
     let powerSavingEvaluationCooldownSeconds: TimeInterval = 60
     nonisolated static let evaluationContextWindowSeconds: TimeInterval = 60
+    nonisolated static let taskProgressVisualSampleMaxCount = 3
 
     var currentStateDisplayName: String {
         isAwaitingInitialEvaluation ? "判断中" : currentState.displayName
@@ -292,12 +293,15 @@ final class AppModel: ObservableObject {
     private let telemetry: StillLoopTelemetryRecording
     private let diagnosticLogger: DiagnosticLogging
     private let promptCacheProbeEnabled: Bool
+    private let activeWorkTargetProvider: ActiveWorkTargetProviding
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var shouldValidateBundledRuntimeForActiveRun = false
     private var unanalyzedSnapshots: [ContextSnapshot] = []
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
+    private var targetMonitorTask: Task<Void, Never>?
+    private var targetJudgmentTask: Task<Void, Never>?
     private var reviewCommentTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
@@ -308,6 +312,8 @@ final class AppModel: ObservableObject {
     private var bundledModelRuntimeUnavailableStatus: String?
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
+    private var targetMonitorState = TaskRelevantTargetMonitorState()
+    private var targetJudgmentInFlightTarget: ActiveWorkTarget?
     var startPermissionDecisionOverride: StartPermissionDecision?
 
     private enum DefaultsKey {
@@ -566,7 +572,8 @@ final class AppModel: ObservableObject {
         devicePowerStatusProvider: DevicePowerStatusProviding? = nil,
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        returnTargetOpener: FocusReturnTargetOpening? = nil
+        returnTargetOpener: FocusReturnTargetOpening? = nil,
+        activeWorkTargetProvider: ActiveWorkTargetProviding? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
@@ -588,6 +595,9 @@ final class AppModel: ObservableObject {
         self.browserAutomationNoticePresenter = BrowserAutomationNoticePresenter(
             userDefaults: userDefaults,
             overlayPresenter: nudgeOverlayPresenter
+        )
+        self.activeWorkTargetProvider = activeWorkTargetProvider ?? MacActiveWorkTargetProvider(
+            browserAutomationNoticePresenter: self.browserAutomationNoticePresenter
         )
         self.reviewCommentGeneratorOverride = reviewCommentGenerator
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
@@ -1138,10 +1148,12 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
+        startTargetMonitorLoop()
     }
 
     func pauseSession() {
         guard status == .running else { return }
+        closeActiveWorkTargetInterval(at: Date())
         status = .paused
         postStatusItemMode(.paused)
         cancelSessionLoops()
@@ -1163,6 +1175,7 @@ final class AppModel: ObservableObject {
         postStatusItemMode(isAwaitingInitialEvaluation ? .analyzing : mode(for: currentState))
         startCaptureLoop()
         startEvaluationLoop()
+        startTargetMonitorLoop()
         telemetry.record(
             .focusSessionResumed(
                 modelSource: modelSetupSelection.source,
@@ -1173,6 +1186,7 @@ final class AppModel: ObservableObject {
     }
 
     func endSession(feedback: SessionFeedback? = nil) {
+        closeActiveWorkTargetInterval(at: Date())
         cancelSessionLoops()
         markBundledModelRuntimeWarmIfRunning()
         provider = nil
@@ -1277,6 +1291,7 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
+        startTargetMonitorLoop()
         telemetry.record(
             .focusSessionResumed(
                 modelSource: modelSetupSelection.source,
@@ -1287,7 +1302,13 @@ final class AppModel: ObservableObject {
     }
 
     func openLastFocusedReturnTarget() -> Bool {
-        guard let target = latestFocusedReturnTargetForCurrentSession() ?? lastFocusedReturnTarget else { return false }
+        let validLastFocusedReturnTarget = lastFocusedReturnTarget?.isEligibleReturnTarget == true
+            ? lastFocusedReturnTarget
+            : nil
+        guard let target = latestTaskRelevantReturnTargetForCurrentSession()
+            ?? latestFocusedReturnTargetForCurrentSession()
+            ?? validLastFocusedReturnTarget
+        else { return false }
         lastFocusedReturnTarget = target
         return returnTargetOpener.open(target)
     }
@@ -1652,6 +1673,7 @@ final class AppModel: ObservableObject {
 
     func suspendForSystemInactivity(now: Date = Date()) {
         guard status == .running else { return }
+        closeActiveWorkTargetInterval(at: now)
         isSuspendedForSystemInactivity = true
         systemSuspendedAt = now
         elapsed = activeElapsed(at: now)
@@ -1696,6 +1718,7 @@ final class AppModel: ObservableObject {
         postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
+        startTargetMonitorLoop()
         telemetry.record(
             .focusSessionResumed(
                 modelSource: modelSetupSelection.source,
@@ -2051,6 +2074,14 @@ final class AppModel: ObservableObject {
         captureTask = nil
         evaluationTask?.cancel()
         evaluationTask = nil
+        targetMonitorTask?.cancel()
+        targetMonitorTask = nil
+        targetJudgmentTask?.cancel()
+        targetJudgmentTask = nil
+        if let targetJudgmentInFlightTarget {
+            targetMonitorState.markJudgmentFinished(for: targetJudgmentInFlightTarget)
+        }
+        targetJudgmentInFlightTarget = nil
     }
 
     func stopBundledModelRuntime() {
@@ -2092,9 +2123,169 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func startTargetMonitorLoop() {
+        targetMonitorTask?.cancel()
+        targetMonitorState = TaskRelevantTargetMonitorState()
+        targetMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.pollActiveWorkTarget()
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func pollActiveWorkTarget() async {
+        guard status == .running,
+              let session = currentSession,
+              let capture = await activeWorkTargetProvider.currentActiveWorkTarget()
+        else { return }
+        let now = Date()
+        let sessionID = session.id
+        recordActiveWorkTarget(capture.target, at: now)
+        guard capture.target.isTaskRelevantCandidate else { return }
+        guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, let latestSession = currentSession else { return }
+        let action = targetMonitorState.observe(target: capture.target, at: now, session: latestSession)
+        switch action {
+        case .none:
+            return
+        case .refresh(let target):
+            guard var session = currentSession else { return }
+            session.refreshTaskRelevantTarget(target, foregroundAt: now)
+            currentSession = session
+        case .judge(let target):
+            startTaskRelevantTargetJudgment(
+                target: target,
+                screenshot: capture.screenshot,
+                foregroundAt: now,
+                sessionID: sessionID
+            )
+        }
+    }
+
+    func recordActiveWorkTarget(_ target: ActiveWorkTarget, at date: Date) {
+        guard var session = currentSession else { return }
+        if session.appUsageIntervals.last?.target.identityKey == target.identityKey,
+           session.appUsageIntervals.last?.endedAt == nil {
+            return
+        }
+        if var last = session.appUsageIntervals.last, last.endedAt == nil {
+            last.endedAt = date
+            session.appUsageIntervals[session.appUsageIntervals.count - 1] = last
+        }
+        session.appUsageIntervals.append(
+            AppUsageInterval(startedAt: date, endedAt: nil, target: target)
+        )
+        currentSession = session
+    }
+
+    func closeActiveWorkTargetInterval(at date: Date) {
+        guard var session = currentSession,
+              var last = session.appUsageIntervals.last,
+              last.endedAt == nil
+        else { return }
+        last.endedAt = date
+        session.appUsageIntervals[session.appUsageIntervals.count - 1] = last
+        currentSession = session
+    }
+
+    private func startTaskRelevantTargetJudgment(
+        target: ActiveWorkTarget,
+        screenshot: TaskRelevantTargetScreenshot?,
+        foregroundAt: Date,
+        sessionID: UUID
+    ) {
+        if let targetJudgmentInFlightTarget {
+            targetMonitorState.markJudgmentFinished(for: targetJudgmentInFlightTarget)
+        }
+        targetJudgmentTask?.cancel()
+        targetMonitorState.markJudgmentStarted(for: target)
+        targetJudgmentInFlightTarget = target
+        targetJudgmentTask = Task { [weak self] in
+            await self?.runTaskRelevantTargetJudgment(
+                target: target,
+                screenshot: screenshot,
+                foregroundAt: foregroundAt,
+                sessionID: sessionID
+            )
+        }
+    }
+
+    private func runTaskRelevantTargetJudgment(
+        target: ActiveWorkTarget,
+        screenshot: TaskRelevantTargetScreenshot?,
+        foregroundAt: Date,
+        sessionID: UUID
+    ) async {
+        defer {
+            targetMonitorState.markJudgmentFinished(for: target)
+            if targetJudgmentInFlightTarget?.identityKey == target.identityKey {
+                targetJudgmentInFlightTarget = nil
+                targetJudgmentTask = nil
+            }
+        }
+        guard status == .running,
+              currentSession?.id == sessionID,
+              let engine = await taskRelevantTargetEngine()
+        else { return }
+        do {
+            let result = try await TaskRelevantTargetEvaluator(engine: engine).evaluate(
+                task: currentSession?.task ?? "",
+                target: target,
+                screenshot: screenshot
+            )
+            guard !Task.isCancelled,
+                  status == .running,
+                  currentSession?.id == sessionID,
+                  var session = currentSession
+            else { return }
+            session.recordTargetJudgment(
+                target: target,
+                alignment: result.alignment,
+                reason: result.reason,
+                judgedAt: Date(),
+                foregroundAt: foregroundAt
+            )
+            currentSession = session
+            diagnosticLogger.record(
+                "target.judgment.completed",
+                fields: Self.targetJudgmentDiagnosticFields(
+                    sessionID: sessionID,
+                    target: target,
+                    result: result
+                )
+            )
+        } catch {
+            diagnosticLogger.record(
+                "target.judgment.failed",
+                fields: [
+                    "sessionID": .string(sessionID.uuidString),
+                    "target": .string(target.displayText),
+                    "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
+                ]
+            )
+        }
+    }
+
+    private func taskRelevantTargetEngine() async -> LocalLLMEngine? {
+        if modelSetupSelection.source == .bundled {
+            guard await prepareBundledModelForEvaluation() else { return nil }
+            return llmEngine
+        }
+        return llmEngine
+    }
+
     func evaluationDelay(after elapsed: TimeInterval, powerStatus: DevicePowerStatus) -> TimeInterval {
         let cadenceDelay = max(0, targetEvaluationCadenceSeconds - elapsed)
         return max(cadenceDelay, evaluationCooldownSeconds(for: powerStatus))
+    }
+
+    func shouldDeferInitialEvaluation(for snapshots: [ContextSnapshot], now: Date = Date()) -> Bool {
+        guard let firstSnapshot = snapshots.min(by: { $0.timestamp < $1.timestamp }) else {
+            return false
+        }
+        return now.timeIntervalSince(firstSnapshot.timestamp) < targetEvaluationCadenceSeconds
     }
 
     private func evaluationCooldownSeconds(for powerStatus: DevicePowerStatus) -> TimeInterval {
@@ -2140,6 +2331,12 @@ final class AppModel: ObservableObject {
             return false
         }
         let allPendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
+        let evaluationWindowEnd = Date()
+        if isAwaitingInitialEvaluation, shouldDeferInitialEvaluation(for: allPendingSnapshots, now: evaluationWindowEnd) {
+            analysisPhase = .contextReady
+            evaluationLoopDescription = "等待首轮上下文稳定（\(Int(targetEvaluationCadenceSeconds)) 秒）"
+            return false
+        }
         let pendingCount = allPendingSnapshots.count
         let contextSnapshots = Self.evaluationContextSnapshots(from: allPendingSnapshots)
         let contextCount = contextSnapshots.count
@@ -2150,7 +2347,12 @@ final class AppModel: ObservableObject {
             visualSampleLimit: visualSampleLimit
         )
         let presenceVisualSnapshots = SnapshotSampler.select(contextSnapshots, limit: visualSampleLimit)
-        let taskVisualSnapshots = SnapshotSampler.selectEvenlySpaced(contextSnapshots, maxCount: 3)
+        let taskVisualSnapshots = SnapshotSampler.selectEvenlySpaced(
+            contextSnapshots,
+            maxCount: Self.taskProgressVisualSampleMaxCount
+        )
+        let appUsageIntervals = currentSession?.appUsageIntervals ?? []
+        let targetJudgments = session.targetJudgments
         let alignmentVisualSampleCount = SnapshotSampler.select(taskVisualSnapshots, limit: 1).count
         let progressVisualSampleCount = taskVisualSnapshots.count
         diagnosticLogger.record(
@@ -2183,7 +2385,10 @@ final class AppModel: ObservableObject {
             taskVisualSnapshots: taskVisualSnapshots,
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit,
-            previousEvents: session.events
+            previousEvents: session.events,
+            appUsageIntervals: appUsageIntervals,
+            evaluationWindowEnd: evaluationWindowEnd,
+            targetJudgments: targetJudgments
         )
         diagnosticLogger.record(
             "evaluation.completed",
@@ -2206,7 +2411,7 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         currentState = result.state
         isAwaitingInitialEvaluation = false
-        if let returnTarget = result.returnTarget {
+        if let returnTarget = result.returnTarget, returnTarget.isEligibleReturnTarget {
             lastFocusedReturnTarget = returnTarget
         }
         postStatusItemMode(mode(for: result.state))
@@ -2214,7 +2419,8 @@ final class AppModel: ObservableObject {
         analysisPhase = .presenting(result.state, nudge)
         try? await Task.sleep(for: .milliseconds(850))
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, var latestSession = currentSession else { return false }
-        let nudgeReturnTarget = Self.nudgeReturnTarget(for: nudge, in: latestSession)
+        let nudgeReturnTargetDecision = Self.nudgeReturnTargetDecision(for: nudge, in: latestSession)
+        let nudgeReturnTarget = nudgeReturnTargetDecision.target
         if let nudge {
             lastNudge = nudge
             telemetry.record(
@@ -2241,7 +2447,7 @@ final class AppModel: ObservableObject {
                 state: result.state,
                 context: context,
                 nudge: nudge,
-                returnTarget: result.returnTarget,
+                returnTarget: result.returnTarget?.isEligibleReturnTarget == true ? result.returnTarget : nil,
                 nudgeReturnTarget: nudgeReturnTarget,
                 debugDetail: FocusEventDebugDetail.make(
                     task: session.task,
@@ -2249,6 +2455,11 @@ final class AppModel: ObservableObject {
                     environmentSnapshots: contextSnapshots,
                     visualSnapshots: taskVisualSnapshots,
                     previousEvents: session.events,
+                    appUsageIntervals: appUsageIntervals,
+                    evaluationWindowEnd: evaluationWindowEnd,
+                    targetJudgments: targetJudgments,
+                    taskRelevantTargets: latestSession.taskRelevantTargets,
+                    nudgeReturnTargetSource: nudgeReturnTargetDecision.source,
                     result: result
                 )
             ),
@@ -2268,9 +2479,26 @@ final class AppModel: ObservableObject {
         return Self.latestFocusedReturnTarget(in: currentSession)
     }
 
+    private func latestTaskRelevantReturnTargetForCurrentSession() -> FocusReturnTarget? {
+        currentSession?.latestTaskRelevantReturnTarget()
+    }
+
     nonisolated static func nudgeReturnTarget(for nudge: String?, in session: FocusSession) -> FocusReturnTarget? {
-        guard nudge != nil else { return nil }
-        return latestFocusedReturnTarget(in: session)
+        nudgeReturnTargetDecision(for: nudge, in: session).target
+    }
+
+    nonisolated static func nudgeReturnTargetDecision(
+        for nudge: String?,
+        in session: FocusSession
+    ) -> (target: FocusReturnTarget?, source: FocusReturnTargetSource?) {
+        guard nudge != nil else { return (nil, nil) }
+        if let target = session.latestTaskRelevantReturnTarget() {
+            return (target, .taskRelevantTarget)
+        }
+        if let target = latestFocusedReturnTarget(in: session) {
+            return (target, .focusedEventFallback)
+        }
+        return (nil, nil)
     }
 
     nonisolated static func latestFocusedReturnTarget(in session: FocusSession) -> FocusReturnTarget? {
@@ -2278,6 +2506,7 @@ final class AppModel: ObservableObject {
             .filter { $0.state == .focused }
             .compactMap { event -> (Date, FocusReturnTarget)? in
                 guard let returnTarget = event.returnTarget else { return nil }
+                guard returnTarget.isEligibleReturnTarget else { return nil }
                 return (event.timestamp, returnTarget)
             }
             .max { lhs, rhs in lhs.0 < rhs.0 }?
@@ -2472,13 +2701,19 @@ final class AppModel: ObservableObject {
         taskVisualSnapshots: [ContextSnapshot]? = nil,
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil,
-        previousEvents: [FocusEvent]
+        previousEvents: [FocusEvent],
+        appUsageIntervals: [AppUsageInterval] = [],
+        evaluationWindowEnd: Date? = nil,
+        targetJudgments: [TaskTargetJudgment] = []
     ) async -> LLMEvaluationResult {
         let resolvedPowerStatus = powerStatus ?? devicePowerStatusProvider.currentDevicePowerStatus()
         let resolvedVisualSampleLimit = visualSampleLimit
             ?? resolvedPowerStatus.visualSampleLimit(defaultLimit: SnapshotSampler.defaultLimit)
         let visualSnapshots = visualSnapshots ?? SnapshotSampler.select(snapshots, limit: resolvedVisualSampleLimit)
-        let taskProgressVisualSnapshots = taskVisualSnapshots ?? SnapshotSampler.selectEvenlySpaced(snapshots, maxCount: 3)
+        let taskProgressVisualSnapshots = taskVisualSnapshots ?? SnapshotSampler.selectEvenlySpaced(
+            snapshots,
+            maxCount: Self.taskProgressVisualSampleMaxCount
+        )
         let taskAlignmentVisualSnapshots = SnapshotSampler.select(taskProgressVisualSnapshots, limit: 1)
         let taskAlignmentVisualSampleLimit = taskAlignmentVisualSnapshots.count
         let taskProgressVisualSampleLimit = taskProgressVisualSnapshots.count
@@ -2523,7 +2758,10 @@ final class AppModel: ObservableObject {
                         taskVisualSampleLimit: taskProgressVisualSampleLimit,
                         alignmentVisualSampleCount: taskAlignmentVisualSampleLimit,
                         progressVisualSampleCount: taskProgressVisualSampleLimit,
-                        previousEvents: previousEvents
+                        previousEvents: previousEvents,
+                        appUsageIntervals: appUsageIntervals,
+                        evaluationWindowEnd: evaluationWindowEnd,
+                        targetJudgments: targetJudgments
                     )
                 } catch {
                     let failure = Self.modelInferenceFailurePresentation(for: error)
@@ -2600,7 +2838,10 @@ final class AppModel: ObservableObject {
                     previousEvents: previousEvents,
                     powerStatus: resolvedPowerStatus,
                     visualSampleLimit: resolvedVisualSampleLimit,
-                    taskVisualSampleLimit: taskProgressVisualSampleLimit
+                    taskVisualSampleLimit: taskProgressVisualSampleLimit,
+                    appUsageIntervals: appUsageIntervals,
+                    evaluationWindowEnd: evaluationWindowEnd,
+                    targetJudgments: targetJudgments
                 )
                 result.evaluator = "手动模型"
                 localLLMStatus = "当前评估：手动模型已连接"
@@ -2662,7 +2903,10 @@ final class AppModel: ObservableObject {
         taskVisualSampleLimit: Int,
         alignmentVisualSampleCount: Int,
         progressVisualSampleCount: Int,
-        previousEvents: [FocusEvent]
+        previousEvents: [FocusEvent],
+        appUsageIntervals: [AppUsageInterval],
+        evaluationWindowEnd: Date?,
+        targetJudgments: [TaskTargetJudgment]
     ) async throws -> LLMEvaluationResult {
         var result = try await llmEvaluator.evaluate(
             task: task,
@@ -2672,7 +2916,10 @@ final class AppModel: ObservableObject {
             previousEvents: previousEvents,
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit,
-            taskVisualSampleLimit: taskVisualSampleLimit
+            taskVisualSampleLimit: taskVisualSampleLimit,
+            appUsageIntervals: appUsageIntervals,
+            evaluationWindowEnd: evaluationWindowEnd,
+            targetJudgments: targetJudgments
         )
         result.evaluator = "自带模型"
         var llmDiagnosticFields = Self.llmDiagnosticFields(from: result.requestDebugMetrics)
@@ -2697,6 +2944,17 @@ final class AppModel: ObservableObject {
                 includeDeviceFields: false
             )
         ) { current, _ in current }
+        if let taskProgressFailureKind = result.taskProgressFailureKind {
+            llmDiagnosticFields["taskProgressFailureKind"] = .string(
+                Self.modelInferenceFailurePresentation(for: taskProgressFailureKind).debugText
+            )
+        }
+        if let statusCode = result.taskProgressFailureHTTPStatusCode {
+            llmDiagnosticFields["taskProgressFailureHTTPStatusCode"] = .int(statusCode)
+        }
+        if let responseBytes = result.taskProgressFailureHTTPResponseBytes {
+            llmDiagnosticFields["taskProgressFailureHTTPResponseBytes"] = .int(responseBytes)
+        }
         diagnosticLogger.record(
             "model.evaluation.succeeded",
             fields: diagnosticFields(
@@ -2731,7 +2989,11 @@ final class AppModel: ObservableObject {
     }
 
     private static func modelInferenceFailurePresentation(for error: Error) -> (debugText: String, statusText: String, issueTypeSuffix: String) {
-        switch modelInferenceFailureKind(for: error) {
+        modelInferenceFailurePresentation(for: modelInferenceFailureKind(for: error))
+    }
+
+    private static func modelInferenceFailurePresentation(for kind: LLMFocusFailureKind) -> (debugText: String, statusText: String, issueTypeSuffix: String) {
+        switch kind {
         case .timeout:
             return ("请求超时", "请求超时", "Timeout")
         case .connectionRefused:
@@ -2747,6 +3009,27 @@ final class AppModel: ObservableObject {
         case .unknown:
             return ("未知错误", "推理失败", "Unknown")
         }
+    }
+
+    static func targetJudgmentDiagnosticFields(
+        sessionID: UUID,
+        target: ActiveWorkTarget,
+        result: TaskRelevantTargetEvaluationResult
+    ) -> [String: DiagnosticLogValue] {
+        var fields: [String: DiagnosticLogValue] = [
+            "sessionID": .string(sessionID.uuidString),
+            "target": .string(target.displayText),
+            "alignment": .string(result.alignment.rawValue),
+            "reason": .string(result.reason)
+        ]
+        fields.merge(
+            Self.llmDiagnosticFields(
+                from: result.requestDebugMetrics,
+                prefix: "targetLLM",
+                includeDeviceFields: false
+            )
+        ) { current, _ in current }
+        return fields
     }
 
     private static func splitModelFailureDiagnosticFields(for error: Error) -> [String: DiagnosticLogValue] {
@@ -2767,6 +3050,9 @@ final class AppModel: ObservableObject {
         }
         if let llmError = error as? LLMFocusEvaluationError {
             return llmError.kind
+        }
+        if error is LLMHTTPStatusErrorReporting {
+            return .badStatus
         }
         if error is DecodingError {
             return .emptyResponse

@@ -99,6 +99,36 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestTimeout, 180)
     }
 
+    func testCompletionHTTPErrorExposesStatusAndResponseByteCountWithoutBody() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let body = Data(#"{"error":"slot unavailable"}"#.utf8)
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                return (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, body)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "qwen3.5-0.8b",
+            session: session
+        )
+
+        do {
+            _ = try await engine.complete(messages: [
+                LLMMessage(role: .user, content: [.text("status")])
+            ])
+            XCTFail("Expected HTTP status error")
+        } catch let error as OpenAICompatibleLLMEngine.HTTPStatusError {
+            XCTAssertEqual(error.statusCode, 503)
+            XCTAssertEqual(error.responseByteCount, body.count)
+        }
+    }
+
     func testCompletionRequestCanDisableReasoningForBundledLlamaServer() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
@@ -253,6 +283,10 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
             messages: [LLMMessage(role: .user, content: [.text("progress")])],
             responseFormat: .taskProgressEvaluation
         )
+        _ = try await engine.complete(
+            messages: [LLMMessage(role: .user, content: [.text("target")])],
+            responseFormat: .taskRelevantTargetEvaluation
+        )
 
         let presenceBody = try XCTUnwrap(requestBodies.first)
         XCTAssertEqual(presenceBody["max_tokens"] as? Int, 180)
@@ -273,7 +307,7 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertNil(taskProperties["progress"])
         XCTAssertEqual((taskProperties["focusTargetID"] as? [String: Any])?["type"] as? [String], ["string", "null"])
 
-        let progressBody = try XCTUnwrap(requestBodies.last)
+        let progressBody = try XCTUnwrap(requestBodies.dropFirst(2).first)
         XCTAssertEqual(progressBody["max_tokens"] as? Int, 220)
         let progressFormat = try XCTUnwrap(progressBody["response_format"] as? [String: Any])
         let progressSchema = try XCTUnwrap(progressFormat["json_schema"] as? [String: Any])
@@ -281,6 +315,16 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         let progressProperties = try XCTUnwrap((progressSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
         XCTAssertEqual((progressProperties["progress"] as? [String: Any])?["enum"] as? [String], ["progressing", "stalled", "unclear"])
         XCTAssertEqual((progressProperties["comparisonBasis"] as? [String: Any])?["type"] as? String, "string")
+
+        let targetBody = try XCTUnwrap(requestBodies.last)
+        XCTAssertEqual(targetBody["max_tokens"] as? Int, 220)
+        let targetFormat = try XCTUnwrap(targetBody["response_format"] as? [String: Any])
+        let targetSchema = try XCTUnwrap(targetFormat["json_schema"] as? [String: Any])
+        XCTAssertEqual(targetSchema["name"] as? String, "task_relevant_target_evaluation")
+        let targetProperties = try XCTUnwrap((targetSchema["schema"] as? [String: Any])?["properties"] as? [String: Any])
+        XCTAssertEqual((targetProperties["alignment"] as? [String: Any])?["enum"] as? [String], ["aligned", "unaligned", "unclear"])
+        XCTAssertNil(targetProperties["focusTargetID"])
+        XCTAssertEqual(((targetSchema["schema"] as? [String: Any])?["required"] as? [String]), ["alignment", "reason"])
     }
 
     func testPrewarmFocusEvaluationPromptUsesSingleTokenStructuredRequest() async throws {

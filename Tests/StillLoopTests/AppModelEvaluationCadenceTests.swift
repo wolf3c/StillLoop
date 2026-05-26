@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class AppModelEvaluationCadenceTests: XCTestCase {
+    func testInitialEvaluationWaitsForFifteenSecondStableWindow() {
+        let model = AppModel()
+        let firstSnapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 100),
+            activeAppName: "Codex",
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+
+        XCTAssertTrue(
+            model.shouldDeferInitialEvaluation(
+                for: [firstSnapshot],
+                now: Date(timeIntervalSince1970: 114.9)
+            )
+        )
+        XCTAssertFalse(
+            model.shouldDeferInitialEvaluation(
+                for: [firstSnapshot],
+                now: Date(timeIntervalSince1970: 115)
+            )
+        )
+    }
+
     func testEvaluationCadenceUsesFifteenSecondTargetAndTenSecondCooldownOnACPower() {
         let model = AppModel()
 

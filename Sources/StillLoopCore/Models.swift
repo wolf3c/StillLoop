@@ -121,6 +121,13 @@ public struct FocusReturnTarget: Codable, Equatable {
         browserURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
+    public var isEligibleReturnTarget: Bool {
+        if BrowserTargetPolicy.isBrowserTarget(appName: appName, bundleIdentifier: appBundleIdentifier) {
+            return BrowserTargetPolicy.sanitizedWebURL(browserURL) != nil
+        }
+        return !BrowserTargetPolicy.isStillLoopSelf(appName: appName, bundleIdentifier: appBundleIdentifier)
+    }
+
     public var sanitizedBrowserURLText: String? {
         guard let browserURL = browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !browserURL.isEmpty
@@ -356,6 +363,297 @@ public struct ContextSnapshot: Codable, Equatable, Identifiable {
     }
 }
 
+public enum BrowserTargetPolicy {
+    private static let browserBundleIdentifiers: Set<String> = [
+        "com.apple.safari",
+        "com.google.chrome",
+        "com.google.chrome.canary",
+        "com.microsoft.edgemac",
+        "com.brave.browser",
+        "company.thebrowser.browser",
+        "org.mozilla.firefox"
+    ]
+
+    private static let browserAppNames: Set<String> = [
+        "safari",
+        "google chrome",
+        "google chrome canary",
+        "microsoft edge",
+        "brave browser",
+        "arc",
+        "firefox"
+    ]
+
+    private static let stillLoopBundleIdentifiers: Set<String> = [
+        "local.stillloop.dev",
+        "com.super-tree.stillloop"
+    ]
+
+    private static let stillLoopAppNames: Set<String> = [
+        "stillloop",
+        "stillloop dev"
+    ]
+
+    public static func isBrowserTarget(appName: String, bundleIdentifier: String?) -> Bool {
+        if let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           browserBundleIdentifiers.contains(bundleIdentifier) {
+            return true
+        }
+        return browserAppNames.contains(appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    public static func isStillLoopSelf(appName: String, bundleIdentifier: String?) -> Bool {
+        if let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           stillLoopBundleIdentifiers.contains(bundleIdentifier) {
+            return true
+        }
+        return stillLoopAppNames.contains(appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    public static func sanitizedWebURL(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty,
+              var components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else {
+            return nil
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string?.nilIfEmpty
+    }
+}
+
+public struct ActiveWorkTarget: Codable, Equatable, Hashable {
+    public var appName: String
+    public var bundleIdentifier: String?
+    public var processIdentifier: Int?
+    public var windowTitle: String?
+    public var browserTitle: String?
+    public var browserURL: String?
+    public var windowNumber: Int?
+    public var spaceIdentifier: String?
+
+    public init(
+        appName: String,
+        bundleIdentifier: String?,
+        processIdentifier: Int?,
+        windowTitle: String?,
+        browserTitle: String?,
+        browserURL: String?,
+        windowNumber: Int?,
+        spaceIdentifier: String?
+    ) {
+        self.appName = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.processIdentifier = processIdentifier
+        self.windowTitle = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.browserTitle = browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.browserURL = BrowserTargetPolicy.sanitizedWebURL(browserURL)
+        self.windowNumber = windowNumber
+        self.spaceIdentifier = spaceIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            appName: try container.decode(String.self, forKey: .appName),
+            bundleIdentifier: try container.decodeIfPresent(String.self, forKey: .bundleIdentifier),
+            processIdentifier: try container.decodeIfPresent(Int.self, forKey: .processIdentifier),
+            windowTitle: try container.decodeIfPresent(String.self, forKey: .windowTitle),
+            browserTitle: try container.decodeIfPresent(String.self, forKey: .browserTitle),
+            browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
+            windowNumber: try container.decodeIfPresent(Int.self, forKey: .windowNumber),
+            spaceIdentifier: try container.decodeIfPresent(String.self, forKey: .spaceIdentifier)
+        )
+    }
+
+    public var identityKey: String {
+        if let browserURL, !browserURL.isEmpty {
+            return "browser|\(bundleIdentifier ?? appName)|\(browserURL)"
+        }
+        if let windowNumber {
+            return "window|\(bundleIdentifier ?? appName)|\(windowNumber)"
+        }
+        if let windowTitle, !windowTitle.isEmpty {
+            return "title|\(appName)|\(windowTitle)"
+        }
+        return "app|\(bundleIdentifier ?? appName)"
+    }
+
+    public var displayText: String {
+        var parts = [appName, windowTitle, browserTitle, browserURL]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+        if let spaceIdentifier {
+            parts.append("space:\(spaceIdentifier)")
+        }
+        return parts.reduce(into: [String]()) { result, part in
+            if !result.contains(part) {
+                result.append(part)
+            }
+        }
+        .joined(separator: " · ")
+    }
+
+    public var isTaskRelevantCandidate: Bool {
+        if BrowserTargetPolicy.isStillLoopSelf(appName: appName, bundleIdentifier: bundleIdentifier) {
+            return false
+        }
+        if BrowserTargetPolicy.isBrowserTarget(appName: appName, bundleIdentifier: bundleIdentifier) {
+            return browserURL != nil
+        }
+        return true
+    }
+
+    public func returnTarget(capturedAt: Date) -> FocusReturnTarget {
+        FocusReturnTarget(
+            appName: appName,
+            appBundleIdentifier: bundleIdentifier,
+            windowTitle: windowTitle,
+            browserTitle: browserTitle,
+            browserURL: browserURL,
+            processIdentifier: processIdentifier,
+            windowNumber: windowNumber,
+            capturedAt: capturedAt
+        )
+    }
+
+    public static func sanitizedURLText(_ value: String?) -> String? {
+        BrowserTargetPolicy.sanitizedWebURL(value)
+    }
+}
+
+public struct AppUsageInterval: Codable, Equatable, Identifiable {
+    public var id: UUID
+    public var startedAt: Date
+    public var endedAt: Date?
+    public var target: ActiveWorkTarget
+
+    public init(
+        id: UUID = UUID(),
+        startedAt: Date,
+        endedAt: Date?,
+        target: ActiveWorkTarget
+    ) {
+        self.id = id
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.target = target
+    }
+}
+
+public enum TaskTargetAlignment: String, Codable, Equatable {
+    case aligned
+    case unaligned
+    case unclear
+}
+
+public struct TaskTargetJudgment: Codable, Equatable, Identifiable {
+    public var id: UUID
+    public var target: ActiveWorkTarget
+    public var alignment: TaskTargetAlignment
+    public var reason: String
+    public var judgedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        target: ActiveWorkTarget,
+        alignment: TaskTargetAlignment,
+        reason: String,
+        judgedAt: Date
+    ) {
+        self.id = id
+        self.target = target
+        self.alignment = alignment
+        self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.judgedAt = judgedAt
+    }
+}
+
+public struct TaskRelevantTarget: Codable, Equatable, Identifiable {
+    public var id: UUID
+    public var target: ActiveWorkTarget
+    public var reason: String
+    public var lastAlignedAt: Date
+    public var lastForegroundAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        target: ActiveWorkTarget,
+        reason: String,
+        lastAlignedAt: Date,
+        lastForegroundAt: Date
+    ) {
+        self.id = id
+        self.target = target
+        self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.lastAlignedAt = lastAlignedAt
+        self.lastForegroundAt = lastForegroundAt
+    }
+}
+
+public enum AppUsageTimelineExtractor {
+    public static func intervals(
+        from intervals: [AppUsageInterval],
+        windowStart: Date,
+        windowEnd: Date
+    ) -> [AppUsageInterval] {
+        guard windowStart < windowEnd else { return [] }
+        let clipped = intervals
+            .compactMap { interval -> AppUsageInterval? in
+                let end = interval.endedAt ?? windowEnd
+                let clippedStart = max(interval.startedAt, windowStart)
+                let clippedEnd = min(end, windowEnd)
+                guard clippedStart < clippedEnd else { return nil }
+                return AppUsageInterval(
+                    id: interval.id,
+                    startedAt: clippedStart,
+                    endedAt: clippedEnd,
+                    target: interval.target
+                )
+            }
+            .sorted { $0.startedAt < $1.startedAt }
+
+        return clipped.reduce(into: [AppUsageInterval]()) { result, interval in
+            guard var last = result.last,
+                  last.target == interval.target,
+                  last.endedAt == interval.startedAt
+            else {
+                result.append(interval)
+                return
+            }
+            last.endedAt = interval.endedAt
+            result[result.count - 1] = last
+        }
+    }
+
+    public static func promptText(for intervals: [AppUsageInterval]) -> String {
+        guard !intervals.isEmpty else {
+            return "App usage timeline: no foreground app intervals in this evaluation window."
+        }
+        var lines = [
+            "App usage timeline: derived from foreground app intervals, clipped to this evaluation window."
+        ]
+        for interval in intervals {
+            lines.append(
+                "\(timeText(interval.startedAt)) - \(timeText(interval.endedAt ?? interval.startedAt)) \(interval.target.displayText)"
+            )
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func timeText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter.string(from: date)
+    }
+}
+
 public struct FocusEvent: Codable, Equatable, Identifiable {
     public var id: UUID
     public var timestamp: Date
@@ -401,18 +699,6 @@ public extension FocusEvent {
         sections.append((["时间线摘要"] + timelineLines).joined(separator: "\n"))
 
         if let debugDetail {
-            if !debugDetail.environmentContext.isEmpty {
-                sections.append((["环境上下文"] + debugDetail.environmentContext).joined(separator: "\n"))
-            }
-            if !debugDetail.visualContext.isEmpty {
-                sections.append((["视觉上下文"] + debugDetail.visualContext).joined(separator: "\n"))
-            }
-            if debugDetail.environmentContext.isEmpty,
-               debugDetail.visualContext.isEmpty,
-               !debugDetail.capturedContext.isEmpty {
-                sections.append((["采样上下文"] + debugDetail.capturedContext).joined(separator: "\n"))
-            }
-
             var resultLines = [
                 "评估器：\(debugDetail.evaluator)",
                 "任务：\(debugDetail.task)",
@@ -433,6 +719,20 @@ public extension FocusEvent {
                 resultLines.append(contentsOf: nudgeReturnTarget.diagnosticLines)
             }
             sections.append((["运算返回结果"] + resultLines).joined(separator: "\n"))
+
+            if debugDetail.shouldShowReturnTargetSelection(eventNudge: nudge, eventTarget: nudgeReturnTarget) {
+                sections.append((["提醒目标选择"] + debugDetail.formattedReturnTargetSelectionLines(eventTarget: nudgeReturnTarget)).joined(separator: "\n"))
+            }
+
+            if !debugDetail.appUsageTimeline.isEmpty {
+                sections.append((["前台应用时间轴"] + FocusEventDebugDetail.formattedAppUsageTimelineLines(debugDetail.appUsageTimeline)).joined(separator: "\n"))
+            }
+            if !debugDetail.targetJudgments.isEmpty {
+                sections.append((["独立目标判断"] + FocusEventDebugDetail.formattedTargetJudgmentLines(debugDetail.targetJudgments)).joined(separator: "\n"))
+            }
+            if !debugDetail.taskRelevantTargets.isEmpty {
+                sections.append((["任务相关目标库"] + FocusEventDebugDetail.formattedTaskRelevantTargetLines(debugDetail.taskRelevantTargets)).joined(separator: "\n"))
+            }
 
             if let presence = debugDetail.splitAnalysis?.userPresence {
                 var presenceLines = FocusEventDebugDetail.formattedUserPresenceLines(presence)
@@ -464,6 +764,19 @@ public extension FocusEvent {
                     "任务匹配：\(analysis.taskAlignment)"
                 ].joined(separator: "\n"))
             }
+
+            let environmentContext = debugDetail.environmentContextForDisplay
+            if !environmentContext.isEmpty {
+                sections.append((["环境上下文"] + environmentContext).joined(separator: "\n"))
+            }
+            if !debugDetail.visualContext.isEmpty {
+                sections.append((["视觉上下文"] + debugDetail.visualContext).joined(separator: "\n"))
+            }
+            if environmentContext.isEmpty,
+               debugDetail.visualContext.isEmpty,
+               !debugDetail.capturedContext.isEmpty {
+                sections.append((["采样上下文"] + debugDetail.capturedContext).joined(separator: "\n"))
+            }
         } else {
             sections.append([
                 "运算返回结果",
@@ -472,6 +785,20 @@ public extension FocusEvent {
         }
 
         return sections.joined(separator: "\n\n")
+    }
+}
+
+public enum FocusReturnTargetSource: String, Codable, Equatable {
+    case taskRelevantTarget
+    case focusedEventFallback
+
+    public var displayName: String {
+        switch self {
+        case .taskRelevantTarget:
+            return "任务相关目标库"
+        case .focusedEventFallback:
+            return "旧 focused 事件回退"
+        }
     }
 }
 
@@ -487,6 +814,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
     public var environmentContext: [String]
     public var visualContext: [String]
     public var capturedContext: [String]
+    public var appUsageTimeline: [AppUsageInterval]
+    public var targetJudgments: [TaskTargetJudgment]
+    public var taskRelevantTargets: [TaskRelevantTarget]
+    public var nudgeReturnTargetSource: FocusReturnTargetSource?
     public var resultState: FocusState
     public var reason: String
     public var shouldNudge: Bool
@@ -505,6 +836,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         environmentContext: [String] = [],
         visualContext: [String] = [],
         capturedContext: [String] = [],
+        appUsageTimeline: [AppUsageInterval] = [],
+        targetJudgments: [TaskTargetJudgment] = [],
+        taskRelevantTargets: [TaskRelevantTarget] = [],
+        nudgeReturnTargetSource: FocusReturnTargetSource? = nil,
         resultState: FocusState,
         reason: String,
         shouldNudge: Bool,
@@ -522,6 +857,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         self.environmentContext = environmentContext
         self.visualContext = visualContext
         self.capturedContext = capturedContext
+        self.appUsageTimeline = appUsageTimeline
+        self.targetJudgments = targetJudgments
+        self.taskRelevantTargets = taskRelevantTargets
+        self.nudgeReturnTargetSource = nudgeReturnTargetSource
         self.resultState = resultState
         self.reason = reason
         self.shouldNudge = shouldNudge
@@ -541,6 +880,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         case environmentContext
         case visualContext
         case capturedContext
+        case appUsageTimeline
+        case targetJudgments
+        case taskRelevantTargets
+        case nudgeReturnTargetSource
         case resultState
         case reason
         case shouldNudge
@@ -561,6 +904,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         environmentContext = (try? container.decodeIfPresent([String].self, forKey: .environmentContext)) ?? []
         visualContext = (try? container.decodeIfPresent([String].self, forKey: .visualContext)) ?? []
         capturedContext = (try? container.decodeIfPresent([String].self, forKey: .capturedContext)) ?? []
+        appUsageTimeline = try container.decodeIfPresent([AppUsageInterval].self, forKey: .appUsageTimeline) ?? []
+        targetJudgments = try container.decodeIfPresent([TaskTargetJudgment].self, forKey: .targetJudgments) ?? []
+        taskRelevantTargets = try container.decodeIfPresent([TaskRelevantTarget].self, forKey: .taskRelevantTargets) ?? []
+        nudgeReturnTargetSource = try container.decodeIfPresent(FocusReturnTargetSource.self, forKey: .nudgeReturnTargetSource)
         resultState = try container.decode(FocusState.self, forKey: .resultState)
         reason = try container.decode(String.self, forKey: .reason)
         shouldNudge = try container.decode(Bool.self, forKey: .shouldNudge)
@@ -587,6 +934,16 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         if !capturedContext.isEmpty {
             try container.encode(capturedContext, forKey: .capturedContext)
         }
+        if !appUsageTimeline.isEmpty {
+            try container.encode(appUsageTimeline, forKey: .appUsageTimeline)
+        }
+        if !targetJudgments.isEmpty {
+            try container.encode(targetJudgments, forKey: .targetJudgments)
+        }
+        if !taskRelevantTargets.isEmpty {
+            try container.encode(taskRelevantTargets, forKey: .taskRelevantTargets)
+        }
+        try container.encodeIfPresent(nudgeReturnTargetSource, forKey: .nudgeReturnTargetSource)
         try container.encode(resultState, forKey: .resultState)
         try container.encode(reason, forKey: .reason)
         try container.encode(shouldNudge, forKey: .shouldNudge)
@@ -600,8 +957,65 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         try container.encodeIfPresent(splitAnalysis, forKey: .splitAnalysis)
     }
 
+    public var environmentContextForDisplay: [String] {
+        environmentContext.filter { !$0.hasPrefix("App usage timeline:") }
+    }
+
     public static func formattedModelRunDuration(_ duration: TimeInterval) -> String {
         String(format: "%.2f 秒", max(0, duration))
+    }
+
+    public static func formattedAppUsageTimelineLines(_ intervals: [AppUsageInterval]) -> [String] {
+        intervals
+            .sorted { $0.startedAt < $1.startedAt }
+            .map { interval in
+                "\(formattedDebugTime(interval.startedAt)) - \(formattedDebugTime(interval.endedAt ?? interval.startedAt)) \(interval.target.displayText)"
+            }
+    }
+
+    public static func formattedTargetJudgmentLines(_ judgments: [TaskTargetJudgment]) -> [String] {
+        judgments
+            .sorted { $0.judgedAt > $1.judgedAt }
+            .flatMap { judgment in
+                [
+                    "目标：\(judgment.target.displayText)",
+                    "alignment：\(judgment.alignment.rawValue)",
+                    "judgedAt：\(formattedDebugTime(judgment.judgedAt))",
+                    "原因：\(judgment.reason)"
+                ]
+            }
+    }
+
+    public static func formattedTaskRelevantTargetLines(_ targets: [TaskRelevantTarget]) -> [String] {
+        targets
+            .sorted { $0.lastForegroundAt > $1.lastForegroundAt }
+            .flatMap { target in
+                [
+                    "目标：\(target.target.displayText)",
+                    "lastForegroundAt：\(formattedDebugTime(target.lastForegroundAt))",
+                    "lastAlignedAt：\(formattedDebugTime(target.lastAlignedAt))",
+                    "原因：\(target.reason)"
+                ]
+            }
+    }
+
+    public func formattedReturnTargetSelectionLines(eventTarget: FocusReturnTarget?) -> [String] {
+        var lines: [String]
+        if let nudgeReturnTargetSource {
+            lines = ["来源：\(nudgeReturnTargetSource.displayName)"]
+        } else if shouldNudge {
+            lines = ["来源：无可用返回目标"]
+        } else {
+            lines = ["本轮未触发提醒。"]
+        }
+        if let eventTarget {
+            lines.append(contentsOf: eventTarget.diagnosticLines)
+        }
+        return lines
+    }
+
+    public func shouldShowReturnTargetSelection(eventNudge: String?, eventTarget: FocusReturnTarget?) -> Bool {
+        shouldNudge || eventNudge != nil || nudge != nil || eventTarget != nil || nudgeReturnTargetSource != nil
     }
 
     public static func formattedRequestMetricLines(_ metrics: LLMRequestDebugMetrics) -> [String] {
@@ -658,6 +1072,12 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         value.map { $0 ? "true" : "false" } ?? "-"
     }
 
+    private static func formattedDebugTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter.string(from: date)
+    }
+
     public static func make(
         task: String,
         evaluator: String,
@@ -680,13 +1100,26 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         environmentSnapshots: [ContextSnapshot],
         visualSnapshots: [ContextSnapshot],
         previousEvents: [FocusEvent],
+        appUsageIntervals: [AppUsageInterval] = [],
+        evaluationWindowEnd: Date? = nil,
+        targetJudgments: [TaskTargetJudgment] = [],
+        taskRelevantTargets: [TaskRelevantTarget] = [],
+        nudgeReturnTargetSource: FocusReturnTargetSource? = nil,
         result: LLMEvaluationResult
     ) -> FocusEventDebugDetail {
         let promptDebugContext = LLMFocusEvaluator.debugContext(
             task: task,
             textSnapshots: environmentSnapshots,
             visualSnapshots: visualSnapshots,
-            previousEvents: previousEvents
+            previousEvents: previousEvents,
+            appUsageIntervals: appUsageIntervals,
+            evaluationWindowEnd: evaluationWindowEnd,
+            targetJudgments: targetJudgments
+        )
+        let appUsageTimeline = clippedAppUsageTimeline(
+            appUsageIntervals: appUsageIntervals,
+            textSnapshots: environmentSnapshots,
+            evaluationWindowEnd: evaluationWindowEnd
         )
 
         return FocusEventDebugDetail(
@@ -695,6 +1128,10 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             environmentContext: promptDebugContext.environmentContext,
             visualContext: promptDebugContext.visualContext,
             capturedContext: [],
+            appUsageTimeline: appUsageTimeline,
+            targetJudgments: targetJudgments,
+            taskRelevantTargets: taskRelevantTargets,
+            nudgeReturnTargetSource: nudgeReturnTargetSource,
             resultState: result.state,
             reason: result.reason,
             shouldNudge: result.shouldNudge,
@@ -706,6 +1143,22 @@ public struct FocusEventDebugDetail: Codable, Equatable {
             taskProgressRequestDebugMetrics: result.taskProgressRequestDebugMetrics,
             analysis: result.analysis,
             splitAnalysis: result.splitAnalysis
+        )
+    }
+
+    private static func clippedAppUsageTimeline(
+        appUsageIntervals: [AppUsageInterval],
+        textSnapshots: [ContextSnapshot],
+        evaluationWindowEnd: Date?
+    ) -> [AppUsageInterval] {
+        guard !appUsageIntervals.isEmpty else { return [] }
+        let orderedSnapshots = textSnapshots.sorted { $0.timestamp < $1.timestamp }
+        guard let windowStart = orderedSnapshots.first?.timestamp else { return [] }
+        let windowEnd = evaluationWindowEnd ?? orderedSnapshots.last?.timestamp ?? windowStart
+        return AppUsageTimelineExtractor.intervals(
+            from: appUsageIntervals,
+            windowStart: windowStart,
+            windowEnd: windowEnd
         )
     }
 }
@@ -733,6 +1186,9 @@ public struct FocusSession: Codable, Equatable, Identifiable {
     public var events: [FocusEvent]
     public var feedback: SessionFeedback?
     public var reviewComment: String?
+    public var appUsageIntervals: [AppUsageInterval]
+    public var targetJudgments: [TaskTargetJudgment]
+    public var taskRelevantTargets: [TaskRelevantTarget]
 
     public init(
         id: UUID = UUID(),
@@ -742,6 +1198,9 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         continuationGapDuration: TimeInterval = 0,
         events: [FocusEvent],
         feedback: SessionFeedback?,
+        appUsageIntervals: [AppUsageInterval] = [],
+        targetJudgments: [TaskTargetJudgment] = [],
+        taskRelevantTargets: [TaskRelevantTarget] = [],
         reviewComment: String? = nil
     ) {
         self.id = id
@@ -752,6 +1211,9 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         self.events = events
         self.feedback = feedback
         self.reviewComment = reviewComment
+        self.appUsageIntervals = appUsageIntervals
+        self.targetJudgments = targetJudgments
+        self.taskRelevantTargets = taskRelevantTargets
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -763,6 +1225,9 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         case events
         case feedback
         case reviewComment
+        case appUsageIntervals
+        case targetJudgments
+        case taskRelevantTargets
     }
 
     public init(from decoder: Decoder) throws {
@@ -775,6 +1240,70 @@ public struct FocusSession: Codable, Equatable, Identifiable {
         events = try container.decode([FocusEvent].self, forKey: .events)
         feedback = try container.decodeIfPresent(SessionFeedback.self, forKey: .feedback)
         reviewComment = try container.decodeIfPresent(String.self, forKey: .reviewComment)
+        appUsageIntervals = try container.decodeIfPresent([AppUsageInterval].self, forKey: .appUsageIntervals) ?? []
+        targetJudgments = try container.decodeIfPresent([TaskTargetJudgment].self, forKey: .targetJudgments) ?? []
+        taskRelevantTargets = try container.decodeIfPresent([TaskRelevantTarget].self, forKey: .taskRelevantTargets) ?? []
+    }
+}
+
+public extension FocusSession {
+    mutating func recordTargetJudgment(
+        target: ActiveWorkTarget,
+        alignment: TaskTargetAlignment,
+        reason: String,
+        judgedAt: Date,
+        foregroundAt: Date
+    ) {
+        let key = target.identityKey
+        targetJudgments.removeAll { $0.target.identityKey == key }
+        targetJudgments.insert(
+            TaskTargetJudgment(
+                target: target,
+                alignment: alignment,
+                reason: reason,
+                judgedAt: judgedAt
+            ),
+            at: 0
+        )
+
+        taskRelevantTargets.removeAll { $0.target.identityKey == key }
+        guard alignment == .aligned, target.isTaskRelevantCandidate else { return }
+        taskRelevantTargets.insert(
+            TaskRelevantTarget(
+                target: target,
+                reason: reason,
+                lastAlignedAt: judgedAt,
+                lastForegroundAt: foregroundAt
+            ),
+            at: 0
+        )
+    }
+
+    mutating func refreshTaskRelevantTarget(_ target: ActiveWorkTarget, foregroundAt: Date) {
+        guard target.isTaskRelevantCandidate else { return }
+        guard let index = taskRelevantTargets.firstIndex(where: { $0.target.identityKey == target.identityKey }) else {
+            return
+        }
+        taskRelevantTargets[index].target = target
+        taskRelevantTargets[index].lastForegroundAt = foregroundAt
+    }
+
+    func shouldJudgeTarget(_ target: ActiveWorkTarget, at date: Date, expiration: TimeInterval) -> Bool {
+        guard target.isTaskRelevantCandidate else { return false }
+        guard let judgment = targetJudgments.first(where: { $0.target.identityKey == target.identityKey }) else {
+            return true
+        }
+        return date.timeIntervalSince(judgment.judgedAt) > expiration
+    }
+
+    func latestTaskRelevantReturnTarget() -> FocusReturnTarget? {
+        taskRelevantTargets
+            .map { target in
+                (target.lastForegroundAt, target.target.returnTarget(capturedAt: target.lastForegroundAt))
+            }
+            .filter { $0.1.isEligibleReturnTarget }
+            .max { lhs, rhs in lhs.0 < rhs.0 }?
+            .1
     }
 }
 

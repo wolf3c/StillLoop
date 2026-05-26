@@ -175,6 +175,27 @@ final class FocusReturnTargetOpenerTests: XCTestCase {
         XCTAssertEqual(appOpener.actions, ["activateBundle:com.google.Chrome"])
     }
 
+    func testBrowserTargetWithoutValidURLDoesNotOpenBlankPage() {
+        let runner = RecordingAppleScriptRunner(results: [
+            .success(output: tabLine(window: 1, tab: 1, isActive: true, url: "https://example.com/"))
+        ])
+        let appOpener = RecordingReturnTargetApplicationOpener(activateBundleResult: true)
+        let opener = MacFocusReturnTargetOpener(scriptRunner: runner, applicationOpener: appOpener)
+        let target = FocusReturnTarget(
+            appName: "Google Chrome",
+            appBundleIdentifier: "com.google.Chrome",
+            windowTitle: "about:blank",
+            browserTitle: "about:blank",
+            browserURL: "about:blank",
+            capturedAt: Date(timeIntervalSince1970: 73)
+        )
+
+        XCTAssertFalse(target.isEligibleReturnTarget)
+        XCTAssertFalse(opener.open(target))
+        XCTAssertTrue(runner.sources.isEmpty)
+        XCTAssertTrue(appOpener.actions.isEmpty)
+    }
+
     func testSafariBrowserTargetSelectsMatchingTabAndActivatesBundle() {
         let runner = RecordingAppleScriptRunner(results: [
             .success(output: tabLine(window: 2, tab: 1, isActive: false, url: "https://x.com/home")),

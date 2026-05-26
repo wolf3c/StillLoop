@@ -91,6 +91,23 @@ final class FocusEventDebugDetailTests: XCTestCase {
             environmentSnapshots: [textOnlySnapshot, visualSnapshot],
             visualSnapshots: [visualSnapshot],
             previousEvents: previousEvents,
+            appUsageIntervals: [
+                AppUsageInterval(
+                    startedAt: Date(timeIntervalSince1970: 0.5),
+                    endedAt: Date(timeIntervalSince1970: 1.5),
+                    target: ActiveWorkTarget(
+                        appName: "Safari",
+                        bundleIdentifier: "com.apple.Safari",
+                        processIdentifier: 91,
+                        windowTitle: "Research",
+                        browserTitle: "Design Note",
+                        browserURL: "https://example.com/search?q=private#section",
+                        windowNumber: 33,
+                        spaceIdentifier: nil
+                    )
+                )
+            ],
+            evaluationWindowEnd: Date(timeIntervalSince1970: 2),
             result: result
         )
 
@@ -108,15 +125,21 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertEqual(detail.requestDebugMetrics?.powerStatus?.powerSource, .battery)
         XCTAssertEqual(detail.requestDebugMetrics?.visualSampleLimit, 1)
         XCTAssertTrue(detail.capturedContext.isEmpty)
+        XCTAssertEqual(detail.appUsageTimeline.count, 1)
+        XCTAssertEqual(detail.appUsageTimeline.first?.target.browserURL, "https://example.com/search")
         let environmentText = detail.environmentContext.joined(separator: "\n")
+        let displayEnvironmentText = detail.environmentContextForDisplay.joined(separator: "\n")
         let visualText = detail.visualContext.joined(separator: "\n")
         XCTAssertTrue(environmentText.contains("Three-line split evaluation context:"))
         XCTAssertTrue(environmentText.contains("Current task:\n调优识别能力"))
-        XCTAssertTrue(environmentText.contains("- focused: Codex -> Safari nudge=none"))
-        XCTAssertTrue(environmentText.contains("Text timeline: all pending captures, metadata only"))
-        XCTAssertTrue(environmentText.contains("targetID: T1"))
-        XCTAssertTrue(environmentText.contains("app: Safari"))
-        XCTAssertTrue(environmentText.contains("browserURL: https://example.com/search"))
+        XCTAssertFalse(environmentText.contains("- focused: Codex -> Safari nudge=none"))
+        XCTAssertFalse(environmentText.contains("Text timeline: selected current captures, metadata only"))
+        XCTAssertFalse(environmentText.contains("App usage timeline: derived from foreground app intervals"))
+        XCTAssertFalse(displayEnvironmentText.contains("App usage timeline: derived from foreground app intervals"))
+        XCTAssertFalse(environmentText.contains("Safari · Research · Design Note · https://example.com/search"))
+        XCTAssertTrue(environmentText.contains("targetID: T2"))
+        XCTAssertTrue(environmentText.contains("app: Codex"))
+        XCTAssertFalse(environmentText.contains("browserURL: https://example.com/search"))
         XCTAssertFalse(environmentText.contains("q=private"))
         XCTAssertFalse(environmentText.contains("#section"))
         XCTAssertTrue(visualText.contains("screen-alignment visual sample[1]"))
@@ -179,14 +202,72 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(environmentText.contains("Three-line split evaluation context:"))
         XCTAssertTrue(environmentText.contains("screen-alignment: latest screenshot metadata only"))
         XCTAssertTrue(environmentText.contains("screen-progress: current-round screenshot comparison"))
-        XCTAssertTrue(environmentText.contains("Current screen alignment checklist:"))
-        XCTAssertTrue(environmentText.contains("Current screen progress checklist:"))
+        XCTAssertFalse(environmentText.contains("Current screen alignment checklist:"))
+        XCTAssertFalse(environmentText.contains("Current screen progress checklist:"))
+        XCTAssertTrue(environmentText.contains("Current task:\n学习 Ogden's Basic English"))
         XCTAssertFalse(environmentText.contains("visual sample[1] is the first screen screenshot from the current pending evaluation captures."))
         XCTAssertFalse(environmentText.contains("Progress requires comparing first and last screen screenshots; use unclear when only one screenshot is available or comparison is not possible."))
         XCTAssertTrue(visualText.contains("screen-alignment visual sample[1]"))
         XCTAssertTrue(visualText.contains("screen-progress visual sample[1]"))
         XCTAssertFalse(visualText.contains("visualOrder: screenshot image first, then camera"))
         XCTAssertFalse(visualText.contains("camera:"))
+    }
+
+    func testMakeShowsTargetJudgmentPromptContextUsedByAlignment() {
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Google Chrome",
+            activeAppBundleIdentifier: "com.google.Chrome",
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/?utm_source=test#comments",
+            processIdentifier: 500,
+            windowNumber: 700,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true
+        )
+        let target = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 500,
+            windowTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserTitle: "中美共同的人工智能焦虑：被未来收割 - 纽约时报中文网",
+            browserURL: "https://cn.nytimes.com/business/20260520/ai-anxiety/?utm_source=test#comments",
+            windowNumber: 700,
+            spaceIdentifier: nil
+        )
+        let result = LLMEvaluationResult(
+            state: .focused,
+            reason: "页面匹配阅读任务。",
+            shouldNudge: false,
+            nudge: nil
+        )
+
+        let detail = FocusEventDebugDetail.make(
+            task: "阅读 中美共同的人工智能焦虑：被未来收割",
+            evaluator: "自带模型",
+            environmentSnapshots: [snapshot],
+            visualSnapshots: [snapshot],
+            previousEvents: [],
+            targetJudgments: [
+                TaskTargetJudgment(
+                    target: target,
+                    alignment: .aligned,
+                    reason: "独立判断认为文章页匹配任务。",
+                    judgedAt: Date(timeIntervalSince1970: 2)
+                )
+            ],
+            result: result
+        )
+
+        let environmentText = detail.environmentContext.joined(separator: "\n")
+        XCTAssertTrue(environmentText.contains("Target judgment context"))
+        XCTAssertTrue(environmentText.contains("context only"))
+        XCTAssertTrue(environmentText.contains("alignment: aligned"))
+        XCTAssertTrue(environmentText.contains("独立判断认为文章页匹配任务。"))
+        XCTAssertTrue(environmentText.contains("https://cn.nytimes.com/business/20260520/ai-anxiety/"))
+        XCTAssertFalse(environmentText.contains("utm_source"))
+        XCTAssertFalse(environmentText.contains("#comments"))
     }
 
     func testDecodesLegacyDebugDetailWithoutAnalysis() throws {
@@ -369,6 +450,145 @@ final class FocusEventDebugDetailTests: XCTestCase {
         XCTAssertTrue(text.contains("环境上下文\nCurrent task:\n开发 stillloop"))
         XCTAssertTrue(text.contains("视觉上下文\nvisual sample[1]\ntargetID: T2"))
         XCTAssertFalse(text.contains("采样上下文"))
+    }
+
+    func testRecognitionDebugClipboardTextShowsStructuredTargetFlowSections() {
+        let codexTarget = ActiveWorkTarget(
+            appName: "Codex",
+            bundleIdentifier: "com.openai.codex",
+            processIdentifier: 100,
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 10,
+            spaceIdentifier: "1"
+        )
+        let chromeTarget = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 200,
+            windowTitle: "Gmail",
+            browserTitle: "Inbox",
+            browserURL: "https://mail.google.com/mail/u/0/?token=secret#inbox",
+            windowNumber: 20,
+            spaceIdentifier: nil
+        )
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 75),
+            state: .focused,
+            context: "Codex -> Google Chrome",
+            nudge: "先回到：处理 Gmail",
+            nudgeReturnTarget: chromeTarget.returnTarget(capturedAt: Date(timeIntervalSince1970: 70)),
+            debugDetail: FocusEventDebugDetail(
+                task: "处理 Gmail",
+                evaluator: "自带模型",
+                environmentContext: [
+                    "App usage timeline: derived from foreground app intervals, clipped to this evaluation window.\n00:01:00.000 - 00:01:10.000 Codex"
+                ],
+                appUsageTimeline: [
+                    AppUsageInterval(
+                        startedAt: Date(timeIntervalSince1970: 60),
+                        endedAt: Date(timeIntervalSince1970: 65),
+                        target: codexTarget
+                    ),
+                    AppUsageInterval(
+                        startedAt: Date(timeIntervalSince1970: 65),
+                        endedAt: Date(timeIntervalSince1970: 70),
+                        target: chromeTarget
+                    )
+                ],
+                targetJudgments: [
+                    TaskTargetJudgment(
+                        target: codexTarget,
+                        alignment: .unaligned,
+                        reason: "代码编辑器不是当前邮件任务。",
+                        judgedAt: Date(timeIntervalSince1970: 66)
+                    ),
+                    TaskTargetJudgment(
+                        target: chromeTarget,
+                        alignment: .aligned,
+                        reason: "Gmail 收件箱匹配任务。",
+                        judgedAt: Date(timeIntervalSince1970: 68)
+                    )
+                ],
+                taskRelevantTargets: [
+                    TaskRelevantTarget(
+                        target: chromeTarget,
+                        reason: "Gmail 收件箱匹配任务。",
+                        lastAlignedAt: Date(timeIntervalSince1970: 68),
+                        lastForegroundAt: Date(timeIntervalSince1970: 70)
+                    )
+                ],
+                nudgeReturnTargetSource: .taskRelevantTarget,
+                resultState: .focused,
+                reason: "当前窗口匹配任务。",
+                shouldNudge: false,
+                nudge: nil
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "00:01:15")
+
+        XCTAssertTrue(text.contains("前台应用时间轴"))
+        XCTAssertTrue(text.contains("Codex"))
+        XCTAssertTrue(text.contains("Google Chrome"))
+        XCTAssertTrue(text.contains("https://mail.google.com/mail/u/0/"))
+        XCTAssertFalse(text.contains("token=secret"))
+        XCTAssertTrue(text.contains("独立目标判断"))
+        XCTAssertTrue(text.contains("alignment：aligned"))
+        XCTAssertTrue(text.contains("任务相关目标库"))
+        XCTAssertTrue(text.contains("lastForegroundAt："))
+        XCTAssertTrue(text.contains("提醒目标选择"))
+        XCTAssertTrue(text.contains("来源：任务相关目标库"))
+        XCTAssertFalse(text.contains("App usage timeline: derived from foreground app intervals"))
+    }
+
+    func testRecognitionDebugClipboardTextOmitsReturnTargetSelectionWhenNoReminderWasChosen() {
+        let target = ActiveWorkTarget(
+            appName: "Codex",
+            bundleIdentifier: "com.openai.codex",
+            processIdentifier: 100,
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 10,
+            spaceIdentifier: nil
+        )
+        let event = FocusEvent(
+            timestamp: Date(timeIntervalSince1970: 75),
+            state: .focused,
+            context: "Codex",
+            nudge: nil,
+            debugDetail: FocusEventDebugDetail(
+                task: "测试时间线详情",
+                evaluator: "自带模型",
+                appUsageTimeline: [
+                    AppUsageInterval(
+                        startedAt: Date(timeIntervalSince1970: 60),
+                        endedAt: Date(timeIntervalSince1970: 70),
+                        target: target
+                    )
+                ],
+                targetJudgments: [
+                    TaskTargetJudgment(
+                        target: target,
+                        alignment: .aligned,
+                        reason: "当前窗口匹配任务。",
+                        judgedAt: Date(timeIntervalSince1970: 68)
+                    )
+                ],
+                resultState: .focused,
+                reason: "当前任务正常。",
+                shouldNudge: false,
+                nudge: nil
+            )
+        )
+
+        let text = event.recognitionDebugClipboardText(timeText: "00:01:15")
+
+        XCTAssertTrue(text.contains("前台应用时间轴"))
+        XCTAssertTrue(text.contains("独立目标判断"))
+        XCTAssertFalse(text.contains("提醒目标选择"))
     }
 
     func testRecognitionDebugClipboardTextShowsSplitEvaluatorResults() {

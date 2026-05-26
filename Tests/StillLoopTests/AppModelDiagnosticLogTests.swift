@@ -48,9 +48,32 @@ final class AppModelDiagnosticLogTests: XCTestCase {
                     screenshotPixelWidth: 1280,
                     screenshotPixelHeight: 832,
                     screenshotCompressedBytes: 155_000,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([1]),
                     cameraPixelWidth: 512,
                     cameraPixelHeight: 288,
-                    cameraCompressedBytes: 9_000
+                    cameraCompressedBytes: 9_000,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([101])
+                ),
+                ContextSnapshot(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    activeAppName: "Code",
+                    windowTitle: "TraceMind",
+                    browserTitle: nil,
+                    browserURL: nil,
+                    screenshotAvailable: true,
+                    cameraFrameAvailable: true,
+                    screenshotPixelWidth: 1280,
+                    screenshotPixelHeight: 832,
+                    screenshotCompressedBytes: 155_001,
+                    screenshotMimeType: "image/jpeg",
+                    screenshotData: Data([2]),
+                    cameraPixelWidth: 512,
+                    cameraPixelHeight: 288,
+                    cameraCompressedBytes: 9_001,
+                    cameraMimeType: "image/jpeg",
+                    cameraData: Data([102])
                 )
             ],
             previousEvents: []
@@ -73,7 +96,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskProgressFailureKind"] as? String, "请求超时")
-        XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_000 && $0["cameraBytes"] as? Int == 9_000 })
+        XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_001 && $0["cameraBytes"] as? Int == 9_001 })
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
@@ -130,12 +153,12 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 3)
+        XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmPreviousEventCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 1_356_030)
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 904_020)
         XCTAssertEqual(succeeded["llmResponseChars"] as? Int, result.requestDebugMetrics?.responseChars)
-        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 3_885)
+        XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 2_590)
         XCTAssertEqual(succeeded["presenceLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPreviousEventCount"] as? Int, 0)
@@ -148,17 +171,162 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["alignmentLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["alignmentLLMCacheN"] as? Int, 221)
-        XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 0)
         XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["progressLLMPreviousEventCount"] as? Int, 1)
-        XCTAssertEqual(succeeded["progressLLMPayloadBytes"] as? Int, 452_010)
-        XCTAssertEqual(succeeded["progressLLMInputTextTokenCount"] as? Int, 1_295)
-        XCTAssertEqual(succeeded["progressLLMCacheN"] as? Int, 221)
+        XCTAssertNil(succeeded["progressLLMPayloadBytes"])
+        XCTAssertNil(succeeded["progressLLMInputTextTokenCount"])
+        XCTAssertNil(succeeded["progressLLMCacheN"])
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+    }
+
+    func testBundledEvaluationPassesTargetJudgmentsToAlignmentPrompt() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+        let snapshot = ContextSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1),
+            activeAppName: "Google Chrome",
+            activeAppBundleIdentifier: "com.google.Chrome",
+            windowTitle: "Accio Work",
+            browserTitle: "Accio Work",
+            browserURL: "https://www.accio.com/",
+            processIdentifier: 99,
+            windowNumber: 300,
+            screenshotAvailable: true,
+            cameraFrameAvailable: true,
+            screenshotMimeType: "image/jpeg",
+            screenshotData: Data([0xFF, 0xD8]),
+            cameraMimeType: "image/jpeg",
+            cameraData: Data([0xFF, 0xD8])
+        )
+        let judgment = TaskTargetJudgment(
+            target: ActiveWorkTarget(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                processIdentifier: 99,
+                windowTitle: "Accio Work",
+                browserTitle: "Accio Work",
+                browserURL: "https://www.accio.com/",
+                windowNumber: 300,
+                spaceIdentifier: nil
+            ),
+            alignment: .unaligned,
+            reason: "独立判断认为 Accio 页面与阅读任务不匹配。",
+            judgedAt: Date(timeIntervalSince1970: 2)
+        )
+
+        _ = await model.evaluateFocus(
+            task: "阅读 中美共同的人工智能焦虑：被未来收割",
+            snapshots: [snapshot],
+            previousEvents: [],
+            targetJudgments: [judgment]
+        )
+
+        let alignmentEngine = try XCTUnwrap(engines.dropFirst().first)
+        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("Target judgment context"))
+        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("独立判断认为 Accio 页面与阅读任务不匹配。"))
+    }
+
+    func testSuccessfulBundledModelWritesProgressFailureDiagnosticWhenOnlyProgressFails() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        let presenceEngine = SuccessfulDiagnosticLLMEngine()
+        let alignmentEngine = SuccessfulDiagnosticLLMEngine()
+        let progressEngine = ThrowingDiagnosticLLMEngine(error: StubHTTPStatusDiagnosticError(statusCode: 503, responseByteCount: 128))
+        var engines: [LocalLLMEngine] = [presenceEngine, alignmentEngine, progressEngine]
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactory: { _, _ in
+                engines.removeFirst()
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "测试 progress 失败诊断",
+            snapshots: makeDiagnosticSnapshots(count: 2),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.evaluator, "自带模型")
+        XCTAssertEqual(result.taskProgressFailureKind, .badStatus)
+        XCTAssertEqual(result.taskProgressFailureHTTPStatusCode, 503)
+        XCTAssertEqual(result.taskProgressFailureHTTPResponseBytes, 128)
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["taskProgressFailureKind"] as? String, "HTTP 状态异常")
+        XCTAssertEqual(succeeded["taskProgressFailureHTTPStatusCode"] as? Int, 503)
+        XCTAssertEqual(succeeded["taskProgressFailureHTTPResponseBytes"] as? Int, 128)
+        XCTAssertEqual(succeeded["progressLLMResponseChars"] as? Int, 0)
+    }
+
+    func testTargetJudgmentDiagnosticFieldsIncludeReasonAndRequestMetrics() throws {
+        let target = ActiveWorkTarget(
+            appName: "Codex",
+            bundleIdentifier: "com.openai.codex",
+            processIdentifier: 42,
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 1001,
+            spaceIdentifier: nil
+        )
+        let result = TaskRelevantTargetEvaluationResult(
+            alignment: .aligned,
+            reason: "目标匹配当前任务。",
+            requestDebugMetrics: LLMRequestDebugMetrics(
+                visualCaptureCount: 1,
+                imageCount: 1,
+                textSnapshotCount: 0,
+                previousEventCount: 0,
+                payloadBytes: 900,
+                responseChars: 20,
+                inputTextCharacterCount: 300,
+                inputTextTokenCount: 75,
+                created: 1_779_999_001,
+                usage: .object([
+                    "prompt_tokens_details": .object([
+                        "cached_tokens": .int(10)
+                    ])
+                ]),
+                timings: .object([
+                    "prompt_n": .int(275),
+                    "predicted_n": .int(20)
+                ])
+            )
+        )
+
+        let fields = AppModel.targetJudgmentDiagnosticFields(
+            sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            target: target,
+            result: result
+        )
+
+        XCTAssertEqual(fields["target"], .string("Codex · StillLoop"))
+        XCTAssertEqual(fields["alignment"], .string("aligned"))
+        XCTAssertEqual(fields["reason"], .string("目标匹配当前任务。"))
+        XCTAssertEqual(fields["targetLLMPayloadBytes"], .int(900))
+        XCTAssertEqual(fields["targetLLMInputTextTokenCount"], .int(75))
+        XCTAssertEqual(fields["targetLLMPromptN"], .int(275))
+        XCTAssertEqual(fields["targetLLMCachedTokens"], .int(10))
     }
 
     func testBundledEvaluationKeepsPresenceLatestAlignmentLatestAndProgressScreensEvenlySpaced() async throws {
@@ -204,7 +372,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let presenceEngine = try XCTUnwrap(engines.first)
         let alignmentEngine = try XCTUnwrap(engines.dropFirst().first)
         let progressEngine = try XCTUnwrap(engines.last)
-        XCTAssertTrue(presenceEngine.flattenedPrompt.contains("camera sample[1]"))
+        XCTAssertFalse(presenceEngine.flattenedPrompt.contains("camera sample[1]"))
         XCTAssertFalse(presenceEngine.flattenedPrompt.contains("Current task:"))
         XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("visual sample[1]"))
         XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:04Z\napp: app-4"))
@@ -218,8 +386,9 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertTrue(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:03Z\napp: app-3"))
         XCTAssertTrue(progressEngine.flattenedPrompt.contains("visual sample[3]"))
         XCTAssertTrue(progressEngine.flattenedPrompt.contains("time: 1970-01-01T00:00:04Z\napp: app-4"))
-        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[1]"))
-        XCTAssertTrue(progressEngine.flattenedPrompt.contains("timeline[4]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[1]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[2]"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("timeline[3]"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera sample"))
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
@@ -546,6 +715,27 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
         )
         return response
     }
+}
+
+private final class ThrowingDiagnosticLLMEngine: StructuredLocalLLMEngine {
+    let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        throw error
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        throw error
+    }
+}
+
+private struct StubHTTPStatusDiagnosticError: Error, LLMHTTPStatusErrorReporting {
+    var statusCode: Int
+    var responseByteCount: Int
 }
 
 private struct StubDevicePowerStatusProvider: DevicePowerStatusProviding {

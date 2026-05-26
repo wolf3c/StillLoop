@@ -80,4 +80,25 @@ final class TimelineDebugDetailTests: XCTestCase {
         XCTAssertTrue(source.contains("event.nudgeReturnTarget"))
         XCTAssertTrue(source.contains("target.diagnosticLines"))
     }
+
+    func testRecognitionDebugPopoverShowsTaskTargetFlowSections() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("前台应用时间轴"))
+        XCTAssertTrue(source.contains("formattedAppUsageTimelineLines"))
+        XCTAssertTrue(source.contains("独立目标判断"))
+        XCTAssertTrue(source.contains("formattedTargetJudgmentLines"))
+        XCTAssertTrue(source.contains("任务相关目标库"))
+        XCTAssertTrue(source.contains("formattedTaskRelevantTargetLines"))
+    }
+
+    func testRecognitionDebugPopoverShowsReturnTargetSelectionOnlyWhenNeeded() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let coreSource = try String(contentsOfFile: "Sources/StillLoopCore/Models.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("提醒目标选择"))
+        XCTAssertTrue(source.contains("shouldShowReturnTargetSelection"))
+        XCTAssertTrue(coreSource.contains("nudgeReturnTargetSource"))
+        XCTAssertTrue(coreSource.contains("shouldShowReturnTargetSelection"))
+    }
 }

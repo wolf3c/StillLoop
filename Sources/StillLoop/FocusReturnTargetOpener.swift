@@ -246,6 +246,7 @@ struct MacFocusReturnTargetOpener: FocusReturnTargetOpening {
     }
 
     func open(_ target: FocusReturnTarget) -> Bool {
+        guard target.isEligibleReturnTarget else { return false }
         if let browserURL = target.browserURL?.trimmingCharacters(in: .whitespacesAndNewlines),
            !browserURL.isEmpty,
            let browserKind = AppleScriptBrowserTabMetadataReader.automationKind(for: target.appName) {

@@ -289,6 +289,11 @@ final class UnixSocketOpenAICompatibleHTTPTransport: OpenAICompatibleHTTPTranspo
 }
 
 final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding, LLMInputTextTokenCounting, LLMFocusPromptCachePrewarming, LLMFocusPromptCacheProbing {
+    struct HTTPStatusError: LLMHTTPStatusErrorReporting, Equatable {
+        var statusCode: Int
+        var responseByteCount: Int
+    }
+
     private static let defaultMaxTokens = 900
     private static let focusEvaluationMaxTokens = 420
     private static let userPresenceEvaluationMaxTokens = 180
@@ -494,7 +499,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         applyAuthentication(to: &request)
         let (data, response) = try await transport.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
+            throw HTTPStatusError(statusCode: http.statusCode, responseByteCount: data.count)
         }
         return try JSONDecoder().decode(ModelsResponse.self, from: data).data
     }
@@ -590,7 +595,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
 
         let (data, response) = try await transport.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
+            throw HTTPStatusError(statusCode: http.statusCode, responseByteCount: data.count)
         }
         return (data, payload.count)
     }
@@ -630,6 +635,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         case .taskAlignmentEvaluation:
             return taskAlignmentEvaluationMaxTokens
         case .taskProgressEvaluation:
+            return taskAlignmentEvaluationMaxTokens
+        case .taskRelevantTargetEvaluation:
             return taskAlignmentEvaluationMaxTokens
         case nil:
             return defaultMaxTokens
@@ -675,6 +682,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             return taskAlignmentEvaluationResponseFormatJSON()
         case .taskProgressEvaluation:
             return taskProgressEvaluationResponseFormatJSON()
+        case .taskRelevantTargetEvaluation:
+            return taskRelevantTargetEvaluationResponseFormatJSON()
         }
     }
 
@@ -833,6 +842,35 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
                     ("required", .array([
                         .string("progress"),
                         .string("comparisonBasis"),
+                        .string("reason")
+                    ]))
+                ]))
+            ]))
+        ])
+    }
+
+    private static func taskRelevantTargetEvaluationResponseFormatJSON() -> OrderedJSONValue {
+        .object([
+            ("type", .string("json_schema")),
+            ("json_schema", .object([
+                ("name", .string("task_relevant_target_evaluation")),
+                ("strict", .bool(true)),
+                ("schema", .object([
+                    ("type", .string("object")),
+                    ("additionalProperties", .bool(false)),
+                    ("properties", .object([
+                        ("alignment", .object([
+                            ("type", .string("string")),
+                            ("enum", .array([
+                                .string("aligned"),
+                                .string("unaligned"),
+                                .string("unclear")
+                            ]))
+                        ])),
+                        ("reason", .object([("type", .string("string"))]))
+                    ])),
+                    ("required", .array([
+                        .string("alignment"),
                         .string("reason")
                     ]))
                 ]))

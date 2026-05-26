@@ -749,7 +749,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：请求超时）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 1)
     }
 
     func testBundledInferenceFallbackRecordsFailureReasonInEvaluator() async {
@@ -787,7 +787,7 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "基础规则（自带模型失败：JSON 解析失败）")
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 1)
     }
 
     func testEvaluationContextUsesOnlyLatestMinuteAndKeepsVisualSamplingLimit() {
@@ -960,6 +960,103 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.lastFocusedReturnTarget, latestTarget)
     }
 
+    func testOpenLastFocusedReturnTargetPrefersLatestTaskRelevantTarget() {
+        let opener = RecordingFocusReturnTargetOpener(result: true)
+        let model = makeModel(returnTargetOpener: opener)
+        let oldFocusedTarget = FocusReturnTarget(
+            appName: "Zed",
+            appBundleIdentifier: "dev.zed.Zed",
+            windowTitle: "Old",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 300,
+            windowNumber: 11,
+            capturedAt: Date(timeIntervalSince1970: 20)
+        )
+        let relevantTarget = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 1200,
+            windowTitle: "Inbox",
+            browserTitle: "Inbox (3) - Gmail",
+            browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            windowNumber: 8801,
+            spaceIdentifier: nil
+        )
+        model.currentSession = FocusSession(
+            task: "处理 Gmail 未读邮件",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 20),
+                    state: .focused,
+                    context: "Zed",
+                    nudge: nil,
+                    returnTarget: oldFocusedTarget
+                )
+            ],
+            feedback: nil,
+            taskRelevantTargets: [
+                TaskRelevantTarget(
+                    target: relevantTarget,
+                    reason: "Gmail 匹配任务。",
+                    lastAlignedAt: Date(timeIntervalSince1970: 15),
+                    lastForegroundAt: Date(timeIntervalSince1970: 30)
+                )
+            ]
+        )
+
+        XCTAssertTrue(model.openLastFocusedReturnTarget())
+
+        XCTAssertEqual(opener.openedTargets.first?.appName, "Google Chrome")
+        XCTAssertEqual(opener.openedTargets.first?.browserURL, "https://mail.google.com/mail/u/0/")
+    }
+
+    func testRecordActiveWorkTargetBuildsOpenEndedUsageIntervalsAndClosesOnStop() {
+        let model = makeModel()
+        let zed = ActiveWorkTarget(
+            appName: "Zed",
+            bundleIdentifier: "dev.zed.Zed",
+            processIdentifier: 100,
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 11,
+            spaceIdentifier: nil
+        )
+        let chrome = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 200,
+            windowTitle: "Gmail",
+            browserTitle: "Inbox",
+            browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            windowNumber: 22,
+            spaceIdentifier: "space-1"
+        )
+        model.currentSession = FocusSession(
+            task: "处理 Gmail",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [],
+            feedback: nil
+        )
+
+        model.recordActiveWorkTarget(zed, at: Date(timeIntervalSince1970: 1))
+        model.recordActiveWorkTarget(zed, at: Date(timeIntervalSince1970: 2))
+        model.recordActiveWorkTarget(chrome, at: Date(timeIntervalSince1970: 4))
+        model.closeActiveWorkTargetInterval(at: Date(timeIntervalSince1970: 6))
+
+        let intervals = model.currentSession?.appUsageIntervals
+        XCTAssertEqual(intervals?.count, 2)
+        XCTAssertEqual(intervals?.first?.startedAt, Date(timeIntervalSince1970: 1))
+        XCTAssertEqual(intervals?.first?.endedAt, Date(timeIntervalSince1970: 4))
+        XCTAssertEqual(intervals?.last?.target.appName, "Google Chrome")
+        XCTAssertEqual(intervals?.last?.target.browserURL, "https://mail.google.com/mail/u/0/")
+        XCTAssertEqual(intervals?.last?.endedAt, Date(timeIntervalSince1970: 6))
+    }
+
     func testOpenLastFocusedReturnTargetReturnsFalseWithoutTarget() {
         let opener = RecordingFocusReturnTargetOpener(result: true)
         let model = makeModel(returnTargetOpener: opener)
@@ -1015,6 +1112,57 @@ final class HomeNavigationTests: XCTestCase {
         )
 
         XCTAssertEqual(AppModel.nudgeReturnTarget(for: "先回到：优化tracemind", in: session), latestTarget)
+    }
+
+    func testNudgeReturnTargetPrefersLatestTaskRelevantTarget() {
+        let focusedTarget = FocusReturnTarget(
+            appName: "Zed",
+            appBundleIdentifier: "dev.zed.Zed",
+            windowTitle: "Old",
+            browserTitle: nil,
+            browserURL: nil,
+            processIdentifier: 300,
+            windowNumber: 11,
+            capturedAt: Date(timeIntervalSince1970: 20)
+        )
+        let relevantTarget = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 1200,
+            windowTitle: "Inbox",
+            browserTitle: "Inbox (3) - Gmail",
+            browserURL: "https://mail.google.com/mail/u/0/#inbox",
+            windowNumber: 8801,
+            spaceIdentifier: nil
+        )
+        let session = FocusSession(
+            task: "处理 Gmail 未读邮件",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [
+                FocusEvent(
+                    timestamp: Date(timeIntervalSince1970: 20),
+                    state: .focused,
+                    context: "Zed",
+                    nudge: nil,
+                    returnTarget: focusedTarget
+                )
+            ],
+            feedback: nil,
+            taskRelevantTargets: [
+                TaskRelevantTarget(
+                    target: relevantTarget,
+                    reason: "Gmail 匹配任务。",
+                    lastAlignedAt: Date(timeIntervalSince1970: 15),
+                    lastForegroundAt: Date(timeIntervalSince1970: 30)
+                )
+            ]
+        )
+
+        let target = AppModel.nudgeReturnTarget(for: "先回到：处理 Gmail", in: session)
+
+        XCTAssertEqual(target?.appName, "Google Chrome")
+        XCTAssertEqual(target?.browserURL, "https://mail.google.com/mail/u/0/")
     }
 
     func testNudgeReturnTargetIsNilWithoutFocusedTarget() {

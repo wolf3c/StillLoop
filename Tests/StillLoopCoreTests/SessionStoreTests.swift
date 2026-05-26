@@ -148,6 +148,66 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions.first?.events.first?.nudgeReturnTarget?.windowNumber, 3002)
     }
 
+    func testAppUsageAndTaskRelevantTargetsRoundTripInSessionStore() throws {
+        let store = FileSessionStore(appSupportDirectory: makeSupportDirectory())
+        let target = ActiveWorkTarget(
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            processIdentifier: 1200,
+            windowTitle: "Gmail",
+            browserTitle: "Inbox (3) - Gmail",
+            browserURL: "https://mail.google.com/mail/u/0/#inbox?token=secret",
+            windowNumber: 8801,
+            spaceIdentifier: "space-1"
+        )
+        let session = FocusSession(
+            id: UUID(uuidString: "12121212-aaaa-4aaa-8aaa-121212121212")!,
+            task: "处理 Gmail",
+            startedAt: Date(timeIntervalSince1970: 10),
+            endedAt: Date(timeIntervalSince1970: 80),
+            events: [],
+            feedback: nil,
+            appUsageIntervals: [
+                AppUsageInterval(startedAt: Date(timeIntervalSince1970: 11), endedAt: Date(timeIntervalSince1970: 30), target: target)
+            ],
+            targetJudgments: [
+                TaskTargetJudgment(target: target, alignment: .aligned, reason: "Gmail 匹配任务。", judgedAt: Date(timeIntervalSince1970: 16))
+            ],
+            taskRelevantTargets: [
+                TaskRelevantTarget(target: target, reason: "Gmail 匹配任务。", lastAlignedAt: Date(timeIntervalSince1970: 16), lastForegroundAt: Date(timeIntervalSince1970: 30))
+            ]
+        )
+
+        try store.save(session: session)
+
+        let loaded = try XCTUnwrap(try store.loadSessions().first)
+        XCTAssertEqual(loaded.appUsageIntervals, session.appUsageIntervals)
+        XCTAssertEqual(loaded.targetJudgments, session.targetJudgments)
+        XCTAssertEqual(loaded.taskRelevantTargets, session.taskRelevantTargets)
+        XCTAssertEqual(loaded.appUsageIntervals.first?.target.browserURL, "https://mail.google.com/mail/u/0/")
+    }
+
+    func testDecodesLegacySessionWithoutAppUsageFields() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = Data("""
+        {
+          "id": "13131313-aaaa-4aaa-8aaa-131313131313",
+          "task": "旧会话",
+          "startedAt": "1970-01-01T00:00:10Z",
+          "endedAt": null,
+          "events": [],
+          "feedback": null
+        }
+        """.utf8)
+
+        let session = try decoder.decode(FocusSession.self, from: data)
+
+        XCTAssertTrue(session.appUsageIntervals.isEmpty)
+        XCTAssertTrue(session.targetJudgments.isEmpty)
+        XCTAssertTrue(session.taskRelevantTargets.isEmpty)
+    }
+
     func testDecodesLegacyFocusEventWithoutReturnTarget() throws {
         let data = Data("""
         {
