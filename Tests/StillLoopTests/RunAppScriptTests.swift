@@ -92,7 +92,22 @@ final class RunAppScriptTests: XCTestCase {
     func testRunAppForwardsPathForLocalMLXRuntimeDependencies() throws {
         let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
 
+        XCTAssertTrue(script.contains("MLX_RUNTIME_DIR=\"$ROOT_DIR/.build/mlx-runtime\""))
+        XCTAssertTrue(script.contains("if [[ -x \"$MLX_RUNTIME_DIR/bin/python3\" ]]; then"))
+        XCTAssertTrue(script.contains("export PATH=\"$MLX_RUNTIME_DIR/bin:$PATH\""))
         XCTAssertTrue(script.contains("--env \"PATH=$PATH\""))
+    }
+
+    func testSetupMLXRuntimeInstallsProjectLocalMLXVLMEnvironment() throws {
+        XCTAssertTrue(FileManager.default.fileExists(atPath: "scripts/setup-mlx-runtime.sh"))
+
+        let script = try String(contentsOfFile: "scripts/setup-mlx-runtime.sh", encoding: .utf8)
+
+        XCTAssertTrue(script.contains("RUNTIME_DIR=\"$ROOT_DIR/.build/mlx-runtime\""))
+        XCTAssertTrue(script.contains("python3 -m venv \"$RUNTIME_DIR\""))
+        XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -m pip install --upgrade pip"))
+        XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -m pip install --upgrade mlx-vlm"))
+        XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -c \"import mlx_vlm\""))
     }
 
     func testAppStoreEntitlementsUseMinimumRequiredSandboxCapabilities() throws {

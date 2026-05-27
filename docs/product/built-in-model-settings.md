@@ -65,13 +65,21 @@
 
 自有模型 runtime 支持内部 MLX / llama.cpp 两套后端。这个切换不暴露给用户设置；用户可见模型来源仍然只有自带模型、手动模型和基础规则。
 
-开发默认后端是本机 `mlx_vlm.server` 风格的 OpenAI-compatible MLX 服务，使用 `mlx-community/Qwen3.5-0.8B-4bit`。第一版只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包；开发机需要有可被 `scripts/run-app.sh` 的 `PATH` 找到的 `python3 -m mlx_vlm.server`。
+开发默认后端是本机 `mlx_vlm.server` 风格的 OpenAI-compatible MLX 服务，使用 `mlx-community/Qwen3.5-0.8B-4bit`。第一版只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包。
+
+本机 MLX 实测前先运行一次：
+
+```sh
+scripts/setup-mlx-runtime.sh
+```
+
+该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 的 `/usr/bin/env python3 -m mlx_vlm.server` 会使用项目本地依赖，而不是依赖系统 Python。
 
 MLX 启动、readiness、图片能力探测失败时，应用会停止 MLX 进程并自动回退到 llama.cpp 后端。诊断日志会记录实际使用的 `bundledRuntimeKind`，如果发生自动回退也会记录 `fallbackRuntimeKind`，避免把 llama.cpp 回退结果误判为 MLX 实测结果。
 
 llama.cpp 后端使用应用内打包的 `stillloop-llama-server`。开发和 App Store 包会把 runtime 复制到 app bundle 的 `Contents/Helpers/stillloop-llama-server`。
 
-llama.cpp 后端使用 Unix domain socket，不依赖 TCP localhost server。因此 Mac App Store 构建不需要 `com.apple.security.network.server` entitlement。MLX 后端第一版是本机开发实测路径，不作为 App Store 打包路径。
+llama.cpp 后端使用 Unix domain socket，不依赖 TCP localhost server。因此 Mac App Store 构建不需要 `com.apple.security.network.server` entitlement。MLX 后端第一版是本机开发实测路径，不作为 App Store 打包路径；`.build/mlx-runtime` 也不会被复制进正式包。
 
 llama.cpp 主要启动参数：
 

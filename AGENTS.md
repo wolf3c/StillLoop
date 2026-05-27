@@ -153,7 +153,15 @@ scripts/run-app.sh
 
 For prompt-cache A/B performance testing only, add `STILLLOOP_DISABLE_PROMPT_CACHE=1` to the same launch command. Do not use it as the default development path unless the task is specifically testing llama.cpp prompt-cache behavior.
 
-The default built-in-model path uses the bundled llama.cpp helper under `Sources/StillLoop/Resources/Runtime/`. `scripts/run-app.sh` copies it into `.build/StillLoop.app/Contents/Helpers/stillloop-llama-server` with its `lib*.dylib` dependencies, signs the helper files, and StillLoop starts the helper lazily during a focus session. The built-in helper listens on a per-app Unix domain socket in the temporary directory, not a TCP localhost port, so Mac App Store builds do not need `com.apple.security.network.server`. The helper starts with `--mlock` to reduce memory-compression or swap-related inference tail latency, at the cost of higher resident memory pressure. If the focus screen shows a built-in runtime failure, check `pgrep -fl "stillloop-llama-server|llama-server|StillLoop"` before falling back to manual HTTP testing.
+For local MLX backend testing, bootstrap the project-local Python runtime once before launching:
+
+```sh
+scripts/setup-mlx-runtime.sh
+```
+
+This creates `.build/mlx-runtime` and installs `mlx-vlm` there. `scripts/run-app.sh` prepends `.build/mlx-runtime/bin` to the app launch `PATH` when that venv exists, so the internal MLX runtime's `/usr/bin/env python3 -m mlx_vlm.server` uses project-local dependencies instead of the system Python. This is local development only; `.build/mlx-runtime` is not copied into App Store packages.
+
+The built-in-model path keeps the bundled llama.cpp helper under `Sources/StillLoop/Resources/Runtime/` as the fallback backend. `scripts/run-app.sh` copies it into `.build/StillLoop.app/Contents/Helpers/stillloop-llama-server` with its `lib*.dylib` dependencies, signs the helper files, and StillLoop starts the helper lazily during a focus session when llama.cpp is selected internally or MLX fallback is needed. The built-in helper listens on a per-app Unix domain socket in the temporary directory, not a TCP localhost port, so Mac App Store builds do not need `com.apple.security.network.server`. The helper starts with `--mlock` to reduce memory-compression or swap-related inference tail latency, at the cost of higher resident memory pressure. If the focus screen shows a built-in runtime failure, check `pgrep -fl "stillloop-llama-server|llama-server|StillLoop"` before falling back to manual HTTP testing.
 
 Only launch with a local HTTP model when the task explicitly requires manual model configuration, HTTP endpoint checks, or fallback behavior:
 

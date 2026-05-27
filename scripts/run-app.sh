@@ -10,6 +10,7 @@ HELPERS_DIR="$CONTENTS_DIR/Helpers"
 RUNTIME_SOURCE_DIR="$ROOT_DIR/Sources/StillLoop/Resources/Runtime"
 RUNTIME_SOURCE="$ROOT_DIR/Sources/StillLoop/Resources/Runtime/llama-server"
 HELPER_EXECUTABLE_NAME="stillloop-llama-server"
+MLX_RUNTIME_DIR="$ROOT_DIR/.build/mlx-runtime"
 BUNDLE_IDENTIFIER="local.StillLoop.dev"
 CODESIGN_IDENTITY="${STILLLOOP_CODESIGN_IDENTITY:--}"
 DESIGNATED_REQUIREMENT="=designated => identifier \"$BUNDLE_IDENTIFIER\""
@@ -128,6 +129,10 @@ fi
 
 if [[ "${STILLLOOP_BUILD_ONLY:-0}" == "1" ]]; then
   exit 0
+fi
+
+if [[ -x "$MLX_RUNTIME_DIR/bin/python3" ]]; then
+  export PATH="$MLX_RUNTIME_DIR/bin:$PATH"
 fi
 
 OPEN_ARGS=(
