@@ -1040,33 +1040,15 @@ public struct LLMFocusEvaluator {
         let alignmentTargetSnapshots = targetSnapshots.filter { targetSnapshot in
             taskAlignmentVisualSnapshots.contains { $0.id == targetSnapshot.snapshot.id }
         }
-        async let presenceOutcome = userPresenceOutcome(
+        let presenceResult = await userPresenceOutcome(
             engine: userPresenceEngine,
             visualSnapshots: visualSnapshots,
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit
         )
-        async let taskOutcome = taskAlignmentOutcome(
-            engine: taskAlignmentEngine,
-            task: task,
-            textSnapshots: taskAlignmentVisualSnapshots,
-            visualSnapshots: taskAlignmentVisualSnapshots,
-            previousEvents: previousEvents,
-            targetSnapshots: alignmentTargetSnapshots,
-            targetJudgments: targetJudgments,
-            powerStatus: powerStatus,
-            visualSampleLimit: taskAlignmentVisualSampleLimit
-        )
-        let (presenceResult, taskResult) = await (presenceOutcome, taskOutcome)
 
-        switch (presenceResult, taskResult) {
-        case (.failure(let presenceError), .failure(let taskError)):
-            throw LLMSplitFocusEvaluationError(
-                presenceError: presenceError,
-                taskAlignmentError: taskError,
-                taskProgressError: nil
-            )
-        case (.failure, .success(let taskRun)):
+        switch presenceResult {
+        case .failure(let presenceError):
             let syntheticPresenceRun = UserPresenceRun(
                 evaluation: LLMUserPresenceEvaluation(
                     presence: .unclear,
@@ -1082,6 +1064,28 @@ public struct LLMFocusEvaluator {
                 ),
                 duration: 0
             )
+            let taskResult = await taskAlignmentOutcome(
+                engine: taskAlignmentEngine,
+                task: task,
+                textSnapshots: taskAlignmentVisualSnapshots,
+                visualSnapshots: taskAlignmentVisualSnapshots,
+                previousEvents: previousEvents,
+                targetSnapshots: alignmentTargetSnapshots,
+                targetJudgments: targetJudgments,
+                powerStatus: powerStatus,
+                visualSampleLimit: taskAlignmentVisualSampleLimit
+            )
+            let taskRun: TaskAlignmentRun
+            switch taskResult {
+            case .success(let run):
+                taskRun = run
+            case .failure(let taskError):
+                throw LLMSplitFocusEvaluationError(
+                    presenceError: presenceError,
+                    taskAlignmentError: taskError,
+                    taskProgressError: nil
+                )
+            }
             guard taskRun.evaluation.alignment == .aligned else {
                 return synthesizeSplitResult(
                     task: task,
@@ -1115,18 +1119,28 @@ public struct LLMFocusEvaluator {
                 powerStatus: powerStatus,
                 taskProgressVisualSampleLimit: taskProgressVisualSampleLimit
             )
-        case (.success(let presenceRun), .failure(let taskError)):
-            guard presenceRun.evaluation.presence == .away || presenceRun.evaluation.presence == .resting else {
-                throw taskError
+        case .success(let presenceRun):
+            if presenceRun.evaluation.presence == .away || presenceRun.evaluation.presence == .resting {
+                return synthesizeSplitResult(
+                    task: task,
+                    presenceRun: presenceRun,
+                    taskRun: nil,
+                    progressRun: nil,
+                    targetSnapshots: targetSnapshots,
+                )
             }
-            return synthesizeSplitResult(
+            let taskResult = await taskAlignmentOutcome(
+                engine: taskAlignmentEngine,
                 task: task,
-                presenceRun: presenceRun,
-                taskRun: nil,
-                progressRun: nil,
-                targetSnapshots: targetSnapshots
+                textSnapshots: taskAlignmentVisualSnapshots,
+                visualSnapshots: taskAlignmentVisualSnapshots,
+                previousEvents: previousEvents,
+                targetSnapshots: alignmentTargetSnapshots,
+                targetJudgments: targetJudgments,
+                powerStatus: powerStatus,
+                visualSampleLimit: taskAlignmentVisualSampleLimit
             )
-        case (.success(let presenceRun), .success(let taskRun)):
+            let taskRun = try taskResult.get()
             guard shouldRunTaskProgress(presence: presenceRun.evaluation, taskAlignment: taskRun.evaluation) else {
                 return synthesizeSplitResult(
                     task: task,
@@ -1505,7 +1519,7 @@ public struct LLMFocusEvaluator {
             taskProgress: progressRun?.evaluation,
             focusedSnapshot: focusedSnapshot
         )
-        result.modelRunDurationSeconds = max(presenceRun.duration, taskRun?.duration ?? 0, progressRun?.duration ?? 0)
+        result.modelRunDurationSeconds = presenceRun.duration + (taskRun?.duration ?? 0) + (progressRun?.duration ?? 0)
         result.requestDebugMetrics = combinedMetrics(
             presence: presenceRun.requestDebugMetrics,
             taskAlignment: taskRun?.requestDebugMetrics,

@@ -227,6 +227,50 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertNil(succeeded["taskProgressFailureKind"])
     }
 
+    func testBundledEvaluationSkipsAlignmentAndProgressDiagnosticsWhenUserIsAway() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        var engines: [AwayDiagnosticLLMEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
+            bundledLLMEngineFactory: { _, _ in
+                let engine = AwayDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "写方案",
+            snapshots: makeDiagnosticSnapshots(count: 2),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .away)
+        XCTAssertNil(result.splitAnalysis?.taskAlignment)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskAlignmentRequestDebugMetrics)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+        XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 452_010)
+        XCTAssertEqual(engines.map(\.callCount), [1, 0, 0])
+
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertNil(succeeded["alignmentLLMVisualCaptureCount"])
+        XCTAssertNil(succeeded["alignmentLLMPayloadBytes"])
+        XCTAssertNil(succeeded["progressLLMVisualCaptureCount"])
+        XCTAssertNil(succeeded["progressLLMPayloadBytes"])
+        XCTAssertNil(succeeded["taskProgressFailureKind"])
+    }
+
     func testBundledEvaluationOmitsUnalignedTargetJudgmentsFromAlignmentPrompt() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
@@ -794,6 +838,54 @@ private final class UnalignedDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMR
         default:
             """
             {"alignment":"unaligned","focusTargetID":null,"reason":"屏幕内容与任务不匹配。"}
+            """
+        }
+        lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: 452_010,
+            responseChars: response.count,
+            inputTextTokenCount: 1_295,
+            created: 1_779_348_997,
+            usage: .object([
+                "prompt_tokens": .int(3_699),
+                "total_tokens": .int(4_035)
+            ]),
+            timings: .object([
+                "prompt_n": .int(3_478),
+                "prompt_ms": .double(5_877.439),
+                "predicted_n": .int(336),
+                "predicted_ms": .double(6_763.672)
+            ])
+        )
+        return response
+    }
+}
+
+private final class AwayDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding {
+    private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+    private(set) var callCount = 0
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        try await complete(messages: messages, responseFormat: nil)
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        callCount += 1
+        let response = switch responseFormat {
+        case .userPresenceEvaluation:
+            """
+            {"presence":"away","engagement":"unclear","reason":"用户离开摄像头。"}
+            """
+        case .taskAlignmentEvaluation:
+            """
+            {"alignment":"aligned","focusTargetID":null,"reason":"不应运行。"}
+            """
+        case .taskProgressEvaluation:
+            """
+            {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"不应运行。"}
+            """
+        default:
+            """
+            {"presence":"away","engagement":"unclear","reason":"用户离开摄像头。"}
             """
         }
         lastRequestTransportMetrics = LLMRequestTransportMetrics(

@@ -265,9 +265,11 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(result.state, .away)
         XCTAssertEqual(presenceEngine.callCount, 1)
-        XCTAssertEqual(taskEngine.callCount, 1)
+        XCTAssertEqual(taskEngine.callCount, 0)
         XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskAlignment)
         XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskAlignmentRequestDebugMetrics)
         XCTAssertNil(result.taskProgressRequestDebugMetrics)
     }
 
@@ -296,8 +298,12 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.state, .resting)
+        XCTAssertEqual(presenceEngine.callCount, 1)
+        XCTAssertEqual(taskEngine.callCount, 0)
         XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskAlignment)
         XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskAlignmentRequestDebugMetrics)
         XCTAssertNil(result.taskProgressRequestDebugMetrics)
     }
 
@@ -1260,7 +1266,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.responseChars, 0)
     }
 
-    func testSplitEvaluatorRunsPresenceAndAlignmentBeforeAlignedProgress() async throws {
+    func testSplitEvaluatorRunsPresenceAlignmentAndProgressSeriallyWhenAligned() async throws {
         let presenceEngine = DelayedStructuredStubEngine(
             response: #"{"presence":"present","engagement":"engaged","reason":"用户在场。"}"#,
             delay: .milliseconds(200)
@@ -1307,7 +1313,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             cameraData: Data([102])
         )
 
-        _ = try await evaluator.evaluate(
+        let result = try await evaluator.evaluate(
             task: "整理方案",
             textSnapshots: [firstSnapshot, secondSnapshot],
             visualSnapshots: [secondSnapshot],
@@ -1316,11 +1322,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         let duration = Date().timeIntervalSince(startedAt)
-        XCTAssertGreaterThanOrEqual(duration, 0.35)
-        XCTAssertLessThan(duration, 0.55)
+        XCTAssertGreaterThanOrEqual(duration, 0.55)
+        XCTAssertLessThan(duration, 0.75)
         XCTAssertEqual(presenceEngine.callCount, 1)
         XCTAssertEqual(taskEngine.callCount, 1)
         XCTAssertEqual(progressEngine.callCount, 1)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(result.modelRunDurationSeconds), 0.55)
+        XCTAssertLessThan(try XCTUnwrap(result.modelRunDurationSeconds), 0.75)
     }
 
     func testSuccessfulModelEvaluationRecordsRequestDuration() async throws {
