@@ -26,6 +26,30 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertTrue(source.contains("model.submitUserFeedback()"))
     }
 
+    func testSettingsViewContainsOpenSourceModelInfoEntry() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let settingsStart = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
+        let privacyStart = try XCTUnwrap(source.range(of: "private struct PrivacySettingsView: View"))
+        let settingsSnippet = String(source[settingsStart.lowerBound..<privacyStart.lowerBound])
+
+        XCTAssertTrue(settingsSnippet.contains("开源许可与模型信息"))
+        XCTAssertTrue(settingsSnippet.contains("查看内置模型、GGUF 来源和本地运行时许可。"))
+        XCTAssertTrue(settingsSnippet.contains("Image(systemName: \"doc.text.magnifyingglass\")"))
+        XCTAssertTrue(settingsSnippet.contains("model.screen = .openSourceModelInfo"))
+    }
+
+    func testOpenSourceModelLicensePageContainsRequiredDisclosureSections() throws {
+        let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("case .openSourceModelInfo:"))
+        XCTAssertTrue(source.contains("OpenSourceModelLicenseView()"))
+        XCTAssertTrue(source.contains("private struct OpenSourceModelLicenseView: View"))
+        XCTAssertTrue(source.contains("设置 / 开源许可与模型信息"))
+        XCTAssertTrue(source.contains("OpenSourceModelDisclosure.builtIn"))
+        XCTAssertTrue(source.contains("返回设置"))
+        XCTAssertTrue(source.contains("model.screen = .settings"))
+    }
+
     func testSettingsViewUsesScrollableContent() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
         let settingsStart = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))

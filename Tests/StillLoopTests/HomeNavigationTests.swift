@@ -865,7 +865,7 @@ final class HomeNavigationTests: XCTestCase {
     func testSettingsButtonIsHiddenDuringSetupFlow() {
         let model = makeModel()
 
-        for screen in [AppModel.Screen.welcome, .permissions, .modelSetup, .settings, .privacy] {
+        for screen in [AppModel.Screen.welcome, .permissions, .modelSetup, .settings, .privacy, .openSourceModelInfo] {
             model.screen = screen
             XCTAssertFalse(model.shouldShowSettingsNavigation, "Expected settings navigation hidden on \(screen)")
         }

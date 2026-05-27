@@ -314,6 +314,8 @@ final class StillLoopTelemetry: StillLoopTelemetryRecording {
             return "settings"
         case .privacy:
             return "privacy"
+        case .openSourceModelInfo:
+            return "open_source_model_info"
         }
     }
 }

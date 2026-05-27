@@ -64,6 +64,8 @@ struct StillLoopView: View {
             SettingsView()
         case .privacy:
             PrivacySettingsView()
+        case .openSourceModelInfo:
+            OpenSourceModelLicenseView()
         }
     }
 }
@@ -1813,6 +1815,28 @@ private struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
+                Button {
+                    model.screen = .openSourceModelInfo
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("开源许可与模型信息")
+                                .font(.headline)
+                            Text("查看内置模型、GGUF 来源和本地运行时许可。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: 520)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
                 SettingsPrivacySection()
             }
             .padding(40)
@@ -1949,6 +1973,111 @@ private struct UserFeedbackSheet: View {
         }
         .padding(24)
         .frame(width: 460)
+    }
+}
+
+private struct OpenSourceModelLicenseView: View {
+    @EnvironmentObject private var model: AppModel
+    private let disclosure = OpenSourceModelDisclosure.builtIn
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("设置 / 开源许可与模型信息")
+                    .font(.largeTitle.weight(.semibold))
+
+                OpenSourceLicenseSection(title: "内置模型", systemImage: "cpu") {
+                    OpenSourceLicenseRow(label: "基础模型", value: disclosure.baseModelID)
+                    OpenSourceLicenseRow(label: "许可证", value: disclosure.baseModelLicenseName)
+                    Link("Qwen 官方许可证", destination: disclosure.baseModelLicenseURL)
+                    OpenSourceLicenseRow(label: "GGUF 来源", value: "Hugging Face / \(disclosure.ggufRepositoryID)")
+                    OpenSourceLicenseList(label: "模型文件", values: disclosure.modelFilenames)
+                    OpenSourceLicenseRow(label: "保存位置", value: disclosure.localModelPathDescription)
+                    Text(disclosure.ggufLicenseNote)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                OpenSourceLicenseSection(title: "本地运行时", systemImage: "server.rack") {
+                    OpenSourceLicenseRow(label: "运行时", value: disclosure.runtimeName)
+                    OpenSourceLicenseRow(label: "许可证", value: disclosure.runtimeLicenseName)
+                    OpenSourceLicenseRow(label: "版权", value: disclosure.runtimeCopyright)
+                    OpenSourceLicenseRow(label: "许可文件", value: disclosure.runtimeLicenseResourceName)
+                    Text("完整 MIT 许可文本保留在应用资源 \(disclosure.runtimeLicenseResourceName)。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                OpenSourceLicenseSection(title: "手动模型服务", systemImage: "network") {
+                    Text(disclosure.manualModelServiceNote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button("返回设置") {
+                    model.screen = .settings
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(40)
+            .frame(maxWidth: 680, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct OpenSourceLicenseSection<Content: View>: View {
+    var title: String
+    var systemImage: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: 600, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct OpenSourceLicenseRow: View {
+    var label: String
+    var value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct OpenSourceLicenseList: View {
+    var label: String
+    var values: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(values, id: \.self) { value in
+                Label(value, systemImage: "doc")
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 

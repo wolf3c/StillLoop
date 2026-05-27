@@ -14,6 +14,7 @@ final class StillLoopTelemetryTests: XCTestCase {
         XCTAssertEqual(StillLoopTelemetry.screenName(for: .review), "review")
         XCTAssertEqual(StillLoopTelemetry.screenName(for: .settings), "settings")
         XCTAssertEqual(StillLoopTelemetry.screenName(for: .privacy), "privacy")
+        XCTAssertEqual(StillLoopTelemetry.screenName(for: .openSourceModelInfo), "open_source_model_info")
     }
 
     func testSessionEndEventDoesNotContainTaskTextOrRawUserContent() throws {

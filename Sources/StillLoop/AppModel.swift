@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
         case review
         case settings
         case privacy
+        case openSourceModelInfo
     }
 
     enum SessionStatus: String {
@@ -702,7 +703,7 @@ final class AppModel: ObservableObject {
 
     var shouldShowSettingsNavigation: Bool {
         switch screen {
-        case .welcome, .permissions, .modelSetup, .settings, .privacy:
+        case .welcome, .permissions, .modelSetup, .settings, .privacy, .openSourceModelInfo:
             return false
         case .taskSetup, .focus, .review:
             return true
