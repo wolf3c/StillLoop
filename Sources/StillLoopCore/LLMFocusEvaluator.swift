@@ -1057,74 +1057,63 @@ public struct LLMFocusEvaluator {
             powerStatus: powerStatus,
             visualSampleLimit: taskAlignmentVisualSampleLimit
         )
-        async let progressOutcome = taskProgressOutcome(
-            engine: taskProgressEngine,
-            task: task,
-            textSnapshots: textSnapshots,
-            visualSnapshots: taskProgressVisualSnapshots,
-            previousEvents: previousEvents,
-            targetSnapshots: targetSnapshots,
-            powerStatus: powerStatus,
-            visualSampleLimit: taskProgressVisualSampleLimit,
-            appUsageIntervals: appUsageIntervals,
-            evaluationWindowEnd: evaluationWindowEnd
-        )
-        let (presenceResult, taskResult, progressResult) = await (presenceOutcome, taskOutcome, progressOutcome)
-        let taskProgressFailureKind = progressResult.failureError.map(Self.failureKind)
-        let taskProgressHTTPFailure = progressResult.failureError.flatMap(Self.httpFailureDiagnostics)
-
-        let progressRun: TaskProgressRun = switch progressResult {
-        case .success(let run):
-            run
-        case .failure:
-            TaskProgressRun(
-                evaluation: LLMTaskProgressEvaluation(
-                    progress: .unclear,
-                    comparisonBasis: "progress_evaluation_failed",
-                    reason: "任务进展判断失败。"
-                ),
-                requestDebugMetrics: emptySplitMetrics(
-                    visualCaptureCount: taskProgressVisualSnapshots.count,
-                    textSnapshotCount: textSnapshots.count,
-                    previousEventCount: previousEvents.count,
-                    powerStatus: powerStatus,
-                    visualSampleLimit: taskProgressVisualSampleLimit
-                ),
-                duration: 0
-            )
-        }
+        let (presenceResult, taskResult) = await (presenceOutcome, taskOutcome)
 
         switch (presenceResult, taskResult) {
         case (.failure(let presenceError), .failure(let taskError)):
             throw LLMSplitFocusEvaluationError(
                 presenceError: presenceError,
                 taskAlignmentError: taskError,
-                taskProgressError: progressResult.failureError
+                taskProgressError: nil
             )
         case (.failure, .success(let taskRun)):
+            let syntheticPresenceRun = UserPresenceRun(
+                evaluation: LLMUserPresenceEvaluation(
+                    presence: .unclear,
+                    engagement: .unclear,
+                    reason: "用户状态判断失败。"
+                ),
+                requestDebugMetrics: emptySplitMetrics(
+                    visualCaptureCount: visualSnapshots.count,
+                    textSnapshotCount: 0,
+                    previousEventCount: 0,
+                    powerStatus: powerStatus,
+                    visualSampleLimit: visualSampleLimit
+                ),
+                duration: 0
+            )
+            guard taskRun.evaluation.alignment == .aligned else {
+                return synthesizeSplitResult(
+                    task: task,
+                    presenceRun: syntheticPresenceRun,
+                    taskRun: taskRun,
+                    progressRun: nil,
+                    targetSnapshots: targetSnapshots
+                )
+            }
+            let progressResult = await taskProgressOutcome(
+                engine: taskProgressEngine,
+                task: task,
+                textSnapshots: textSnapshots,
+                visualSnapshots: taskProgressVisualSnapshots,
+                previousEvents: previousEvents,
+                targetSnapshots: targetSnapshots,
+                powerStatus: powerStatus,
+                visualSampleLimit: taskProgressVisualSampleLimit,
+                appUsageIntervals: appUsageIntervals,
+                evaluationWindowEnd: evaluationWindowEnd
+            )
             return synthesizeSplitResult(
                 task: task,
-                presenceRun: UserPresenceRun(
-                    evaluation: LLMUserPresenceEvaluation(
-                        presence: .unclear,
-                        engagement: .unclear,
-                        reason: "用户状态判断失败。"
-                    ),
-                    requestDebugMetrics: emptySplitMetrics(
-                        visualCaptureCount: visualSnapshots.count,
-                        textSnapshotCount: 0,
-                        previousEventCount: 0,
-                        powerStatus: powerStatus,
-                        visualSampleLimit: visualSampleLimit
-                    ),
-                    duration: 0
-                ),
+                presenceRun: syntheticPresenceRun,
                 taskRun: taskRun,
-                progressRun: progressRun,
+                progressResult: progressResult,
                 targetSnapshots: targetSnapshots,
-                taskProgressFailureKind: taskProgressFailureKind,
-                taskProgressFailureHTTPStatusCode: taskProgressHTTPFailure?.statusCode,
-                taskProgressFailureHTTPResponseBytes: taskProgressHTTPFailure?.responseByteCount
+                textSnapshots: textSnapshots,
+                taskProgressVisualSnapshots: taskProgressVisualSnapshots,
+                previousEvents: previousEvents,
+                powerStatus: powerStatus,
+                taskProgressVisualSampleLimit: taskProgressVisualSampleLimit
             )
         case (.success(let presenceRun), .failure(let taskError)):
             guard presenceRun.evaluation.presence == .away || presenceRun.evaluation.presence == .resting else {
@@ -1134,23 +1123,55 @@ public struct LLMFocusEvaluator {
                 task: task,
                 presenceRun: presenceRun,
                 taskRun: nil,
-                progressRun: progressRun,
-                targetSnapshots: targetSnapshots,
-                taskProgressFailureKind: taskProgressFailureKind,
-                taskProgressFailureHTTPStatusCode: taskProgressHTTPFailure?.statusCode,
-                taskProgressFailureHTTPResponseBytes: taskProgressHTTPFailure?.responseByteCount
+                progressRun: nil,
+                targetSnapshots: targetSnapshots
             )
         case (.success(let presenceRun), .success(let taskRun)):
+            guard shouldRunTaskProgress(presence: presenceRun.evaluation, taskAlignment: taskRun.evaluation) else {
+                return synthesizeSplitResult(
+                    task: task,
+                    presenceRun: presenceRun,
+                    taskRun: taskRun,
+                    progressRun: nil,
+                    targetSnapshots: targetSnapshots
+                )
+            }
+            let progressResult = await taskProgressOutcome(
+                engine: taskProgressEngine,
+                task: task,
+                textSnapshots: textSnapshots,
+                visualSnapshots: taskProgressVisualSnapshots,
+                previousEvents: previousEvents,
+                targetSnapshots: targetSnapshots,
+                powerStatus: powerStatus,
+                visualSampleLimit: taskProgressVisualSampleLimit,
+                appUsageIntervals: appUsageIntervals,
+                evaluationWindowEnd: evaluationWindowEnd
+            )
             return synthesizeSplitResult(
                 task: task,
                 presenceRun: presenceRun,
                 taskRun: taskRun,
-                progressRun: progressRun,
+                progressResult: progressResult,
                 targetSnapshots: targetSnapshots,
-                taskProgressFailureKind: taskProgressFailureKind,
-                taskProgressFailureHTTPStatusCode: taskProgressHTTPFailure?.statusCode,
-                taskProgressFailureHTTPResponseBytes: taskProgressHTTPFailure?.responseByteCount
+                textSnapshots: textSnapshots,
+                taskProgressVisualSnapshots: taskProgressVisualSnapshots,
+                previousEvents: previousEvents,
+                powerStatus: powerStatus,
+                taskProgressVisualSampleLimit: taskProgressVisualSampleLimit
             )
+        }
+    }
+
+    private func shouldRunTaskProgress(
+        presence: LLMUserPresenceEvaluation,
+        taskAlignment: LLMTaskAlignmentEvaluation
+    ) -> Bool {
+        switch presence.presence {
+        case .away, .resting:
+            return false
+        case .present, .unclear:
+            return taskAlignment.alignment == .aligned
         }
     }
 
@@ -1497,6 +1518,52 @@ public struct LLMFocusEvaluator {
         result.taskProgressFailureHTTPStatusCode = taskProgressFailureHTTPStatusCode
         result.taskProgressFailureHTTPResponseBytes = taskProgressFailureHTTPResponseBytes
         return result
+    }
+
+    private func synthesizeSplitResult(
+        task: String,
+        presenceRun: UserPresenceRun,
+        taskRun: TaskAlignmentRun,
+        progressResult: Result<TaskProgressRun, Error>,
+        targetSnapshots: [PromptTargetSnapshot],
+        textSnapshots: [ContextSnapshot],
+        taskProgressVisualSnapshots: [ContextSnapshot],
+        previousEvents: [FocusEvent],
+        powerStatus: DevicePowerStatus?,
+        taskProgressVisualSampleLimit: Int?
+    ) -> LLMEvaluationResult {
+        let progressRun: TaskProgressRun = switch progressResult {
+        case .success(let run):
+            run
+        case .failure:
+            TaskProgressRun(
+                evaluation: LLMTaskProgressEvaluation(
+                    progress: .unclear,
+                    comparisonBasis: "progress_evaluation_failed",
+                    reason: "任务进展判断失败。"
+                ),
+                requestDebugMetrics: emptySplitMetrics(
+                    visualCaptureCount: taskProgressVisualSnapshots.count,
+                    textSnapshotCount: textSnapshots.count,
+                    previousEventCount: previousEvents.count,
+                    powerStatus: powerStatus,
+                    visualSampleLimit: taskProgressVisualSampleLimit
+                ),
+                duration: 0
+            )
+        }
+        let taskProgressFailureKind = progressResult.failureError.map(Self.failureKind)
+        let taskProgressHTTPFailure = progressResult.failureError.flatMap(Self.httpFailureDiagnostics)
+        return synthesizeSplitResult(
+            task: task,
+            presenceRun: presenceRun,
+            taskRun: taskRun,
+            progressRun: progressRun,
+            targetSnapshots: targetSnapshots,
+            taskProgressFailureKind: taskProgressFailureKind,
+            taskProgressFailureHTTPStatusCode: taskProgressHTTPFailure?.statusCode,
+            taskProgressFailureHTTPResponseBytes: taskProgressHTTPFailure?.responseByteCount
+        )
     }
 
     private func combinedMetrics(

@@ -239,6 +239,128 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("camera:"))
     }
 
+    func testSplitEvaluatorSkipsProgressWhenUserIsAway() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"away","engagement":"unclear","reason":"用户离开摄像头。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"屏幕显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"stalled","comparisonBasis":"same_task_no_visible_change","reason":"没有推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: Self.twoVisualSnapshots,
+            visualSnapshots: Self.twoVisualSnapshots,
+            taskVisualSnapshots: Self.twoVisualSnapshots,
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .away)
+        XCTAssertEqual(presenceEngine.callCount, 1)
+        XCTAssertEqual(taskEngine.callCount, 1)
+        XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+    }
+
+    func testSplitEvaluatorSkipsProgressWhenUserIsResting() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"resting","engagement":"unclear","reason":"用户在休息。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"aligned","focusTargetID":"T1","reason":"屏幕显示任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"stalled","comparisonBasis":"same_task_no_visible_change","reason":"没有推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: Self.twoVisualSnapshots,
+            visualSnapshots: Self.twoVisualSnapshots,
+            taskVisualSnapshots: Self.twoVisualSnapshots,
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .resting)
+        XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+    }
+
+    func testSplitEvaluatorSkipsProgressWhenTaskIsUnaligned() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"unaligned","focusTargetID":null,"reason":"屏幕不匹配任务。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: Self.twoVisualSnapshots,
+            visualSnapshots: Self.twoVisualSnapshots,
+            taskVisualSnapshots: Self.twoVisualSnapshots,
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+    }
+
+    func testSplitEvaluatorSkipsProgressWhenTaskAlignmentIsUnclear() async throws {
+        let presenceEngine = StructuredStubEngine(response: """
+        {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+        """)
+        let taskEngine = StructuredStubEngine(response: """
+        {"alignment":"unclear","focusTargetID":null,"reason":"屏幕证据不明确。"}
+        """)
+        let progressEngine = StructuredStubEngine(response: """
+        {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"截图显示推进。"}
+        """)
+        let evaluator = LLMFocusEvaluator(
+            userPresenceEngine: presenceEngine,
+            taskAlignmentEngine: taskEngine,
+            taskProgressEngine: progressEngine
+        )
+
+        let result = try await evaluator.evaluate(
+            task: "整理方案",
+            textSnapshots: Self.twoVisualSnapshots,
+            visualSnapshots: Self.twoVisualSnapshots,
+            taskVisualSnapshots: Self.twoVisualSnapshots,
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .uncertain)
+        XCTAssertEqual(progressEngine.callCount, 0)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+    }
+
     func testSplitEvaluatorSystemPromptsUseExpertRolesAndJSONExamples() async throws {
         let presenceEngine = StructuredStubEngine(response: """
         {"presence":"present","engagement":"engaged","reason":"用户在场。"}
@@ -1138,7 +1260,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.responseChars, 0)
     }
 
-    func testSplitEvaluatorRunsPresenceAlignmentAndProgressRequestsConcurrently() async throws {
+    func testSplitEvaluatorRunsPresenceAndAlignmentBeforeAlignedProgress() async throws {
         let presenceEngine = DelayedStructuredStubEngine(
             response: #"{"presence":"present","engagement":"engaged","reason":"用户在场。"}"#,
             delay: .milliseconds(200)
@@ -1193,7 +1315,9 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.35)
+        let duration = Date().timeIntervalSince(startedAt)
+        XCTAssertGreaterThanOrEqual(duration, 0.35)
+        XCTAssertLessThan(duration, 0.55)
         XCTAssertEqual(presenceEngine.callCount, 1)
         XCTAssertEqual(taskEngine.callCount, 1)
         XCTAssertEqual(progressEngine.callCount, 1)
@@ -2413,6 +2537,37 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         XCTAssertEqual(engine.lastResponseFormat, .focusEvaluation)
+    }
+
+    private static var twoVisualSnapshots: [ContextSnapshot] {
+        [
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1),
+                activeAppName: "Notes",
+                windowTitle: "方案",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: true,
+                cameraFrameAvailable: true,
+                screenshotMimeType: "image/jpeg",
+                screenshotData: Data([1]),
+                cameraMimeType: "image/jpeg",
+                cameraData: Data([101])
+            ),
+            ContextSnapshot(
+                timestamp: Date(timeIntervalSince1970: 2),
+                activeAppName: "Notes",
+                windowTitle: "方案",
+                browserTitle: nil,
+                browserURL: nil,
+                screenshotAvailable: true,
+                cameraFrameAvailable: true,
+                screenshotMimeType: "image/jpeg",
+                screenshotData: Data([2]),
+                cameraMimeType: "image/jpeg",
+                cameraData: Data([102])
+            )
+        ]
     }
 }
 

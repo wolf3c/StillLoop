@@ -88,16 +88,16 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(failed["failureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["taskAlignmentFailureKind"] as? String, "请求超时")
-        XCTAssertEqual(failed["taskProgressFailureKind"] as? String, "请求超时")
+        XCTAssertNil(failed["taskProgressFailureKind"])
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" })
         let fallback = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.fallback" })
         XCTAssertEqual(fallback["fallback"] as? String, "ruleBased")
         XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
-        XCTAssertEqual(fallback["taskProgressFailureKind"] as? String, "请求超时")
+        XCTAssertNil(fallback["taskProgressFailureKind"])
         XCTAssertTrue(events.contains { $0["screenshotBytes"] as? Int == 155_001 && $0["cameraBytes"] as? Int == 9_001 })
-        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 3)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
         XCTAssertEqual(runtime.startCount, 1)
         XCTAssertEqual(runtime.stopCount, 0)
     }
@@ -182,6 +182,49 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+    }
+
+    func testBundledEvaluationSkipsProgressDiagnosticsWhenTaskIsUnaligned() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        var engines: [UnalignedDiagnosticLLMEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
+            bundledLLMEngineFactory: { _, _ in
+                let engine = UnalignedDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        let result = await model.evaluateFocus(
+            task: "写方案",
+            snapshots: makeDiagnosticSnapshots(count: 2),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(result.state, .distracted)
+        XCTAssertNil(result.splitAnalysis?.taskProgress)
+        XCTAssertNil(result.taskProgressRequestDebugMetrics)
+        XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 904_020)
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 904_020)
+        XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
+        XCTAssertNil(succeeded["progressLLMVisualCaptureCount"])
+        XCTAssertNil(succeeded["progressLLMImageCount"])
+        XCTAssertNil(succeeded["progressLLMPayloadBytes"])
+        XCTAssertNil(succeeded["progressLLMResponseChars"])
+        XCTAssertNil(succeeded["taskProgressFailureKind"])
     }
 
     func testBundledEvaluationOmitsUnalignedTargetJudgmentsFromAlignmentPrompt() async throws {
@@ -715,6 +758,54 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             ]),
             timings: .object([
                 "cache_n": .int(221),
+                "prompt_n": .int(3_478),
+                "prompt_ms": .double(5_877.439),
+                "predicted_n": .int(336),
+                "predicted_ms": .double(6_763.672)
+            ])
+        )
+        return response
+    }
+}
+
+private final class UnalignedDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMRequestTransportMetricsProviding {
+    private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+    private(set) var callCount = 0
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        try await complete(messages: messages, responseFormat: nil)
+    }
+
+    func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
+        callCount += 1
+        let response = switch responseFormat {
+        case .userPresenceEvaluation:
+            """
+            {"presence":"present","engagement":"engaged","reason":"用户在场。"}
+            """
+        case .taskAlignmentEvaluation:
+            """
+            {"alignment":"unaligned","focusTargetID":null,"reason":"屏幕内容与任务不匹配。"}
+            """
+        case .taskProgressEvaluation:
+            """
+            {"progress":"progressing","comparisonBasis":"visible_forward_movement","reason":"不应运行。"}
+            """
+        default:
+            """
+            {"alignment":"unaligned","focusTargetID":null,"reason":"屏幕内容与任务不匹配。"}
+            """
+        }
+        lastRequestTransportMetrics = LLMRequestTransportMetrics(
+            payloadBytes: 452_010,
+            responseChars: response.count,
+            inputTextTokenCount: 1_295,
+            created: 1_779_348_997,
+            usage: .object([
+                "prompt_tokens": .int(3_699),
+                "total_tokens": .int(4_035)
+            ]),
+            timings: .object([
                 "prompt_n": .int(3_478),
                 "prompt_ms": .double(5_877.439),
                 "predicted_n": .int(336),
