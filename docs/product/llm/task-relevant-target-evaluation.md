@@ -36,14 +36,24 @@
 
 ## 触发条件
 
-目标判断由独立监控循环触发。核心条件：
+目标判断由独立监控循环触发。监控循环使用事件驱动加低频兜底：
 
-- 同一目标稳定停留至少 5 秒。
+- `NSWorkspace` 前台 app 激活事件用于捕获 app 切换。
+- Accessibility focused-window 事件用于捕获同一 app 内窗口切换。
+- 低频 fallback 轮询用于补漏、浏览器 tab/URL 变化和 AX 不可用场景。
+
+核心条件：
+
+- 目标变化事件只记录 app/window/browser/Space 元数据，不立刻截图。
+- 同一目标停留至少 5 秒后，才采集一张目标证据截图。
+- 目标持续停留时，按同一 dwell cadence 继续追加轻量截图证据。
 - 当前会话中该目标尚未判断过，或已有判断已过期。
 - 没有同一目标的判断正在进行。
 - 证据缓冲达到要求。
 
 当前默认判断过期时间为 300 秒。
+
+如果 Accessibility observer 不可用或辅助功能权限未授权，应用记录降级诊断并继续使用 `NSWorkspace` 事件和 fallback 轮询；目标判断优化不阻塞专注流程。
 
 ## 证据缓冲
 
@@ -52,7 +62,7 @@
 - 首次观察时间。
 - 最近观察时间。
 - 累计前台停留时长。
-- 第一张证据截图。
+- dwell 满 5 秒后的第一张证据截图。
 - 约 15 秒附近的中间截图。
 - 最新截图。
 
@@ -118,6 +128,14 @@
 - targetLLM 请求指标。
 
 失败时记录 `target.judgment.failed`。
+
+目标观察和 dwell 截图会记录安全诊断：
+
+- `target.observation.changed`：目标 identityKey 变化，包含 target 和 source。
+- `target.dwell.screenshot.captured`：dwell 截图成功，包含 target 和图片尺寸/压缩大小。
+- `target.event_source.degraded`：事件源降级原因。
+
+诊断不记录截图内容、原始用户输入、完整带 query 的 URL 或私密文本。
 
 ## 产品要求
 

@@ -108,6 +108,46 @@ public struct TaskRelevantTargetReadyEvidence: Equatable {
     }
 }
 
+public struct TaskRelevantTargetDwellState: Equatable {
+    public var dwellDuration: TimeInterval
+    private var currentTarget: ActiveWorkTarget?
+    private var currentTargetObservedAt: Date?
+    private var lastScreenshotRecordedAt: Date?
+
+    public init(dwellDuration: TimeInterval = 5) {
+        self.dwellDuration = dwellDuration
+    }
+
+    public mutating func observe(target: ActiveWorkTarget, at date: Date) {
+        guard currentTarget?.identityKey == target.identityKey else {
+            currentTarget = target
+            currentTargetObservedAt = date
+            lastScreenshotRecordedAt = nil
+            return
+        }
+        currentTarget = target
+    }
+
+    public func screenshotDue(at date: Date) -> ActiveWorkTarget? {
+        guard let currentTarget, let currentTargetObservedAt else { return nil }
+        let anchor = lastScreenshotRecordedAt ?? currentTargetObservedAt
+        guard date.timeIntervalSince(anchor) >= dwellDuration else { return nil }
+        return currentTarget
+    }
+
+    public mutating func markScreenshotRecorded(for target: ActiveWorkTarget, at date: Date) {
+        guard currentTarget?.identityKey == target.identityKey else { return }
+        currentTarget = target
+        lastScreenshotRecordedAt = date
+    }
+
+    public mutating func pause() {
+        currentTarget = nil
+        currentTargetObservedAt = nil
+        lastScreenshotRecordedAt = nil
+    }
+}
+
 public struct TaskRelevantTargetEvidenceBuffer: Equatable {
     public static let staleInterval: TimeInterval = 300
     public static let readyForegroundDuration: TimeInterval = 30

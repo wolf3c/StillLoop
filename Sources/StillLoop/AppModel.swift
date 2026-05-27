@@ -427,6 +427,7 @@ final class AppModel: ObservableObject {
     private let diagnosticLogger: DiagnosticLogging
     private let promptCacheProbeEnabled: Bool
     private let activeWorkTargetProvider: ActiveWorkTargetProviding
+    private let activeWorkTargetEventSource: ActiveWorkTargetEventSourcing
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var shouldValidateBundledRuntimeForActiveRun = false
@@ -447,6 +448,7 @@ final class AppModel: ObservableObject {
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
     private var targetMonitorState = TaskRelevantTargetMonitorState()
     private var targetEvidenceBuffers = TaskRelevantTargetEvidenceBufferStore()
+    private var targetDwellState = TaskRelevantTargetDwellState(dwellDuration: 5)
     private var targetJudgmentInFlightTarget: ActiveWorkTarget?
     var startPermissionDecisionOverride: StartPermissionDecision?
 
@@ -695,7 +697,8 @@ final class AppModel: ObservableObject {
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         returnTargetOpener: FocusReturnTargetOpening? = nil,
-        activeWorkTargetProvider: ActiveWorkTargetProviding? = nil
+        activeWorkTargetProvider: ActiveWorkTargetProviding? = nil,
+        activeWorkTargetEventSource: ActiveWorkTargetEventSourcing? = nil
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
@@ -721,6 +724,7 @@ final class AppModel: ObservableObject {
         self.activeWorkTargetProvider = activeWorkTargetProvider ?? MacActiveWorkTargetProvider(
             browserAutomationNoticePresenter: self.browserAutomationNoticePresenter
         )
+        self.activeWorkTargetEventSource = activeWorkTargetEventSource ?? MacActiveWorkTargetEventSource()
         self.reviewCommentGeneratorOverride = reviewCommentGenerator
         let storedUseLocalLLM = userDefaults.object(forKey: DefaultsKey.useLocalLLM) as? Bool == true
         let storedModelSource = userDefaults.string(forKey: DefaultsKey.modelSource)
@@ -2226,6 +2230,7 @@ final class AppModel: ObservableObject {
         }
         targetJudgmentInFlightTarget = nil
         targetEvidenceBuffers.reset()
+        targetDwellState.pause()
     }
 
     func stopBundledModelRuntime() {
@@ -2273,58 +2278,119 @@ final class AppModel: ObservableObject {
         targetMonitorTask?.cancel()
         targetMonitorState = TaskRelevantTargetMonitorState()
         targetEvidenceBuffers.reset()
+        targetDwellState.pause()
         targetMonitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.pollActiveWorkTarget()
+            guard let self else { return }
+            let observations = activeWorkTargetEventSource.observations(
+                using: activeWorkTargetProvider,
+                fallbackInterval: targetMonitorCadenceSeconds
+            )
+            if let degradedReason = activeWorkTargetEventSource.degradedReason {
+                diagnosticLogger.record(
+                    "target.event_source.degraded",
+                    fields: ["reason": .string(degradedReason)]
+                )
+            }
+            for await observation in observations {
                 guard !Task.isCancelled else { return }
-                try? await Task.sleep(for: .seconds(self.targetMonitorCadenceSeconds))
+                guard status == .running,
+                      let sessionID = currentSession?.id
+                else { continue }
+                handleActiveWorkTargetObservation(observation)
+                _ = await recordDwellScreenshotIfDue(at: observation.observedAt, sessionID: sessionID)
             }
         }
     }
 
-    private func pollActiveWorkTarget() async {
+    func handleActiveWorkTargetObservation(_ observation: ActiveWorkTargetObservation) {
         guard status == .running,
-              let session = currentSession,
-              let capture = await activeWorkTargetProvider.currentActiveWorkTarget()
+              let latestSession = currentSession
         else { return }
-        let now = Date()
-        let sessionID = session.id
-        recordActiveWorkTarget(capture.target, at: now)
-        guard capture.target.isTaskRelevantCandidate else {
-            targetEvidenceBuffers.pauseCurrentObservation()
-            return
-        }
-        guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, let latestSession = currentSession else { return }
-        let shouldCollectEvidence = shouldCollectTargetEvidence(for: capture.target, at: now, session: latestSession)
-        let evidenceResult: TaskRelevantTargetEvidenceBufferRecordResult?
-        if shouldCollectEvidence {
-            evidenceResult = targetEvidenceBuffers.record(
-                target: capture.target,
-                screenshot: capture.screenshot,
-                at: now
+        let target = observation.target
+        let now = observation.observedAt
+        let previousTargetKey = currentSession?.appUsageIntervals.last?.target.identityKey
+        recordActiveWorkTarget(target, at: now)
+        if previousTargetKey != target.identityKey {
+            diagnosticLogger.record(
+                "target.observation.changed",
+                fields: [
+                    "target": .string(target.displayText),
+                    "source": .string(observation.source.rawValue)
+                ]
             )
-        } else {
-            targetEvidenceBuffers.clearBuffer(for: capture.target)
-            targetEvidenceBuffers.pauseCurrentObservation()
-            evidenceResult = nil
         }
-        let action = targetMonitorState.observe(target: capture.target, at: now, session: latestSession)
-        switch action {
-        case .none:
+
+        guard target.isTaskRelevantCandidate else {
+            targetEvidenceBuffers.pauseCurrentObservation()
+            targetDwellState.pause()
             return
-        case .refresh(let target):
+        }
+
+        guard shouldCollectTargetEvidence(for: target, at: now, session: latestSession) else {
+            targetEvidenceBuffers.clearBuffer(for: target)
+            targetEvidenceBuffers.pauseCurrentObservation()
+            targetDwellState.pause()
+            return
+        }
+
+        _ = targetEvidenceBuffers.record(target: target, screenshot: nil, at: now)
+        targetDwellState.observe(target: target, at: now)
+
+        let action = targetMonitorState.observe(target: target, at: now, session: latestSession)
+        if case .refresh(let target) = action {
             guard var session = currentSession else { return }
             session.refreshTaskRelevantTarget(target, foregroundAt: now)
             currentSession = session
+        }
+    }
+
+    func recordDwellScreenshotIfDue(at date: Date, sessionID: UUID) async -> Bool {
+        guard status == .running,
+              currentSession?.id == sessionID,
+              let dueTarget = targetDwellState.screenshotDue(at: date),
+              let capture = await activeWorkTargetProvider.currentActiveWorkTarget(),
+              capture.target.identityKey == dueTarget.identityKey,
+              capture.target.isTaskRelevantCandidate,
+              let latestSession = currentSession,
+              shouldCollectTargetEvidence(for: capture.target, at: date, session: latestSession)
+        else { return false }
+
+        let evidenceResult = targetEvidenceBuffers.record(
+            target: capture.target,
+            screenshot: capture.screenshot,
+            at: date
+        )
+        targetDwellState.markScreenshotRecorded(for: capture.target, at: date)
+        if let screenshot = capture.screenshot {
+            diagnosticLogger.record(
+                "target.dwell.screenshot.captured",
+                fields: [
+                    "target": .string(capture.target.displayText),
+                    "width": .int(screenshot.width),
+                    "height": .int(screenshot.height),
+                    "compressedBytes": .int(screenshot.compressedBytes)
+                ]
+            )
+        }
+
+        let action = targetMonitorState.observe(target: capture.target, at: date, session: latestSession)
+        switch action {
+        case .none:
+            return capture.screenshot != nil
+        case .refresh(let target):
+            guard var session = currentSession else { return capture.screenshot != nil }
+            session.refreshTaskRelevantTarget(target, foregroundAt: date)
+            currentSession = session
+            return capture.screenshot != nil
         case .collect(let target):
-            guard let readyEvidence = evidenceResult?.readyEvidence else { return }
+            guard let readyEvidence = evidenceResult.readyEvidence else { return capture.screenshot != nil }
             startTaskRelevantTargetJudgment(
                 target: target,
                 readyEvidence: readyEvidence,
-                foregroundAt: now,
+                foregroundAt: date,
                 sessionID: sessionID
             )
+            return true
         }
     }
 

@@ -1,5 +1,6 @@
 import XCTest
 @testable import StillLoop
+@testable import StillLoopCore
 
 final class MacLocalContextProviderTests: XCTestCase {
     func testCaptureAddsBrowserMetadataForFocusedBrowser() async {
@@ -63,6 +64,62 @@ final class MacLocalContextProviderTests: XCTestCase {
             recorder.requests,
             [BrowserAutomationNoticeRequest(appName: "Google Chrome", bundleIdentifier: "com.google.Chrome")]
         )
+    }
+
+    func testActiveWorkTargetMetadataReadsBrowserTargetWithoutScreenshot() async throws {
+        let visualCapture = CountingVisualCapture()
+        let provider = MacActiveWorkTargetProvider(
+            focusedWindowReader: StubFocusedWindowReader(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                title: "当前窗口",
+                processIdentifier: 4201,
+                windowNumber: 9902
+            ),
+            browserMetadataReader: StubBrowserMetadataReader(
+                metadata: BrowserTabMetadata(
+                    title: "OpenAI Platform",
+                    url: "https://platform.openai.com/docs?token=secret#models"
+                )
+            ),
+            visualCapture: visualCapture
+        )
+
+        let capturedObservation = await provider.currentActiveWorkTargetMetadata(source: .workspaceActivation)
+        let observation = try XCTUnwrap(capturedObservation)
+
+        XCTAssertEqual(observation.source, .workspaceActivation)
+        XCTAssertEqual(observation.target.appName, "Google Chrome")
+        XCTAssertEqual(observation.target.browserURL, "https://platform.openai.com/docs")
+        XCTAssertEqual(visualCapture.screenshotCaptureCount, 0)
+    }
+
+    func testActiveWorkTargetEventSourceFallbackProducesMetadataObservation() async throws {
+        let target = ActiveWorkTarget(
+            appName: "Drafting App",
+            bundleIdentifier: "com.example.DraftingApp",
+            processIdentifier: 100,
+            windowTitle: "Working Draft",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 1,
+            spaceIdentifier: nil
+        )
+        let provider = MetadataOnlyActiveWorkTargetProvider(target: target)
+        let source = MacActiveWorkTargetEventSource(
+            observesWorkspaceActivation: false,
+            observesAccessibilityFocus: false
+        )
+
+        let stream = source.observations(using: provider, fallbackInterval: 0.01)
+        var iterator = stream.makeAsyncIterator()
+        let nextObservation = await iterator.next()
+        let observation = try XCTUnwrap(nextObservation)
+
+        XCTAssertEqual(observation.source, .fallbackPoll)
+        XCTAssertEqual(observation.target.identityKey, target.identityKey)
+        XCTAssertEqual(provider.metadataRequestCount, 1)
+        XCTAssertEqual(provider.captureRequestCount, 0)
     }
 
     func testFocusedWindowReaderRecognizesProductionAndDevelopmentAppNames() {
@@ -174,6 +231,39 @@ private struct StubFocusedWindowReader: FocusedWindowReading {
             processIdentifier: processIdentifier,
             windowNumber: windowNumber
         )
+    }
+}
+
+private final class CountingVisualCapture: VisualCapture {
+    private(set) var screenshotCaptureCount = 0
+
+    func captureCompressedScreenshot() -> VisualCaptureSummary? {
+        screenshotCaptureCount += 1
+        return nil
+    }
+
+    func captureCameraStill() async -> VisualCaptureSummary? {
+        nil
+    }
+}
+
+private final class MetadataOnlyActiveWorkTargetProvider: ActiveWorkTargetProviding {
+    private let target: ActiveWorkTarget
+    private(set) var metadataRequestCount = 0
+    private(set) var captureRequestCount = 0
+
+    init(target: ActiveWorkTarget) {
+        self.target = target
+    }
+
+    func currentActiveWorkTarget() async -> ActiveWorkTargetCapture? {
+        captureRequestCount += 1
+        return nil
+    }
+
+    func currentActiveWorkTargetMetadata(source: ActiveWorkTargetObservationSource) async -> ActiveWorkTargetObservation? {
+        metadataRequestCount += 1
+        return ActiveWorkTargetObservation(target: target, observedAt: Date(), source: source)
     }
 }
 

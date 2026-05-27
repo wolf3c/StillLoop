@@ -98,6 +98,93 @@ final class AppModelEvaluationCadenceTests: XCTestCase {
         )
     }
 
+    func testTargetObservationRecordsTimelineWithoutImmediateScreenshot() {
+        let provider = RecordingActiveWorkTargetProvider(
+            captures: [
+                ActiveWorkTargetCapture(
+                    target: makeTarget(windowNumber: 1),
+                    screenshot: TaskRelevantTargetScreenshot(
+                        width: 1280,
+                        height: 720,
+                        compressedBytes: 1,
+                        mimeType: "image/jpeg",
+                        data: Data([1])
+                    )
+                )
+            ]
+        )
+        let model = AppModel(activeWorkTargetProvider: provider)
+        model.status = .running
+        model.currentSession = FocusSession(
+            task: "整理计划",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [],
+            feedback: nil
+        )
+
+        model.handleActiveWorkTargetObservation(
+            ActiveWorkTargetObservation(
+                target: makeTarget(windowNumber: 1),
+                observedAt: Date(timeIntervalSince1970: 0),
+                source: .workspaceActivation
+            )
+        )
+
+        XCTAssertEqual(model.currentSession?.appUsageIntervals.count, 1)
+        XCTAssertEqual(provider.captureRequestCount, 0)
+    }
+
+    func testDwellScreenshotIsCapturedOnlyAfterTargetRemainsCurrentForFiveSeconds() async {
+        let target = makeTarget(windowNumber: 1)
+        let provider = RecordingActiveWorkTargetProvider(
+            captures: [
+                ActiveWorkTargetCapture(
+                    target: target,
+                    screenshot: TaskRelevantTargetScreenshot(
+                        width: 1280,
+                        height: 720,
+                        compressedBytes: 1,
+                        mimeType: "image/jpeg",
+                        data: Data([1])
+                    )
+                )
+            ]
+        )
+        let model = AppModel(activeWorkTargetProvider: provider)
+        model.status = .running
+        model.currentSession = FocusSession(
+            task: "整理计划",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [],
+            feedback: nil
+        )
+        let sessionID = try! XCTUnwrap(model.currentSession?.id)
+
+        model.handleActiveWorkTargetObservation(
+            ActiveWorkTargetObservation(
+                target: target,
+                observedAt: Date(timeIntervalSince1970: 0),
+                source: .workspaceActivation
+            )
+        )
+
+        let beforeDwell = await model.recordDwellScreenshotIfDue(
+            at: Date(timeIntervalSince1970: 4.9),
+            sessionID: sessionID
+        )
+        XCTAssertFalse(beforeDwell)
+        XCTAssertEqual(provider.captureRequestCount, 0)
+
+        let afterDwell = await model.recordDwellScreenshotIfDue(
+            at: Date(timeIntervalSince1970: 5),
+            sessionID: sessionID
+        )
+        XCTAssertTrue(afterDwell)
+        XCTAssertEqual(provider.captureRequestCount, 1)
+    }
+
     func testEvaluationCadenceUsesSixtySecondCooldownOnBatteryOrLowPowerMode() {
         let model = AppModel()
 
@@ -116,5 +203,32 @@ final class AppModelEvaluationCadenceTests: XCTestCase {
             ),
             60
         )
+    }
+
+    private func makeTarget(windowNumber: Int) -> ActiveWorkTarget {
+        ActiveWorkTarget(
+            appName: "Drafting App",
+            bundleIdentifier: "com.example.DraftingApp",
+            processIdentifier: 100,
+            windowTitle: "Working Draft",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: windowNumber,
+            spaceIdentifier: nil
+        )
+    }
+}
+
+private final class RecordingActiveWorkTargetProvider: ActiveWorkTargetProviding {
+    private var captures: [ActiveWorkTargetCapture]
+    private(set) var captureRequestCount = 0
+
+    init(captures: [ActiveWorkTargetCapture]) {
+        self.captures = captures
+    }
+
+    func currentActiveWorkTarget() async -> ActiveWorkTargetCapture? {
+        captureRequestCount += 1
+        return captures.first
     }
 }

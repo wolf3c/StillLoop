@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 @preconcurrency import AVFoundation
 import CoreGraphics
 import Foundation
@@ -85,6 +86,13 @@ struct FocusedWindow: Equatable {
 
 protocol FocusedWindowReading {
     func bestFocusedWindow() -> FocusedWindow
+    func rawFrontmostWindow() -> FocusedWindow
+}
+
+extension FocusedWindowReading {
+    func rawFrontmostWindow() -> FocusedWindow {
+        bestFocusedWindow()
+    }
 }
 
 struct CGWindowFocusedWindowReader: FocusedWindowReading {
@@ -229,18 +237,197 @@ struct ActiveWorkTargetCapture: Equatable {
     var screenshot: TaskRelevantTargetScreenshot?
 }
 
+enum ActiveWorkTargetObservationSource: String, Equatable {
+    case workspaceActivation
+    case accessibilityFocusedWindow
+    case fallbackPoll
+    case browserMetadataRefresh
+}
+
+struct ActiveWorkTargetObservation: Equatable {
+    var target: ActiveWorkTarget
+    var observedAt: Date
+    var source: ActiveWorkTargetObservationSource
+}
+
 protocol ActiveWorkTargetProviding {
     func currentActiveWorkTarget() async -> ActiveWorkTargetCapture?
+    func currentActiveWorkTargetMetadata(source: ActiveWorkTargetObservationSource) async -> ActiveWorkTargetObservation?
+}
+
+extension ActiveWorkTargetProviding {
+    func currentActiveWorkTargetMetadata(source: ActiveWorkTargetObservationSource) async -> ActiveWorkTargetObservation? {
+        guard let capture = await currentActiveWorkTarget() else { return nil }
+        return ActiveWorkTargetObservation(target: capture.target, observedAt: Date(), source: source)
+    }
+}
+
+protocol ActiveWorkTargetEventSourcing {
+    var degradedReason: String? { get }
+
+    func observations(
+        using provider: ActiveWorkTargetProviding,
+        fallbackInterval: TimeInterval
+    ) -> AsyncStream<ActiveWorkTargetObservation>
+}
+
+final class MacActiveWorkTargetEventSource: ActiveWorkTargetEventSourcing {
+    private let observesWorkspaceActivation: Bool
+    private let observesAccessibilityFocus: Bool
+    private(set) var degradedReason: String?
+
+    init(
+        observesWorkspaceActivation: Bool = true,
+        observesAccessibilityFocus: Bool = true
+    ) {
+        self.observesWorkspaceActivation = observesWorkspaceActivation
+        self.observesAccessibilityFocus = observesAccessibilityFocus
+    }
+
+    func observations(
+        using provider: ActiveWorkTargetProviding,
+        fallbackInterval: TimeInterval
+    ) -> AsyncStream<ActiveWorkTargetObservation> {
+        AsyncStream { continuation in
+            let controller = ActiveWorkTargetEventStreamController(
+                provider: provider,
+                fallbackInterval: fallbackInterval,
+                observesWorkspaceActivation: observesWorkspaceActivation,
+                observesAccessibilityFocus: observesAccessibilityFocus,
+                continuation: continuation,
+                degraded: { [weak self] reason in
+                    self?.degradedReason = reason
+                }
+            )
+            controller.start()
+            continuation.onTermination = { _ in
+                controller.cancel()
+            }
+        }
+    }
+}
+
+private final class ActiveWorkTargetEventStreamController {
+    private let provider: ActiveWorkTargetProviding
+    private let fallbackInterval: TimeInterval
+    private let observesWorkspaceActivation: Bool
+    private let observesAccessibilityFocus: Bool
+    private let continuation: AsyncStream<ActiveWorkTargetObservation>.Continuation
+    private let degraded: (String) -> Void
+    private var fallbackTask: Task<Void, Never>?
+    private var workspaceObserver: NSObjectProtocol?
+    private var accessibilityObservers: [pid_t: AXObserver] = [:]
+
+    init(
+        provider: ActiveWorkTargetProviding,
+        fallbackInterval: TimeInterval,
+        observesWorkspaceActivation: Bool,
+        observesAccessibilityFocus: Bool,
+        continuation: AsyncStream<ActiveWorkTargetObservation>.Continuation,
+        degraded: @escaping (String) -> Void
+    ) {
+        self.provider = provider
+        self.fallbackInterval = fallbackInterval
+        self.observesWorkspaceActivation = observesWorkspaceActivation
+        self.observesAccessibilityFocus = observesAccessibilityFocus
+        self.continuation = continuation
+        self.degraded = degraded
+    }
+
+    func start() {
+        if observesWorkspaceActivation {
+            workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.capture(source: .workspaceActivation)
+            }
+        }
+        if observesAccessibilityFocus, !AXIsProcessTrusted() {
+            degraded("accessibility_not_trusted")
+        }
+        fallbackTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.captureObservation(source: .fallbackPoll)
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(for: .seconds(self.fallbackInterval))
+            }
+        }
+    }
+
+    func cancel() {
+        fallbackTask?.cancel()
+        fallbackTask = nil
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+        }
+        workspaceObserver = nil
+        for observer in accessibilityObservers.values {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+        accessibilityObservers.removeAll()
+    }
+
+    fileprivate func capture(source: ActiveWorkTargetObservationSource) {
+        Task { [weak self] in
+            await self?.captureObservation(source: source)
+        }
+    }
+
+    private func captureObservation(source: ActiveWorkTargetObservationSource) async {
+        guard let observation = await provider.currentActiveWorkTargetMetadata(source: source) else { return }
+        continuation.yield(observation)
+        registerAccessibilityObserverIfNeeded(for: observation.target)
+    }
+
+    private func registerAccessibilityObserverIfNeeded(for target: ActiveWorkTarget) {
+        guard observesAccessibilityFocus, AXIsProcessTrusted(),
+              let processIdentifier = target.processIdentifier
+        else { return }
+        let pid = pid_t(processIdentifier)
+        guard accessibilityObservers[pid] == nil else { return }
+
+        var observer: AXObserver?
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let result = AXObserverCreate(pid, activeWorkTargetAXObserverCallback, &observer)
+        guard result == .success, let observer else {
+            degraded("accessibility_observer_create_failed")
+            return
+        }
+        let appElement = AXUIElementCreateApplication(pid)
+        let addResult = AXObserverAddNotification(
+            observer,
+            appElement,
+            kAXFocusedWindowChangedNotification as CFString,
+            refcon
+        )
+        guard addResult == .success || addResult == .notificationAlreadyRegistered else {
+            degraded("accessibility_focused_window_notification_failed")
+            return
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        accessibilityObservers[pid] = observer
+    }
+}
+
+private let activeWorkTargetAXObserverCallback: AXObserverCallback = { _, _, _, refcon in
+    guard let refcon else { return }
+    let controller = Unmanaged<ActiveWorkTargetEventStreamController>
+        .fromOpaque(refcon)
+        .takeUnretainedValue()
+    controller.capture(source: .accessibilityFocusedWindow)
 }
 
 struct MacActiveWorkTargetProvider: ActiveWorkTargetProviding {
-    private let focusedWindowReader: CGWindowFocusedWindowReader
+    private let focusedWindowReader: any FocusedWindowReading
     private let browserMetadataReader: BrowserTabMetadataReading
     private let visualCapture: VisualCapture
     private let browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting
 
     init(
-        focusedWindowReader: CGWindowFocusedWindowReader = CGWindowFocusedWindowReader(),
+        focusedWindowReader: any FocusedWindowReading = CGWindowFocusedWindowReader(),
         browserMetadataReader: BrowserTabMetadataReading = AppleScriptBrowserTabMetadataReader(),
         visualCapture: VisualCapture = SystemVisualCapture(),
         browserAutomationNoticePresenter: any BrowserAutomationNoticePresenting = NoBrowserAutomationNoticePresenter()
@@ -249,6 +436,29 @@ struct MacActiveWorkTargetProvider: ActiveWorkTargetProviding {
         self.browserMetadataReader = browserMetadataReader
         self.visualCapture = visualCapture
         self.browserAutomationNoticePresenter = browserAutomationNoticePresenter
+    }
+
+    func currentActiveWorkTargetMetadata(source: ActiveWorkTargetObservationSource) async -> ActiveWorkTargetObservation? {
+        let focusedWindow = focusedWindowReader.rawFrontmostWindow()
+        await browserAutomationNoticePresenter.presentBrowserAutomationNoticeIfNeeded(
+            for: focusedWindow.appName,
+            bundleIdentifier: focusedWindow.bundleIdentifier
+        )
+        let browserMetadata = browserMetadataReader.currentTabMetadata(for: focusedWindow.appName)
+        return ActiveWorkTargetObservation(
+            target: ActiveWorkTarget(
+                appName: focusedWindow.appName,
+                bundleIdentifier: focusedWindow.bundleIdentifier,
+                processIdentifier: focusedWindow.processIdentifier,
+                windowTitle: focusedWindow.title,
+                browserTitle: browserMetadata?.title,
+                browserURL: browserMetadata?.url,
+                windowNumber: focusedWindow.windowNumber,
+                spaceIdentifier: focusedWindow.spaceIdentifier
+            ),
+            observedAt: Date(),
+            source: source
+        )
     }
 
     func currentActiveWorkTarget() async -> ActiveWorkTargetCapture? {
