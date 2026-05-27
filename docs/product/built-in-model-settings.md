@@ -71,12 +71,14 @@
 
 - 模型文件：主 GGUF。
 - 视觉投影文件：mmproj。
-- context size：12288。
-- parallel slots：3。
+- context size：4096。
+- parallel slots：1。
 - GPU layers：99。
 - KV cache：`q4_1`。
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
 - prompt cache：默认启用。
+
+当前配置是单槽实验配置，用于降低 slot 切分、并发调度和常驻内存压力。代价是单轮 context 余量更低，presence 或 progress 的多图请求更容易触发上下文不足；如果诊断日志出现上下文超限、HTTP 400 或大量 fallback，需要回退到更高 context 或更多 slot 的配置继续对比。
 
 ## 主页预热
 
