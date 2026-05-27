@@ -113,20 +113,15 @@ unclear：
 
 如果当前轮可比较截图少于 2 张，不发起 LLM 请求，直接返回 unclear。
 
-`visual sample metadata` 会按时间顺序发送最多三组：
+`visual sample metadata` 会按时间顺序发送最多三组。该 metadata 只用于标明时间顺序和轻量工作上下文；任务进展判断应主要依赖附带截图的视觉变化。
 
 ```text
 visual sample[1]
-targetID: T1
 time: <ISO-8601 UTC time>
 app: <activeAppName>
-bundleIdentifier: <bundle id, optional>
 window: <windowTitle, optional>
 browserTitle: <browser title, optional>
-browserURL: <sanitized http/https URL, optional>
-windowNumber: <window number, optional>
-space: <space identifier, optional>
-screenshot: <available|unavailable|WIDTHxHEIGHT,BYTESB>
+screenshot: <available|unavailable>
 ```
 
 ## 输出字段和格式

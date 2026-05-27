@@ -539,10 +539,13 @@ final class LLMFocusEvaluatorTests: XCTestCase {
                 timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
                 activeAppName: "App \(index)",
                 windowTitle: "Window \(index)",
-                browserTitle: nil,
-                browserURL: nil,
+                browserTitle: "Browser \(index)",
+                browserURL: "https://example.com/path\(index)?token=secret#section",
                 screenshotAvailable: true,
                 cameraFrameAvailable: true,
+                screenshotPixelWidth: 1024,
+                screenshotPixelHeight: 665,
+                screenshotCompressedBytes: 48_843,
                 screenshotMimeType: "image/jpeg",
                 screenshotData: Data([UInt8(index)]),
                 cameraMimeType: "image/jpeg",
@@ -568,6 +571,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         """)
         XCTAssertTrue(userMessages[1].textContent.hasPrefix("visual sample[1]"))
         XCTAssertTrue(userMessages[1].textContent.contains("time: 1970-01-01T00:00:01Z"))
+        XCTAssertTrue(userMessages[1].textContent.contains("app: App 1"))
+        XCTAssertTrue(userMessages[1].textContent.contains("window: Window 1"))
+        XCTAssertTrue(userMessages[1].textContent.contains("browserTitle: Browser 1"))
+        XCTAssertTrue(userMessages[1].textContent.contains("screenshot: available"))
         XCTAssertTrue(userMessages[1].content.containsImageData(Data([1])))
         XCTAssertTrue(userMessages[2].textContent.hasPrefix("visual sample[2]"))
         XCTAssertTrue(userMessages[2].textContent.contains("time: 1970-01-01T00:00:03Z"))
@@ -575,6 +582,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(userMessages[3].textContent.hasPrefix("visual sample[3]"))
         XCTAssertTrue(userMessages[3].textContent.contains("time: 1970-01-01T00:00:05Z"))
         XCTAssertTrue(userMessages[3].content.containsImageData(Data([5])))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("targetID:"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("browserURL:"))
+        XCTAssertFalse(progressEngine.flattenedPrompt.contains("screenshot: available 1024x665 48843B"))
+        XCTAssertTrue(taskEngine.flattenedPrompt.contains("targetID:"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("Recent state log"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("Text timeline"))
         XCTAssertFalse(progressEngine.flattenedPrompt.contains("history"))
@@ -1007,8 +1018,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("history-6"))
         XCTAssertFalse(prompt.contains("Text timeline: selected current captures"))
         XCTAssertFalse(prompt.contains("timeline[1]"))
-        XCTAssertTrue(prompt.contains("visual sample[1]\ntargetID: T2\ntime: 1970-01-01T00:00:10Z"))
-        XCTAssertTrue(prompt.contains("visual sample[2]\ntargetID: T3\ntime: 1970-01-01T00:00:30Z"))
+        XCTAssertTrue(prompt.contains("visual sample[1]\ntime: 1970-01-01T00:00:10Z"))
+        XCTAssertTrue(prompt.contains("visual sample[2]\ntime: 1970-01-01T00:00:30Z"))
+        XCTAssertFalse(prompt.contains("targetID:"))
+        XCTAssertFalse(prompt.contains("browserURL:"))
         XCTAssertFalse(prompt.contains("Middle metadata only"))
     }
 

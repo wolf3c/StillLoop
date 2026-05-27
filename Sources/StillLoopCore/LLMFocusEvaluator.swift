@@ -1795,7 +1795,7 @@ public struct LLMFocusEvaluator {
             .map { index, targetSnapshot in
                 let snapshot = targetSnapshot.snapshot
                 var content: [LLMMessage.Content] = [
-                    .text(Self.taskVisualSampleText(for: targetSnapshot, visualIndex: index + 1))
+                    .text(Self.taskProgressVisualSampleText(for: targetSnapshot, visualIndex: index + 1))
                 ]
                 if let mimeType = snapshot.screenshotMimeType, let data = snapshot.screenshotData {
                     content.append(.image(mimeType: mimeType, data: data))
@@ -1863,6 +1863,26 @@ public struct LLMFocusEvaluator {
             "screenshot: \(visualLine(available: snapshot.screenshotAvailable, width: snapshot.screenshotPixelWidth, height: snapshot.screenshotPixelHeight, bytes: snapshot.screenshotCompressedBytes))"
         )
         return captureLines.joined(separator: "\n")
+    }
+
+    private static func taskProgressVisualSampleText(
+        for targetSnapshot: PromptTargetSnapshot,
+        visualIndex: Int
+    ) -> String {
+        let snapshot = targetSnapshot.snapshot
+        var lines = [
+            "visual sample[\(visualIndex)]",
+            "time: \(formattedPromptDate(snapshot.timestamp))",
+            "app: \(snapshot.activeAppName)"
+        ]
+        if let windowTitle = snapshot.displayWindowTitle {
+            lines.append("window: \(windowTitle)")
+        }
+        if let browserTitle = snapshot.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !browserTitle.isEmpty {
+            lines.append("browserTitle: \(browserTitle)")
+        }
+        lines.append("screenshot: \(snapshot.screenshotAvailable ? "available" : "unavailable")")
+        return lines.joined(separator: "\n")
     }
 
     private static func normalizedTaskProgress(
