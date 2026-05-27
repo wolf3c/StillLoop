@@ -75,6 +75,7 @@
 - parallel slots：3。
 - GPU layers：99。
 - KV cache：`q4_1`。
+- memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
 - prompt cache：默认启用。
 
 ## 主页预热
