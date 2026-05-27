@@ -38,6 +38,19 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertTrue(settingsSnippet.contains("model.screen = .openSourceModelInfo"))
     }
 
+    func testRuntimeSelectionIsNotExposedInSettingsOrUserDefaults() throws {
+        let viewSource = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
+        let appModelSource = try String(contentsOfFile: "Sources/StillLoop/AppModel.swift", encoding: .utf8)
+        let settingsStart = try XCTUnwrap(viewSource.range(of: "private struct SettingsView: View"))
+        let privacyStart = try XCTUnwrap(viewSource.range(of: "private struct PrivacySettingsView: View"))
+        let settingsSnippet = String(viewSource[settingsStart.lowerBound..<privacyStart.lowerBound])
+
+        XCTAssertFalse(settingsSnippet.contains("BundledRuntime"))
+        XCTAssertFalse(settingsSnippet.contains("runtimeKind"))
+        XCTAssertFalse(appModelSource.contains("DefaultsKey.bundledRuntime"))
+        XCTAssertFalse(appModelSource.contains("DefaultsKey.runtimeKind"))
+    }
+
     func testOpenSourceModelLicensePageContainsRequiredDisclosureSections() throws {
         let source = try String(contentsOfFile: "Sources/StillLoop/StillLoopView.swift", encoding: .utf8)
 

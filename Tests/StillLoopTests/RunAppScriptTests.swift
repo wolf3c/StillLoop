@@ -89,6 +89,12 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE\""))
     }
 
+    func testRunAppForwardsPathForLocalMLXRuntimeDependencies() throws {
+        let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
+
+        XCTAssertTrue(script.contains("--env \"PATH=$PATH\""))
+    }
+
     func testAppStoreEntitlementsUseMinimumRequiredSandboxCapabilities() throws {
         let entitlements = try String(contentsOfFile: "Config/StillLoop-AppStore.entitlements", encoding: .utf8)
 

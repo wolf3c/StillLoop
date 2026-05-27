@@ -131,6 +131,120 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(tuning.promptCacheEnabled)
     }
 
+    func testBundledRuntimeSelectionDefaultsToMLXWithLlamaFallback() {
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+
+        let runtime = BundledRuntimeSelection.makeDefaultRuntime(modelURL: modelURL)
+        let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
+
+        XCTAssertEqual(BundledRuntimeSelection.defaultKind, .mlx)
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .mlx)
+        XCTAssertNil(diagnostics?.fallbackRuntimeKind)
+    }
+
+    func testBundledRuntimeSelectionCanBuildLlamaCppRuntimeDirectly() {
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+
+        let runtime = BundledRuntimeSelection.makeRuntime(kind: .llamaCpp, modelURL: modelURL)
+        let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
+
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .llamaCpp)
+        XCTAssertNil(diagnostics?.fallbackRuntimeKind)
+    }
+
+    func testFallbackRuntimeUsesPrimaryWhenMLXStarts() async throws {
+        let mlx = FakeSelectableBundledRuntime(kind: .mlx)
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: mlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(mlx.startCount, 1)
+        XCTAssertEqual(llama.startCount, 0)
+        XCTAssertEqual(runtime.baseURL, mlx.baseURL)
+        XCTAssertEqual(runtime.modelID, mlx.modelID)
+        XCTAssertEqual(runtime.state, .running)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .mlx)
+        XCTAssertNil(runtime.fallbackRuntimeKind)
+    }
+
+    func testFallbackRuntimeStartsLlamaWhenMLXReadinessFails() async throws {
+        let mlx = FakeSelectableBundledRuntime(kind: .mlx)
+        mlx.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: mlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(mlx.startCount, 1)
+        XCTAssertEqual(mlx.stopCount, 1)
+        XCTAssertEqual(llama.startCount, 1)
+        XCTAssertEqual(runtime.baseURL, llama.baseURL)
+        XCTAssertEqual(runtime.modelID, llama.modelID)
+        XCTAssertEqual(runtime.state, .running)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+        XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+    }
+
+    func testFallbackRuntimeStartsLlamaWhenMLXImageInputIsUnavailable() async throws {
+        let mlx = FakeSelectableBundledRuntime(kind: .mlx)
+        mlx.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: mlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(mlx.stopCount, 1)
+        XCTAssertEqual(llama.startCount, 1)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+        XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+    }
+
+    func testFallbackRuntimeThrowsLlamaFailureWhenBothRuntimesFail() async throws {
+        let mlx = FakeSelectableBundledRuntime(kind: .mlx)
+        mlx.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        llama.startError = BundledModelRuntime.RuntimeError.missingExecutable(URL(fileURLWithPath: "/tmp/missing"))
+        let runtime = FallbackBundledModelRuntime(primary: mlx, fallback: llama)
+
+        do {
+            try await runtime.startIfNeeded()
+            XCTFail("Expected fallback runtime failure")
+        } catch let error as BundledModelRuntime.RuntimeError {
+            XCTAssertEqual(error, .missingExecutable(URL(fileURLWithPath: "/tmp/missing")))
+            XCTAssertEqual(mlx.stopCount, 1)
+            XCTAssertEqual(llama.startCount, 1)
+            XCTAssertEqual(runtime.state, .failed("缺少 stillloop-llama-server"))
+            XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+            XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+        }
+    }
+
+    func testMLXRuntimeStopsWaitingWhenLaunchedProcessExitsBeforeReadiness() async throws {
+        let launcher = FakeBundledModelProcessLauncher()
+        var probeCount = 0
+        let runtime = MLXBundledModelRuntime(
+            configuration: .localDevelopment(port: 18765),
+            processLauncher: launcher,
+            readinessProbe: { _, _ in
+                probeCount += 1
+                launcher.process.isRunning = false
+                throw URLError(.cannotConnectToHost)
+            },
+            readinessMaxAttempts: 5,
+            readinessRetryDelayNanoseconds: 1_000_000
+        )
+
+        do {
+            try await runtime.startIfNeeded()
+            XCTFail("Expected exited MLX process to fail readiness")
+        } catch let error as BundledModelRuntime.RuntimeError {
+            XCTAssertEqual(error, .launchFailed("mlx-vlm process exited before readiness"))
+            XCTAssertEqual(probeCount, 1)
+            XCTAssertEqual(runtime.state, .failed("启动失败"))
+        }
+    }
+
     func testStartFailsWhenProjectorFileIsMissingWithoutLaunchingProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
@@ -853,5 +967,43 @@ private final class FakeBundledModelProcess: BundledModelProcessManaging {
     func terminate() {
         terminateCount += 1
         isRunning = false
+    }
+}
+
+private final class FakeSelectableBundledRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
+    let kind: BundledRuntimeKind
+    var baseURL: URL
+    var modelID: String
+    var state: BundledModelRuntime.State = .notStarted
+    var startError: Error?
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+
+    init(kind: BundledRuntimeKind) {
+        self.kind = kind
+        baseURL = URL(string: "http://127.0.0.1/\(kind.rawValue)/v1")!
+        modelID = "\(kind.rawValue)-model"
+    }
+
+    var bundledRuntimeKind: BundledRuntimeKind? {
+        state == .running ? kind : kind
+    }
+
+    var fallbackRuntimeKind: BundledRuntimeKind? {
+        nil
+    }
+
+    func startIfNeeded() async throws {
+        startCount += 1
+        if let startError {
+            state = .failed(BundledModelRuntime.RuntimeError.statusMessage(for: startError))
+            throw startError
+        }
+        state = .running
+    }
+
+    func stop() {
+        stopCount += 1
+        state = .stopped
     }
 }

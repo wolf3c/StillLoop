@@ -786,7 +786,7 @@ final class AppModel: ObservableObject {
             spec: .builtIn,
             localDirectory: modelDirectory
         )
-        self.bundledModelRuntime = bundledModelRuntime ?? BundledModelRuntime.defaultRuntime(
+        self.bundledModelRuntime = bundledModelRuntime ?? BundledRuntimeSelection.makeDefaultRuntime(
             modelURL: modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename)
         )
         configureSelectedModelEvaluator()
@@ -805,6 +805,20 @@ final class AppModel: ObservableObject {
             return NoopDiagnosticLogger()
         }
         return FileDiagnosticLogger(appSupportDirectory: appSupportDirectory)
+    }
+
+    private func bundledRuntimeDiagnosticFields() -> [String: DiagnosticLogValue] {
+        guard let diagnostics = bundledModelRuntime as? BundledRuntimeDiagnosticsProviding else {
+            return [:]
+        }
+        var fields: [String: DiagnosticLogValue] = [:]
+        if let kind = diagnostics.bundledRuntimeKind {
+            fields["bundledRuntimeKind"] = .string(kind.rawValue)
+        }
+        if let fallbackKind = diagnostics.fallbackRuntimeKind {
+            fields["fallbackRuntimeKind"] = .string(fallbackKind.rawValue)
+        }
+        return fields
     }
 
     func openHome() {
@@ -2965,17 +2979,22 @@ final class AppModel: ObservableObject {
             powerStatus: resolvedPowerStatus,
             visualSampleLimit: resolvedVisualSampleLimit
         )
+        var startedFields: [String: DiagnosticLogValue] = [
+            "modelSource": .string(modelSetupSelection.source.rawValue),
+            "previousEventCount": .int(previousEvents.count),
+            "taskLength": .int(task.count),
+            "alignmentVisualSampleCount": .int(taskAlignmentVisualSampleLimit),
+            "progressVisualSampleCount": .int(taskProgressVisualSampleLimit)
+        ]
+        startedFields.merge(powerFields) { current, _ in current }
+        if modelSetupSelection.source == .bundled {
+            startedFields.merge(bundledRuntimeDiagnosticFields()) { current, _ in current }
+        }
         diagnosticLogger.record(
             "model.evaluation.started",
             fields: diagnosticFields(
                 snapshots: visualSnapshots,
-                extra: [
-                    "modelSource": .string(modelSetupSelection.source.rawValue),
-                    "previousEventCount": .int(previousEvents.count),
-                    "taskLength": .int(task.count),
-                    "alignmentVisualSampleCount": .int(taskAlignmentVisualSampleLimit),
-                    "progressVisualSampleCount": .int(taskProgressVisualSampleLimit)
-                ].merging(powerFields) { current, _ in current }
+                extra: startedFields
             )
         )
         if modelSetupSelection.source == .bundled, isCurrentSessionUsingRuleBasedModelFallback {
@@ -3011,15 +3030,20 @@ final class AppModel: ObservableObject {
                 } catch {
                     let failure = Self.modelInferenceFailurePresentation(for: error)
                     let splitFailureFields = Self.splitModelFailureDiagnosticFields(for: error)
+                    let runtimeFields = bundledRuntimeDiagnosticFields()
                     let failureFields: [String: DiagnosticLogValue] = [
                         "modelSource": .string("bundled"),
                         "failureKind": .string(failure.debugText)
-                    ].merging(splitFailureFields) { current, _ in current }
+                    ]
+                        .merging(runtimeFields) { current, _ in current }
+                        .merging(splitFailureFields) { current, _ in current }
                     let fallbackFields: [String: DiagnosticLogValue] = [
                         "modelSource": .string("bundled"),
                         "fallback": .string("ruleBased"),
                         "failureKind": .string(failure.debugText)
-                    ].merging(splitFailureFields) { current, _ in current }
+                    ]
+                        .merging(runtimeFields) { current, _ in current }
+                        .merging(splitFailureFields) { current, _ in current }
                     diagnosticLogger.record(
                         "model.evaluation.failed",
                         fields: diagnosticFields(
@@ -3063,7 +3087,7 @@ final class AppModel: ObservableObject {
                             "modelSource": .string("bundled"),
                             "fallback": .string("ruleBased"),
                             "failureKind": .string(reason)
-                        ]
+                        ].merging(bundledRuntimeDiagnosticFields()) { current, _ in current }
                     )
                 )
                 return ruleBasedEvaluation(
@@ -3213,7 +3237,9 @@ final class AppModel: ObservableObject {
                     "state": .string(result.state.rawValue),
                     "alignmentVisualSampleCount": .int(alignmentVisualSampleCount),
                     "progressVisualSampleCount": .int(progressVisualSampleCount)
-                ].merging(llmDiagnosticFields) { current, _ in current }
+                ]
+                    .merging(bundledRuntimeDiagnosticFields()) { current, _ in current }
+                    .merging(llmDiagnosticFields) { current, _ in current }
             )
         )
         localLLMStatus = L10n.text("localLLM.bundledConnected")

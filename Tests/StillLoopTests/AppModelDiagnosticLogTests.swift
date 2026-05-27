@@ -16,6 +16,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testBundledModelTimeoutWritesFailureAndFallbackDiagnosticsWithoutRetry() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
+        runtime.bundledRuntimeKind = .llamaCpp
+        runtime.fallbackRuntimeKind = .llamaCpp
         var engines: [SequencedDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
@@ -85,6 +87,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertTrue(events.contains { $0["event"] as? String == "model.evaluation.started" })
         let failed = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.failed" })
+        XCTAssertEqual(failed["bundledRuntimeKind"] as? String, "llamaCpp")
+        XCTAssertEqual(failed["fallbackRuntimeKind"] as? String, "llamaCpp")
         XCTAssertEqual(failed["failureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["taskAlignmentFailureKind"] as? String, "请求超时")
@@ -92,6 +96,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.started" })
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.evaluation.retry.failed" })
         let fallback = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.fallback" })
+        XCTAssertEqual(fallback["bundledRuntimeKind"] as? String, "llamaCpp")
+        XCTAssertEqual(fallback["fallbackRuntimeKind"] as? String, "llamaCpp")
         XCTAssertEqual(fallback["fallback"] as? String, "ruleBased")
         XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
@@ -105,6 +111,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     func testSuccessfulBundledModelWritesCacheAndTimingDiagnostics() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
+        runtime.bundledRuntimeKind = .mlx
         var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
@@ -152,6 +159,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(result.evaluator, "自带模型")
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "mlx")
+        XCTAssertNil(succeeded["fallbackRuntimeKind"])
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
@@ -702,10 +711,12 @@ final class AppModelDiagnosticLogTests: XCTestCase {
     }
 }
 
-private final class FakeDiagnosticBundledRuntime: BundledModelRuntimeManaging {
+private final class FakeDiagnosticBundledRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
     var baseURL = ModelDownloadSpec.builtIn.localServerBaseURL
     var modelID = ModelDownloadSpec.builtIn.localServerModelID
     var state: BundledModelRuntime.State = .notStarted
+    var bundledRuntimeKind: BundledRuntimeKind? = nil
+    var fallbackRuntimeKind: BundledRuntimeKind? = nil
     private(set) var startCount = 0
     private(set) var stopCount = 0
 

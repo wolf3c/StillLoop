@@ -11,6 +11,16 @@ protocol BundledModelRuntimeManaging: AnyObject {
     func stop()
 }
 
+enum BundledRuntimeKind: String, Equatable {
+    case mlx
+    case llamaCpp
+}
+
+protocol BundledRuntimeDiagnosticsProviding: AnyObject {
+    var bundledRuntimeKind: BundledRuntimeKind? { get }
+    var fallbackRuntimeKind: BundledRuntimeKind? { get }
+}
+
 protocol BundledModelProcessManaging: AnyObject {
     var isRunning: Bool { get }
     var processIdentifier: Int32 { get }
@@ -27,7 +37,311 @@ struct BundledModelPortOccupant: Equatable {
     var arguments: [String]
 }
 
-final class BundledModelRuntime: BundledModelRuntimeManaging {
+struct BundledRuntimeSelection {
+    static let defaultKind: BundledRuntimeKind = .mlx
+
+    static func makeDefaultRuntime(
+        modelURL: URL,
+        bundle: Bundle = .main
+    ) -> BundledModelRuntimeManaging {
+        switch defaultKind {
+        case .mlx:
+            return FallbackBundledModelRuntime(
+                primary: makeRuntime(kind: .mlx, modelURL: modelURL, bundle: bundle),
+                fallback: makeRuntime(kind: .llamaCpp, modelURL: modelURL, bundle: bundle)
+            )
+        case .llamaCpp:
+            return makeRuntime(kind: .llamaCpp, modelURL: modelURL, bundle: bundle)
+        }
+    }
+
+    static func makeRuntime(
+        kind: BundledRuntimeKind,
+        modelURL: URL,
+        bundle: Bundle = .main
+    ) -> BundledModelRuntimeManaging {
+        switch kind {
+        case .mlx:
+            return MLXBundledModelRuntime.defaultRuntime()
+        case .llamaCpp:
+            return BundledModelRuntime.defaultRuntime(modelURL: modelURL, bundle: bundle)
+        }
+    }
+}
+
+final class FallbackBundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
+    private let primaryRuntime: BundledModelRuntimeManaging
+    private let fallbackRuntime: BundledModelRuntimeManaging
+    private var activeRuntime: BundledModelRuntimeManaging?
+    private(set) var fallbackRuntimeKind: BundledRuntimeKind?
+
+    private(set) var baseURL: URL
+    private(set) var modelID: String
+    private(set) var state: BundledModelRuntime.State = .notStarted
+
+    init(
+        primary: BundledModelRuntimeManaging,
+        fallback: BundledModelRuntimeManaging
+    ) {
+        primaryRuntime = primary
+        fallbackRuntime = fallback
+        baseURL = primary.baseURL
+        modelID = primary.modelID
+    }
+
+    var bundledRuntimeKind: BundledRuntimeKind? {
+        if let activeRuntime {
+            return (activeRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind
+        }
+        if fallbackRuntimeKind != nil {
+            return (fallbackRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind
+        }
+        return (primaryRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind
+    }
+
+    func startIfNeeded() async throws {
+        if activeRuntime === fallbackRuntime {
+            try await startFallback()
+            return
+        }
+
+        do {
+            try await primaryRuntime.startIfNeeded()
+            activeRuntime = primaryRuntime
+            fallbackRuntimeKind = nil
+            updateRuntimeState(from: primaryRuntime)
+        } catch {
+            primaryRuntime.stop()
+            try await startFallback()
+        }
+    }
+
+    func stop() {
+        primaryRuntime.stop()
+        fallbackRuntime.stop()
+        activeRuntime = nil
+        fallbackRuntimeKind = nil
+        baseURL = primaryRuntime.baseURL
+        modelID = primaryRuntime.modelID
+        state = .stopped
+    }
+
+    private func startFallback() async throws {
+        fallbackRuntimeKind = (fallbackRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind
+        do {
+            try await fallbackRuntime.startIfNeeded()
+            activeRuntime = fallbackRuntime
+            updateRuntimeState(from: fallbackRuntime)
+        } catch {
+            activeRuntime = fallbackRuntime
+            updateRuntimeState(from: fallbackRuntime)
+            throw error
+        }
+    }
+
+    private func updateRuntimeState(from runtime: BundledModelRuntimeManaging) {
+        baseURL = runtime.baseURL
+        modelID = runtime.modelID
+        state = runtime.state
+    }
+}
+
+final class MLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
+    struct Configuration: Equatable {
+        var executableURL: URL
+        var arguments: [String]
+        var baseURL: URL
+        var modelID: String
+
+        static func localDevelopment(port: Int = MLXBundledModelRuntime.availableLocalPort()) -> Configuration {
+            let modelID = "mlx-community/Qwen3.5-0.8B-4bit"
+            return Configuration(
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: [
+                    "python3",
+                    "-m", "mlx_vlm.server",
+                    "--host", "127.0.0.1",
+                    "--port", String(port),
+                    "--model", modelID,
+                    "--max-tokens", "900"
+                ],
+                baseURL: URL(string: "http://127.0.0.1:\(port)/v1")!,
+                modelID: modelID
+            )
+        }
+    }
+
+    let bundledRuntimeKind: BundledRuntimeKind? = .mlx
+    let fallbackRuntimeKind: BundledRuntimeKind? = nil
+    let modelID: String
+    private(set) var baseURL: URL
+    private(set) var state: BundledModelRuntime.State = .notStarted
+
+    private let configuration: Configuration
+    private let processLauncher: BundledModelProcessLaunching
+    private let readinessProbe: (URL, String) async throws -> BundledModelRuntime.Readiness
+    private let readinessMaxAttempts: Int
+    private let readinessRetryDelayNanoseconds: UInt64
+    private let processExitMaxAttempts: Int
+    private let processExitRetryDelayNanoseconds: UInt64
+    private var process: BundledModelProcessManaging?
+
+    init(
+        configuration: Configuration,
+        processLauncher: BundledModelProcessLaunching = FoundationBundledModelProcessLauncher(),
+        readinessProbe: @escaping (URL, String) async throws -> BundledModelRuntime.Readiness = MLXBundledModelRuntime.defaultReadinessProbe,
+        readinessMaxAttempts: Int = 90,
+        readinessRetryDelayNanoseconds: UInt64 = 500_000_000,
+        processExitMaxAttempts: Int = 20,
+        processExitRetryDelayNanoseconds: UInt64 = 100_000_000
+    ) {
+        self.configuration = configuration
+        self.processLauncher = processLauncher
+        self.readinessProbe = readinessProbe
+        self.readinessMaxAttempts = readinessMaxAttempts
+        self.readinessRetryDelayNanoseconds = readinessRetryDelayNanoseconds
+        self.processExitMaxAttempts = processExitMaxAttempts
+        self.processExitRetryDelayNanoseconds = processExitRetryDelayNanoseconds
+        baseURL = configuration.baseURL
+        modelID = configuration.modelID
+    }
+
+    static func defaultRuntime() -> MLXBundledModelRuntime {
+        MLXBundledModelRuntime(configuration: .localDevelopment())
+    }
+
+    func startIfNeeded() async throws {
+        if let process, process.isRunning {
+            do {
+                _ = try await waitUntilReady()
+                state = .running
+                return
+            } catch {
+                guard await stopOwnedProcess() else {
+                    let error = BundledModelRuntime.RuntimeError.launchFailed("existing mlx-vlm process did not exit")
+                    state = .failed(BundledModelRuntime.RuntimeError.statusMessage(for: error))
+                    throw error
+                }
+            }
+        }
+
+        state = .starting
+        do {
+            process = try processLauncher.launch(
+                executableURL: configuration.executableURL,
+                arguments: configuration.arguments
+            )
+            _ = try await waitUntilReady()
+            state = .running
+        } catch {
+            _ = await stopOwnedProcess()
+            let message = BundledModelRuntime.RuntimeError.statusMessage(for: error)
+            state = .failed(message)
+            if let runtimeError = error as? BundledModelRuntime.RuntimeError {
+                throw runtimeError
+            }
+            throw BundledModelRuntime.RuntimeError.readinessFailed(String(describing: error))
+        }
+    }
+
+    func stop() {
+        process?.terminate()
+        process = nil
+        state = .stopped
+    }
+
+    deinit {
+        stop()
+    }
+
+    private func waitUntilReady() async throws -> BundledModelRuntime.Readiness {
+        let attempts = max(1, readinessMaxAttempts)
+        var lastError: Error?
+        for attempt in 1...attempts {
+            do {
+                return try await readinessProbe(baseURL, modelID)
+            } catch BundledModelRuntime.RuntimeError.imageInputUnavailable {
+                throw BundledModelRuntime.RuntimeError.imageInputUnavailable
+            } catch {
+                if let process, !process.isRunning {
+                    throw BundledModelRuntime.RuntimeError.launchFailed("mlx-vlm process exited before readiness")
+                }
+                lastError = error
+                if attempt < attempts {
+                    try await Task.sleep(nanoseconds: readinessRetryDelayNanoseconds)
+                }
+            }
+        }
+        if let runtimeError = lastError as? BundledModelRuntime.RuntimeError {
+            throw runtimeError
+        }
+        throw BundledModelRuntime.RuntimeError.readinessFailed(String(describing: lastError ?? URLError(.timedOut)))
+    }
+
+    @discardableResult
+    private func stopOwnedProcess() async -> Bool {
+        guard let process else { return true }
+        process.terminate()
+        for _ in 0..<max(0, processExitMaxAttempts) {
+            guard process.isRunning else { break }
+            try? await Task.sleep(nanoseconds: processExitRetryDelayNanoseconds)
+        }
+        guard !process.isRunning else {
+            state = .running
+            return false
+        }
+        self.process = nil
+        state = .stopped
+        return true
+    }
+
+    private static func defaultReadinessProbe(baseURL: URL, modelID: String) async throws -> BundledModelRuntime.Readiness {
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: baseURL,
+            model: modelID,
+            disablesReasoning: true,
+            usesResponseFormat: true
+        )
+        do {
+            _ = try await engine.checkModelReadiness(requiresImageInput: true)
+            return .ready
+        } catch OpenAICompatibleLLMEngine.ReadinessError.imageInputUnavailable {
+            throw BundledModelRuntime.RuntimeError.imageInputUnavailable
+        } catch {
+            throw BundledModelRuntime.RuntimeError.readinessFailed(String(describing: error))
+        }
+    }
+
+    private static func availableLocalPort() -> Int {
+        let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
+        guard socketDescriptor >= 0 else { return 17645 }
+        defer { close(socketDescriptor) }
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        address.sin_addr = in_addr(s_addr: UInt32(INADDR_LOOPBACK).bigEndian)
+        let bindResult = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                bind(socketDescriptor, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindResult == 0 else { return 17645 }
+
+        var boundAddress = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                getsockname(socketDescriptor, sockaddrPointer, &length)
+            }
+        }
+        guard nameResult == 0 else { return 17645 }
+        return Int(UInt16(bigEndian: boundAddress.sin_port))
+    }
+}
+
+final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
     enum State: Equatable {
         case notStarted
         case starting
@@ -95,6 +409,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
     }
 
     let modelID: String
+    let bundledRuntimeKind: BundledRuntimeKind? = .llamaCpp
+    let fallbackRuntimeKind: BundledRuntimeKind? = nil
     private(set) var baseURL: URL
     private(set) var state: State = .notStarted
 
