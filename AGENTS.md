@@ -17,19 +17,13 @@ Avoid relying on generated files, local IDE state, or machine-specific paths as 
 
 ## Agent Workflow Guardrails
 
-- Work only on files required for the current task. Do not modify, revert, reformat, stage, or clean up unrelated files.
 - The user may provide multiple requirements in one message. Unless there is an obvious dependency, decompose them and execute in parallel where safe, including using subagents for disjoint subtasks.
 - For independent subtasks, prefer dispatching them to separate subagents and merge only the results that do not overlap files or flow assumptions.
 - Start every functional adjustment from the relevant product documentation, so the intended behavior, user-facing contract, and code stay aligned throughout the task.
 - Reflect carefully on every requirement and proposed change before implementation. If requirements, existing product behavior, documentation, or technical constraints conflict, stop and confirm the tradeoff with the user before editing production code.
-- Before behavior changes, state the current behavior, target behavior, affected modules, risks, verification plan, and concise implementation plan.
 - Implement behavior changes with TDD: write or update a focused failing test first, confirm it fails for the expected reason, then make the smallest production change that turns it green.
-- Keep changes minimal and aligned with existing product semantics. Avoid opportunistic refactors and broad cleanup.
-- Preserve user work in a dirty tree. If existing changes affect the task, work with them instead of reverting them.
 - When testing is complete and a test app is running, do not close it immediately. Tell the user it is ready for their manual test, keep it running, and close it only after the user confirms the behavior passed.
 - After finishing an implementation item (done + verified), commit directly unless the user explicitly asks to delay it.
-- If behavior changes are completed and test-verified, include one or more accurate commit-message options in the handoff.
-- If the user points out an agent mistake, add a short Error Ledger entry explaining the root cause and future rule.
 
 ## Error Ledger
 
@@ -56,14 +50,11 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 
 ## Design And Behavior Changes
 
-For every optimization or behavior-changing improvement, do the design work before editing production code:
+For every optimization or behavior-changing improvement, apply the global pre-edit checklist plus these StillLoop-specific additions:
 
 - Update or draft the relevant product documentation first, then implement code to match that documented behavior. If no durable product doc is needed, state why it is out of scope before editing code.
-- Identify current behavior, target behavior, affected modules, risks, and verification plan.
 - Check all relevant surfaces for the change: macOS app UI, persistence, background work, permissions, notifications, network calls, and tests. Mark any surface out of scope explicitly.
 - Re-check the request, current implementation, and documentation for contradictions before implementation. Confirm with the user when a conflict or ambiguous tradeoff appears.
-- Write a concise implementation plan before changing code.
-- Treat tests passing as insufficient by itself; confirm the implementation, docs, and verification all match the requested behavior.
 
 ## Build And Test Commands
 
@@ -183,11 +174,11 @@ If a command cannot run in the current environment, report the exact blocker and
 
 ## Coding Style
 
-Match the existing project style. For Swift code, prefer clear names, small single-purpose types, explicit access control where useful, and straightforward async/error handling. Keep UI code readable and avoid hiding simple behavior behind unnecessary abstractions.
+For Swift code, prefer clear names, small single-purpose types, explicit access control where useful, and straightforward async/error handling. Keep UI code readable and avoid hiding simple behavior behind unnecessary abstractions.
 
 ## Testing Guidelines
 
-Add focused tests for behavior changes. Place tests in the target that owns the behavior, and prefer behavior-oriented names. For UI-sensitive changes, verify the rendered state or interaction path when the project has UI test support.
+Place tests in the target that owns the behavior, and prefer behavior-oriented names. For UI-sensitive changes, verify the rendered state or interaction path when the project has UI test support.
 
 When testing model-backed behavior locally, prefer the app's built-in model path and the model source selected in the UI. Use `STILLLOOP_SKIP_MODEL_DOWNLOAD=1` to avoid re-downloading during development, assuming the built-in model is already present under the app's Application Support model directory. Do not force `STILLLOOP_USE_LOCAL_LLM=1` unless the test specifically covers manual/local HTTP model configuration.
 
@@ -198,11 +189,11 @@ Every completed requirement implementation must be verified in two ways before r
 
 ## Git Guidelines
 
-Use concise imperative commit messages, such as `Initialize macOS app repository` or `Add StillLoop agent guidelines`. Do not create commits, branches, tags, or remotes unless the user asks for them.
+Use concise imperative commit messages, such as `Initialize macOS app repository` or `Add StillLoop agent guidelines`.
 
 ## Security And Configuration
 
-Do not commit local secrets, credentials, provisioning files, generated archives, or machine-specific IDE state. Keep credentials and tokens out of client code and logs. When adding diagnostics, avoid collecting PII, raw user content, full URLs with query strings, secrets, headers, cookies, authorization values, or request/response bodies.
+Keep StillLoop signing and release artifacts out of the repository, including local provisioning files, generated archives, and machine-specific IDE state.
 
 ## TraceMind Instrumentation Rules
 
