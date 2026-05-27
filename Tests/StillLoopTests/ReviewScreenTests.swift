@@ -86,8 +86,8 @@ final class ReviewScreenTests: XCTestCase {
         let reviewEnd = try XCTUnwrap(source.range(of: "private struct SettingsView: View"))
         let snippet = String(source[reviewStart.lowerBound..<reviewEnd.lowerBound])
 
-        XCTAssertTrue(snippet.contains("本次任务"))
-        XCTAssertTrue(snippet.contains("继续这个任务"))
+        XCTAssertTrue(snippet.contains("L10n.text(\"review.taskTitle\")"))
+        XCTAssertTrue(snippet.contains("L10n.text(\"review.continueTask\")"))
         XCTAssertFalse(snippet.contains("用户反馈"))
         XCTAssertFalse(snippet.contains("ForEach(SessionFeedback.allCases"))
     }
@@ -105,13 +105,13 @@ final class ReviewScreenTests: XCTestCase {
         let taskSummary = try XCTUnwrap(snippet.range(of: "ReviewTaskSummary(task: session.task)"))
         let commentCard = try XCTUnwrap(snippet.range(of: "ReviewCommentCard(comment: reviewComment)"))
         let usageCard = try XCTUnwrap(snippet.range(of: "ReviewAppUsageCard(topApps: summary.topApps)"))
-        let newSessionButton = try XCTUnwrap(snippet.range(of: "Button(\"开始新的专注\""))
+        let newSessionButton = try XCTUnwrap(snippet.range(of: "Button(L10n.text(\"review.newFocus\")"))
         XCTAssertLessThan(taskSummary.lowerBound, commentCard.lowerBound)
         XCTAssertLessThan(commentCard.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(taskSummary.lowerBound, usageCard.lowerBound)
         XCTAssertLessThan(usageCard.lowerBound, newSessionButton.lowerBound)
 
-        let continueButton = try XCTUnwrap(snippet.range(of: "Button(\"继续这个任务\""))
+        let continueButton = try XCTUnwrap(snippet.range(of: "Button(L10n.text(\"review.continueTask\")"))
         let continueSnippetEnd = snippet.index(continueButton.lowerBound, offsetBy: 260, limitedBy: snippet.endIndex) ?? snippet.endIndex
         let continueSnippet = String(snippet[continueButton.lowerBound..<continueSnippetEnd])
         XCTAssertTrue(continueSnippet.contains(".buttonStyle(.bordered)"))
@@ -137,8 +137,8 @@ final class ReviewScreenTests: XCTestCase {
         let actionsSnippet = String(snippet[actionsStart.lowerBound..<snippet.endIndex])
 
         XCTAssertTrue(scrollingSnippet.contains("ScrollView {"))
-        XCTAssertFalse(scrollingSnippet.contains("Button(\"开始新的专注\""))
-        XCTAssertTrue(actionsSnippet.contains("Button(\"开始新的专注\""))
+        XCTAssertFalse(scrollingSnippet.contains("Button(L10n.text(\"review.newFocus\")"))
+        XCTAssertTrue(actionsSnippet.contains("Button(L10n.text(\"review.newFocus\")"))
         XCTAssertFalse(snippet.contains("Spacer()"))
     }
 
@@ -161,7 +161,7 @@ final class ReviewScreenTests: XCTestCase {
 
         XCTAssertTrue(source.contains("if let reviewComment = session.reviewComment"))
         XCTAssertTrue(source.contains("private struct ReviewCommentCard: View"))
-        XCTAssertTrue(source.contains("Text(\"本次表现\")"))
+        XCTAssertTrue(source.contains("Text(L10n.text(\"review.commentTitle\"))"))
         XCTAssertFalse(source.contains("暂未生成"))
         XCTAssertFalse(source.contains("重新生成"))
     }

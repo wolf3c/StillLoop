@@ -13,17 +13,21 @@ enum StatusItemMode: String {
     case review
 
     var title: String {
+        title(language: L10n.currentLanguage)
+    }
+
+    func title(language: AppLanguage) -> String {
         switch self {
         case .idle: return " StillLoop"
-        case .analyzing: return " 判断中"
-        case .focused: return " 专注中"
-        case .uncertain: return " 轻微跑偏"
-        case .distracted: return " 跑偏"
-        case .stuck: return " 停滞"
-        case .resting: return " 休息中"
-        case .away: return " 已离开"
-        case .paused: return " 已暂停"
-        case .review: return " 复盘"
+        case .analyzing: return L10n.text("statusItem.analyzing", language: language)
+        case .focused: return L10n.text("statusItem.focused", language: language)
+        case .uncertain: return L10n.text("statusItem.uncertain", language: language)
+        case .distracted: return L10n.text("statusItem.distracted", language: language)
+        case .stuck: return L10n.text("statusItem.stuck", language: language)
+        case .resting: return L10n.text("statusItem.resting", language: language)
+        case .away: return L10n.text("statusItem.away", language: language)
+        case .paused: return L10n.text("statusItem.paused", language: language)
+        case .review: return L10n.text("statusItem.review", language: language)
         }
     }
 

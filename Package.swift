@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "StillLoop",
+    defaultLocalization: "zh-Hans",
     platforms: [
         .macOS(.v13)
     ],
@@ -21,8 +22,14 @@ let package = Package(
                 "StillLoopCore",
                 .product(name: "TraceMind", package: "ios")
             ],
+            exclude: [
+                "Resources/Runtime"
+            ],
             resources: [
-                .process("Resources")
+                .process("Resources/AppIcon.iconset"),
+                .process("Resources/Brand"),
+                .process("Resources/Localizable.xcstrings"),
+                .process("Resources/StillLoop.icns")
             ]
         ),
         .target(name: "StillLoopCore"),

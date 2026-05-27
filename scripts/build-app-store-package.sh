@@ -39,7 +39,15 @@ rm -rf "$APP_DIR" "$PKG_PATH"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR"
 plutil -lint "$STATIC_ENTITLEMENTS_FILE" >/dev/null
 cp "$BIN_DIR/StillLoop" "$MACOS_DIR/StillLoop"
+RESOURCE_BUNDLE="$BIN_DIR/StillLoop_StillLoop.bundle"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+  echo "SwiftPM resource bundle not found: $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
+find "$RESOURCES_DIR/StillLoop_StillLoop.bundle" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -delete
 cp "$ROOT_DIR/Sources/StillLoop/Resources/StillLoop.icns" "$RESOURCES_DIR/StillLoop.icns"
+cp "$RUNTIME_SOURCE_DIR/LICENSE.llama.cpp" "$RESOURCES_DIR/LICENSE.llama.cpp"
 if [[ ! -f "$RUNTIME_SOURCE" ]]; then
   echo "Bundled llama-server not found: $RUNTIME_SOURCE" >&2
   exit 1

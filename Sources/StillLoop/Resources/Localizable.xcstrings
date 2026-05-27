@@ -1,0 +1,2038 @@
+{
+  "sourceLanguage" : "zh-Hans",
+  "strings" : {
+    "focus.elapsed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focused"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已专注"
+          }
+        }
+      }
+    },
+    "analysis.capture" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Capture" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "采集" } }
+      }
+    },
+    "analysis.captureAfterStart" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Real local context is captured after the task starts." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始任务后采集真实本机上下文" } }
+      }
+    },
+    "analysis.currentAnalysis" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current Analysis" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前分析" } }
+      }
+    },
+    "analysis.localContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent Local Context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近本地上下文" } }
+      }
+    },
+    "analysis.modelRun" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型运算" } }
+      }
+    },
+    "analysis.process" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis Process" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析过程" } }
+      }
+    },
+    "analysis.resultQueue" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Result" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "结果入列" } }
+      }
+    },
+    "analysis.visualSignal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Visual Signal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视觉信号" } }
+      }
+    },
+    "analysis.waitingForCapture" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for capture" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待采集" } }
+      }
+    },
+    "analysis.waitingForVisualSignal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for visual signals" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待视觉信号" } }
+      }
+    },
+    "focus.currentStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前状态" } }
+      }
+    },
+    "focus.endAndReview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "End and Review" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "结束并复盘" } }
+      }
+    },
+    "focus.reminder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提醒" } }
+      }
+    },
+    "focus.noNudge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No reminders yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无提醒"
+          }
+        }
+      }
+    },
+    "menu.quit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出"
+          }
+        }
+      }
+    },
+    "menu.running" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop is running locally" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop 正在本地运行" } }
+      }
+    },
+    "menu.show" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show StillLoop" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示 StillLoop" } }
+      }
+    },
+    "modelSetup.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Setup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型准备"
+          }
+        }
+      }
+    },
+    "modelDownload.download" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载模型" } }
+      }
+    },
+    "modelDownload.saveLocation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved to: Application Support/StillLoop/Models/%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存位置：Application Support/StillLoop/Models/%@" } }
+      }
+    },
+    "modelDownload.setupMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop can download its built-in model for more precise local focus evaluation. It needs your confirmation before downloading." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop 可以下载应用自带模型，在本机完成更细致的专注判断。下载开始前需要你的确认。" } }
+      }
+    },
+    "modelDownload.setupTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download Local Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载本地模型" } }
+      }
+    },
+    "modelDownload.skip" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not Now" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂不下载" } }
+      }
+    },
+    "modelDownload.skipWarning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Without downloading, this focus session uses rule-based evaluation, which may be less accurate than the local model." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂不下载时，本次专注会使用基础规则判断，准确性可能低于本地模型。" } }
+      }
+    },
+    "modelDownload.source" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source: Hugging Face / %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来源：Hugging Face / %@" } }
+      }
+    },
+    "modelDownload.startTaskMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The built-in model has not been downloaded yet. You can download it now, or skip it and start this focus session immediately." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前尚未下载应用自带模型。你可以先下载模型，也可以暂不下载并立即开始本次专注。" } }
+      }
+    },
+    "modelDownload.startTaskTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download the Local Model First?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始前下载本地模型？" } }
+      }
+    },
+    "modelSetup.bundledDownloadUnaffected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model downloads are not affected by this configuration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型下载不受当前配置影响" } }
+      }
+    },
+    "modelSetup.checkConnection" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check Connection" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检查连接" } }
+      }
+    },
+    "modelSetup.checking" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检查中" } }
+      }
+    },
+    "modelSetup.downloadNote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download progress stays on this page. Continue after it finishes, or switch to manual configuration anytime." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载会留在本页显示状态；下载完成后再继续，也可以随时切换到手动配置。" } }
+      }
+    },
+    "modelSetup.localHTTPPlaceholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Service root, for example http://127.0.0.1:8080" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务根地址，例如 http://127.0.0.1:8080" } }
+      }
+    },
+    "modelSetup.modelNamePlaceholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型名称" } }
+      }
+    },
+    "modelSetup.onlineURLPlaceholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Service URL, for example https://api.openai.com/v1" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务地址，例如 https://api.openai.com/v1" } }
+      }
+    },
+    "modelSetup.service.localHTTP" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local HTTP Model Service" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地模型 HTTP 服务" } }
+      }
+    },
+    "modelSetup.service.online" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Online Model Service" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在线模型服务" } }
+      }
+    },
+    "modelSetup.serviceType" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Service Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务类型" } }
+      }
+    },
+    "modelSetup.source.bundled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型" } }
+      }
+    },
+    "modelSetup.source.manual" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动配置大模型" } }
+      }
+    },
+    "modelSetup.sourcePicker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型来源" } }
+      }
+    },
+    "modelSetup.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop uses its built-in model by default to evaluate focus locally. You can also connect a local or online OpenAI-compatible HTTP model service." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop 默认使用应用自带模型评估专注状态。你也可以手动连接本地或线上 OpenAI-compatible HTTP 模型服务。" } }
+      }
+    },
+    "feedback.contactConsent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use only to reply to this feedback" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅用于回复本次反馈" } }
+      }
+    },
+    "feedback.contactPlaceholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contact (optional)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "联系方式（可选）" } }
+      }
+    },
+    "feedback.kind.idea" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Idea" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议" } }
+      }
+    },
+    "feedback.kind.issue" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "问题" } }
+      }
+    },
+    "feedback.kind.other" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他" } }
+      }
+    },
+    "feedback.kind.question" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Question" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "疑问" } }
+      }
+    },
+    "feedback.send" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Send" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送" } }
+      }
+    },
+    "feedback.sending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送中..." } }
+      }
+    },
+    "feedback.type" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "类型" } }
+      }
+    },
+    "modelAction.cancelDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消下载" } }
+      }
+    },
+    "modelAction.pauseDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pause Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂停下载" } }
+      }
+    },
+    "modelAction.resumeDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resume Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续下载" } }
+      }
+    },
+    "modelAction.retryDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新下载" } }
+      }
+    },
+    "modelAction.startDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始下载" } }
+      }
+    },
+    "modelReadiness.checking.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download it now, or manually configure a local or online model service." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以先下载，也可以手动配置本地或在线模型服务。" } }
+      }
+    },
+    "modelReadiness.checking.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: not downloaded" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：尚未下载" } }
+      }
+    },
+    "modelReadiness.downloading.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Downloading %@. The built-in model will be available when it finishes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在下载 %@，下载完成后即可使用应用自带模型。" } }
+      }
+    },
+    "modelReadiness.downloading.detailWithProgress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Downloading %@, %@ complete. The built-in model will be available when it finishes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在下载 %@，已完成 %@，下载完成后即可使用应用自带模型。" } }
+      }
+    },
+    "modelReadiness.downloading.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: downloading" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：正在下载" } }
+      }
+    },
+    "modelReadiness.downloading.titleWithProgress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: downloading %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：正在下载 %@" } }
+      }
+    },
+    "modelReadiness.failed.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check that Hugging Face is reachable, then try again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请确认网络可访问 Hugging Face 后重试。" } }
+      }
+    },
+    "modelReadiness.failed.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: download failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：下载失败" } }
+      }
+    },
+    "modelReadiness.paused.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The download is stopped. You can restart it when needed." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载已停止；需要时可以重新开始下载。" } }
+      }
+    },
+    "modelReadiness.paused.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: download paused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：下载已暂停" } }
+      }
+    },
+    "modelReadiness.ready.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The model files are saved locally and ready for on-device inference." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型文件已保存在本机，后续可接入本地推理。" } }
+      }
+    },
+    "modelReadiness.ready.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：已准备好" } }
+      }
+    },
+    "modelReadiness.skipped.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The model is skipped for quick UI testing. Production runs download it locally." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为了快速试用界面，当前没有下载模型；正式运行会在本机下载。" } }
+      }
+    },
+    "modelReadiness.skipped.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: skipped for this development run" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：本次开发运行已跳过下载" } }
+      }
+    },
+    "permissions.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions Guide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "权限获取引导"
+          }
+        }
+      }
+    },
+    "header.tagline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Drifting? Come back." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "跑偏？回来。" } }
+      }
+    },
+    "nav.home" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "主页" } }
+      }
+    },
+    "nav.home.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Return Home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回主页" } }
+      }
+    },
+    "permissions.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop reads only the necessary screen and camera state locally to decide whether to remind you. It does not save screenshots or camera frames." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop 仅在本机读取必要的屏幕与摄像头状态，用于判断是否需要提醒；不会保存截图或摄像头画面。" } }
+      }
+    },
+    "launchAtLogin.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "After login, StillLoop keeps only the menu bar entry. It does not start focusing, capture screen or camera, or start the model automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "登录后只保留菜单栏入口，不会自动开始专注、采集屏幕/摄像头或启动模型。" } }
+      }
+    },
+    "launchAtLogin.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Launch StillLoop at Login" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "登录时启动 StillLoop" } }
+      }
+    },
+    "permissions.camera" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Camera" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摄像头" } }
+      }
+    },
+    "permissions.pending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理" } }
+      }
+    },
+    "permissions.ready" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已就绪" } }
+      }
+    },
+    "permissions.screenRecording" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen Recording" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕录制" } }
+      }
+    },
+    "common.close" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭" } }
+      }
+    },
+    "common.cancel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "common.continue" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续"
+          }
+        }
+      }
+    },
+    "common.pause" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pause" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂停" } }
+      }
+    },
+    "permission.guidance.cameraDenied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow StillLoop in System Settings > Privacy & Security > Camera."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在系统设置 > 隐私与安全性 > 摄像头 中允许 StillLoop。"
+          }
+        }
+      }
+    },
+    "permission.guidance.cameraNotRequested" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue and macOS will show the camera permission prompt."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续后，macOS 会弹出摄像头授权窗口。"
+          }
+        }
+      }
+    },
+    "permission.guidance.cameraRequesting" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow StillLoop to use the camera in the system permission prompt."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在系统授权窗口中允许 StillLoop 使用摄像头。"
+          }
+        }
+      }
+    },
+    "permission.guidance.cameraRestricted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera access is restricted by the system. Check StillLoop in System Settings > Privacy & Security > Camera."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前系统限制了摄像头访问，请在系统设置 > 隐私与安全性 > 摄像头 中检查 StillLoop。"
+          }
+        }
+      }
+    },
+    "permission.guidance.cameraUnknown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "StillLoop cannot confirm camera permission. Check Camera access in System Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法确认摄像头授权状态，请在系统设置中检查 StillLoop 的摄像头权限。"
+          }
+        }
+      }
+    },
+    "permission.guidance.developmentUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launch the app bundle with scripts/run-app.sh before checking permissions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请用 scripts/run-app.sh 启动应用包后再检查权限。"
+          }
+        }
+      }
+    },
+    "permission.guidance.screenRecordingNotEffective" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow StillLoop in System Settings > Privacy & Security > Screen & System Audio Recording. If it is already on but not effective, turn it off and on once, then restart StillLoop."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经开启但仍未生效，请关闭后重新开启一次，然后重启 StillLoop。"
+          }
+        }
+      }
+    },
+    "permission.status.allowed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已允许"
+          }
+        }
+      }
+    },
+    "permission.status.denied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拒绝"
+          }
+        }
+      }
+    },
+    "permission.status.developmentUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Development run cannot appear in the system permissions list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发运行模式无法注册到系统权限列表"
+          }
+        }
+      }
+    },
+    "permission.status.notEffective" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未生效"
+          }
+        }
+      }
+    },
+    "permission.status.notRequested" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not requested"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未请求"
+          }
+        }
+      }
+    },
+    "permission.status.requesting" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requesting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求中"
+          }
+        }
+      }
+    },
+    "permission.status.restricted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restricted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "受限制"
+          }
+        }
+      }
+    },
+    "permission.status.unknown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知"
+          }
+        }
+      }
+    },
+    "permission.status.unchecked" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not checked"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未检查"
+          }
+        }
+      }
+    },
+    "settings.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置"
+          }
+        }
+      }
+    },
+    "status.analyzing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "判断中" } }
+      }
+    },
+    "privacy.diagnosticLog" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Development diagnostic log: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开发诊断日志：%@" } }
+      }
+    },
+    "privacy.localFirst" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local first: StillLoop uses the built-in model by default; manual model services are used only after you choose them." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。" } }
+      }
+    },
+    "privacy.localSummaries" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Focus summaries and evaluation events are saved in Application Support/StillLoop; images, photos, and screenshots are not saved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。" } }
+      }
+    },
+    "privacy.noImageStorage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screenshots and camera frames are compressed in memory into lightweight visual signals. Original images are not saved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。" } }
+      }
+    },
+    "privacy.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Privacy" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐私" } }
+      }
+    },
+    "settings.feedback.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Submit issues, ideas, questions, or other feedback." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交问题、建议或其他使用反馈。" } }
+      }
+    },
+    "settings.feedback.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈与建议" } }
+      }
+    },
+    "settings.model.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configure a local HTTP or online OpenAI-compatible model service." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配置本地 HTTP 或线上 OpenAI-compatible 模型服务。" } }
+      }
+    },
+    "settings.model.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型设置" } }
+      }
+    },
+    "settings.openSource.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View built-in model, GGUF source, and local runtime license information." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看内置模型、GGUF 来源和本地运行时许可。" } }
+      }
+    },
+    "settings.openSource.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Source Licenses and Model Info" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开源许可与模型信息" } }
+      }
+    },
+    "setupIssue.model" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model Setup Needed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缺少模型设置" } }
+      }
+    },
+    "setupIssue.model.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Return to model setup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回模型准备" } }
+      }
+    },
+    "setupIssue.modelDownloading" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model Downloading" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型下载中" } }
+      }
+    },
+    "setupIssue.modelDownloading.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View model download status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看模型下载状态" } }
+      }
+    },
+    "setupIssue.modelDownloadingWithProgress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model Downloading %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型下载中 %@" } }
+      }
+    },
+    "setupIssue.permissions" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permissions Needed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缺少权限" } }
+      }
+    },
+    "setupIssue.permissions.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Return to permissions guide" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回权限获取引导" } }
+      }
+    },
+    "review.appUsageChart" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top app share chart" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "常用 App 占比图" } }
+      }
+    },
+    "review.bySamples" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "By analysis samples" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按分析样本统计" } }
+      }
+    },
+    "review.commentTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Session" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次表现" } }
+      }
+    },
+    "review.continueTask" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue This Task" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续这个任务" } }
+      }
+    },
+    "review.evaluationCount" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Evaluation Rounds" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "评估轮次" } }
+      }
+    },
+    "review.minutes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d min" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 分钟" } }
+      }
+    },
+    "review.newFocus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start New Focus" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始新的专注" } }
+      }
+    },
+    "review.noSamples" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not enough samples yet" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无足够样本" } }
+      }
+    },
+    "review.nudgeCount" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提醒次数" } }
+      }
+    },
+    "review.offTrackOrStuck" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Off Track/Stalled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "偏离/卡住" } }
+      }
+    },
+    "review.samples" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Samples" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "样本" } }
+      }
+    },
+    "review.taskTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Task" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次任务" } }
+      }
+    },
+    "review.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Focus Review" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "专注复盘" } }
+      }
+    },
+    "review.topApps" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top Apps" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "常用 App" } }
+      }
+    },
+    "review.totalDuration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total Time" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "总时长" } }
+      }
+    },
+    "timeline.detailHelp" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View recognition details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看识别详情" } }
+      }
+    },
+    "timeline.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "State Timeline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态变化时间线" } }
+      }
+    },
+    "taskSetup.startFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Focus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始专注"
+          }
+        }
+      }
+    },
+    "taskSetup.downloadStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in Model Download Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型下载状态" } }
+      }
+    },
+    "taskSetup.placeholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Draft the product plan and finish the first version" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理产品方案，完成第一版草稿" } }
+      }
+    },
+    "taskSetup.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Write down the one thing you most want to finish next. StillLoop uses it to decide whether you drift." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "写下你接下来最想完成的一件事，StillLoop 会围绕它判断是否跑偏。" } }
+      }
+    },
+    "taskSetup.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current Task" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前任务" } }
+      }
+    },
+    "analysis.detail.capturing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading the frontmost window and compressing screen and camera signals." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取前台窗口、压缩屏幕和摄像头视觉信号。" } }
+      }
+    },
+    "analysis.detail.committed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This result has been added to the timeline." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这轮结果已放入右侧时间线。" } }
+      }
+    },
+    "analysis.detail.contextReady" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local context is ready and waiting for model evaluation." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机上下文已准备，等待提交给模型。" } }
+      }
+    },
+    "analysis.detail.evaluating" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Submitting context to evaluate the current state." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在提交给模型判断当前状态。" } }
+      }
+    },
+    "analysis.detail.idle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Capture starts after you begin focusing." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始专注后才会采集。" } }
+      }
+    },
+    "analysis.detail.modelBusy" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending sampled context to the model; background sampling continues every 5 seconds." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在提交已采样上下文给模型判断；后台仍按 5 秒继续采样。" } }
+      }
+    },
+    "analysis.detail.presenting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The model returned a result and it is ready for the timeline." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型已返回判断，准备写入右侧时间线。" } }
+      }
+    },
+    "analysis.detail.sampling" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent context is available; collecting more samples for the next round." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已拿到最近上下文，继续补充样本等待下一轮判断。" } }
+      }
+    },
+    "analysis.model.bundledReady" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型待命" } }
+      }
+    },
+    "analysis.model.bundledRunning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型运算中" } }
+      }
+    },
+    "analysis.model.bundledStarting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model starting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型启动中" } }
+      }
+    },
+    "analysis.model.manualReady" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual model ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动模型待命" } }
+      }
+    },
+    "analysis.model.manualRunning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual model running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动模型运算中" } }
+      }
+    },
+    "analysis.model.ruleBased" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rule-based" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基础规则" } }
+      }
+    },
+    "analysis.phase.capturing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Capturing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在采集" } }
+      }
+    },
+    "analysis.phase.committed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to timeline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已写入时间线" } }
+      }
+    },
+    "analysis.phase.contextReady" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文已准备" } }
+      }
+    },
+    "analysis.phase.idle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting to start" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待开始" } }
+      }
+    },
+    "analysis.phase.modelRunning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型运算中" } }
+      }
+    },
+    "analysis.phase.modelStarting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model starting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型启动中" } }
+      }
+    },
+    "analysis.phase.result" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Result: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "结果：%@" } }
+      }
+    },
+    "analysis.phase.sampling" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sampling continuously" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "持续采样中" } }
+      }
+    },
+    "analysis.phase.scheduled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for next round" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待下一轮" } }
+      }
+    },
+    "analysis.result.addedToTimeline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to timeline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已放入时间线" } }
+      }
+    },
+    "analysis.signal.camera" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Camera" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摄像头" } }
+      }
+    },
+    "analysis.signal.screen" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕" } }
+      }
+    },
+    "analysis.step.captured" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Captured" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已采集" } }
+      }
+    },
+    "browserAutomation.notice" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading %@ current tab title and URL for local judgment only" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取 %@ 当前标签标题和网址，仅用于本机判断" } }
+      }
+    },
+    "bundledRuntime.prefix" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: " } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：" } }
+      }
+    },
+    "bundledRuntime.status.imageInputUnavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: image input unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：不支持图片输入" } }
+      }
+    },
+    "bundledRuntime.status.inferenceFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: inference failed (%@)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：推理失败（%@）" } }
+      }
+    },
+    "bundledRuntime.status.launchFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: launch failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：启动失败" } }
+      }
+    },
+    "bundledRuntime.status.missingExecutable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: missing stillloop-llama-server" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：缺少 stillloop-llama-server" } }
+      }
+    },
+    "bundledRuntime.status.missingModel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: missing model files" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：缺少模型文件" } }
+      }
+    },
+    "bundledRuntime.status.missingProjector" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: missing vision projector" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：缺少视觉投影文件" } }
+      }
+    },
+    "bundledRuntime.status.notStarted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: not started" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：未启动" } }
+      }
+    },
+    "bundledRuntime.status.prewarmPending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: prewarm on home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：待主页预热" } }
+      }
+    },
+    "bundledRuntime.status.prewarmed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: prewarmed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：已预热" } }
+      }
+    },
+    "bundledRuntime.status.prewarming" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: prewarming" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：后台预热中" } }
+      }
+    },
+    "bundledRuntime.status.readinessFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: readiness probe failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：探测失败" } }
+      }
+    },
+    "bundledRuntime.status.started" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: started" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：已启动" } }
+      }
+    },
+    "bundledRuntime.status.starting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: starting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：启动中" } }
+      }
+    },
+    "bundledRuntime.status.stopped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: stopped" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：已停止" } }
+      }
+    },
+    "bundledRuntime.status.waitingModelFile" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: waiting for model files" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自带模型：等待模型文件" } }
+      }
+    },
+    "common.done" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } }
+      }
+    },
+    "common.retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+      }
+    },
+    "common.running" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进行中" } }
+      }
+    },
+    "common.unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可用" } }
+      }
+    },
+    "common.waiting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待" } }
+      }
+    },
+    "contextSource.captureStats" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context source: this Mac, captured every %lld seconds, %lld unanalyzed samples" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文来源：真实本机，每 %lld 秒采集一次，未分析样本 %lld 条" } }
+      }
+    },
+    "contextSource.realLocal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context source: this Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文来源：真实本机" } }
+      }
+    },
+    "contextSource.suspended" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context source: paused while the screen is locked or asleep" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文来源：屏幕锁定或休眠期间暂停" } }
+      }
+    },
+    "evaluationLoop.analyzingAllContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing %lld context samples from the last minute" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在分析最近 1 分钟 %lld 条上下文" } }
+      }
+    },
+    "evaluationLoop.analyzingSampledContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing %lld text samples from the last minute, with %lld camera frames and %lld screenshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在分析最近 1 分钟 %lld 条文本上下文，抽样 %lld 条用户照片、%lld 条电脑截图" } }
+      }
+    },
+    "evaluationLoop.collecting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Capturing local context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在采集本机上下文" } }
+      }
+    },
+    "evaluationLoop.continuing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continuing capture" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续采集" } }
+      }
+    },
+    "evaluationLoop.ended" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Task ended; capture stopped" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "任务已结束，已停止采集" } }
+      }
+    },
+    "evaluationLoop.nextByDuration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Each round schedules the next capture based on duration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每轮完成后按耗时安排下一次采集" } }
+      }
+    },
+    "evaluationLoop.roundDelay" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This round took %lld seconds; evaluating again in %lld seconds" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本轮耗时 %lld 秒，%lld 秒后再次评估" } }
+      }
+    },
+    "evaluationLoop.suspended" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen locked or asleep; capture and model evaluation paused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕锁定或休眠，已暂停采集和模型运算" } }
+      }
+    },
+    "evaluationLoop.waitingInitial" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting %lld seconds for the first context window to stabilize" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待首轮上下文稳定（%lld 秒）" } }
+      }
+    },
+    "evaluationLoop.waitingNext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for the next analysis" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待下一轮分析" } }
+      }
+    },
+    "evaluationLoop.waitingSamples" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for capture samples" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待采集样本" } }
+      }
+    },
+    "evaluationLoop.waitingTask" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting to start the task" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待开始任务" } }
+      }
+    },
+    "evaluationLoop.woke" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen awake; continuing capture" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕已唤醒，继续采集" } }
+      }
+    },
+    "feedback.failedMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not send. Please try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送失败，请稍后重试。" } }
+      }
+    },
+    "feedback.submittedToast" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sent" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已提交" } }
+      }
+    },
+    "feedback.submittingMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在发送..." } }
+      }
+    },
+    "launchAtLogin.disabledStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Off. StillLoop will not start automatically after login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已关闭。StillLoop 不会在登录后自动启动。" } }
+      }
+    },
+    "launchAtLogin.enabledAfterSetupStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Will turn on after setup. After login, only the menu bar entry appears; focus and capture do not start automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成设置后开启。登录后只显示菜单栏入口，不会自动开始专注或采集。" } }
+      }
+    },
+    "launchAtLogin.enabledStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "On. After login, only the menu bar entry appears; focus and capture do not start automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已开启。登录后只显示菜单栏入口，不会自动开始专注或采集。" } }
+      }
+    },
+    "launchAtLogin.updateFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update launch at login: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法更新登录时启动：%@" } }
+      }
+    },
+    "localLLM.bundledConnected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model connected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：自带模型已连接" } }
+      }
+    },
+    "localLLM.bundledPrewarmPending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model will prewarm after entering home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：进入主页后后台预热自带模型" } }
+      }
+    },
+    "localLLM.bundledPrewarmed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model prewarmed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：自带模型已预热" } }
+      }
+    },
+    "localLLM.bundledPrewarming" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model prewarming" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：自带模型后台预热中" } }
+      }
+    },
+    "localLLM.bundledRunning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：自带模型运算中" } }
+      }
+    },
+    "localLLM.bundledStarting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: built-in model starting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：自带模型启动中" } }
+      }
+    },
+    "localLLM.manualConnected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: manual model connected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：手动模型已连接" } }
+      }
+    },
+    "localLLM.manualInvalidEndpoint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model service: invalid endpoint" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型服务：端点无效" } }
+      }
+    },
+    "localLLM.manualPendingConfig" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model service: not configured" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型服务：待配置" } }
+      }
+    },
+    "localLLM.manualRunning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: manual model running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：手动模型运算中" } }
+      }
+    },
+    "localLLM.manualSelected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: manual model %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：手动模型 %@" } }
+      }
+    },
+    "localLLM.ruleBased" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: rule-based" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：基础规则" } }
+      }
+    },
+    "localLLM.ruleBasedBundledFailure" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: rule-based (built-in model: %@)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：基础规则（自带模型：%@）" } }
+      }
+    },
+    "localLLM.ruleBasedManualFailure" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: rule-based (manual model: %@)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：基础规则（手动模型：%@）" } }
+      }
+    },
+    "localLLM.ruleBasedSkipped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: rule-based (built-in model skipped; accuracy may be lower)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：基础规则（暂不下载自带模型，准确性可能低于本地模型）" } }
+      }
+    },
+    "localLLM.ruleBasedWaitingModelFile" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: rule-based (waiting for built-in model files)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：基础规则（等待自带模型文件）" } }
+      }
+    },
+    "localLLM.waitingDownload" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current evaluation: waiting for built-in model download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前评估：等待自带模型下载完成" } }
+      }
+    },
+    "modelConnection.bundledSelected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型已选中" } }
+      }
+    },
+    "modelConnection.bundledSelectedDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual HTTP model service is not used. The built-in model prewarms after entering home and probes image input before the first evaluation." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前不使用手动 HTTP 模型服务；自带模型会在进入主页后后台预热，并在首次评估前完成图片输入探测。" } }
+      }
+    },
+    "modelConnection.checking" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking connection" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检查连接" } }
+      }
+    },
+    "modelConnection.configChanged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configuration changed, checking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配置已修改，正在检查" } }
+      }
+    },
+    "modelConnection.configChangedDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "StillLoop checks the service, model name, and a minimal inference after you stop typing." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会在停止输入后自动检查服务、模型名称和一次最小推理。" } }
+      }
+    },
+    "modelConnection.emptyModel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model name is empty" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型名称为空" } }
+      }
+    },
+    "modelConnection.emptyModelDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a model name." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入模型名称。" } }
+      }
+    },
+    "modelConnection.initialDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "After model configuration changes, StillLoop automatically checks the service, model name, and a minimal inference." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "修改模型配置后会自动检查服务、模型名称和一次最小推理。" } }
+      }
+    },
+    "modelConnection.invalidEndpoint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid endpoint" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "端点无效" } }
+      }
+    },
+    "modelConnection.invalidEndpointDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter the service root. StillLoop uses an OpenAI-compatible /v1 endpoint." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入服务根地址。StillLoop 会使用 OpenAI-compatible /v1 端点。" } }
+      }
+    },
+    "modelConnection.successDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Service reachable; target model exists; minimal inference succeeded. %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务可达；目标模型存在；最小推理成功。%@" } }
+      }
+    },
+    "modelConnection.unchecked" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not checked yet" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未检查" } }
+      }
+    },
+    "modelConnection.unusable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型不可用" } }
+      }
+    },
+    "modelConnection.unusableDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check the service address, /v1 path, model name, and whether the service supports chat/completions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请检查服务地址、/v1 路径、模型名称，以及服务是否支持 chat/completions。" } }
+      }
+    },
+    "modelConnection.usable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model available" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型可用" } }
+      }
+    },
+    "modelConnection.visualNotAdvertised" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vision: the model does not advertise image input; runtime will submit compressed screen and camera images to verify real behavior." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视觉能力：模型未声明视觉输入；运行时会直接提交压缩截图和摄像头图片验证真实表现。" } }
+      }
+    },
+    "modelConnection.visualSupported" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vision: the model name indicates image input support." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视觉能力：模型名称显示支持视觉输入。" } }
+      }
+    },
+    "modelConnection.visualUnknown" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vision: service metadata is inconclusive; runtime will submit compressed screen and camera images to verify real behavior." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视觉能力：服务未提供可确认信息；运行时会直接提交压缩截图和摄像头图片验证真实表现。" } }
+      }
+    },
+    "modelSetup.supportedEndpoints" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Supported endpoints: OpenAI-compatible /v1/models and /v1/chat/completions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "支持 OpenAI-compatible /v1/models 和 /v1/chat/completions 端点。" } }
+      }
+    },
+    "modelStatus.initial" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in model: not checked" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用自带模型：未检查" } }
+      }
+    },
+    "nav.backHome" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back Home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回主页" } }
+      }
+    },
+    "nav.backToSettings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回设置" } }
+      }
+    },
+    "nudge.systemLocked" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen locked; StillLoop paused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕已锁定，已暂停运行" } }
+      }
+    },
+    "nudge.title.gentle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Gentle Reminder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "轻轻提醒" } }
+      }
+    },
+    "nudge.title.noticeable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Come Back" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回来一下" } }
+      }
+    },
+    "nudge.title.permission" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permission Note" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "权限说明" } }
+      }
+    },
+    "nudge.title.strong" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pause First" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先停一下" } }
+      }
+    },
+    "openSource.baseModel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Base model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基础模型" } }
+      }
+    },
+    "openSource.builtInModel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Built-in Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内置模型" } }
+      }
+    },
+    "openSource.copyright" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copyright" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "版权" } }
+      }
+    },
+    "openSource.ggufLicenseNote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This GGUF repository is the conversion source. It does not provide a separate LICENSE file, so this page lists both the underlying Qwen Apache 2.0 license and the conversion source." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该 GGUF 仓库作为转换来源；仓库未提供单独 LICENSE 文件，因此页面同时标注底层 Qwen 官方 Apache 2.0 许可与转换来源。" } }
+      }
+    },
+    "openSource.ggufSource" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GGUF source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GGUF 来源" } }
+      }
+    },
+    "openSource.license" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "许可证" } }
+      }
+    },
+    "openSource.licenseFile" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License file" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "许可文件" } }
+      }
+    },
+    "openSource.localRuntime" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地运行时" } }
+      }
+    },
+    "openSource.manualModelService" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual Model Service" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动模型服务" } }
+      }
+    },
+    "openSource.manualModelServiceNote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local or online model services configured manually by the user are not distributed by StillLoop. Confirm the license and terms for the corresponding model, service, and API yourself." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户手动配置的本地或在线模型服务不由 StillLoop 分发；请自行确认对应模型、服务和 API 的许可证与使用条款。" } }
+      }
+    },
+    "openSource.modelFiles" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model files" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型文件" } }
+      }
+    },
+    "openSource.qwenLicense" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Official Qwen License" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Qwen 官方许可证" } }
+      }
+    },
+    "openSource.runtime" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行时" } }
+      }
+    },
+    "openSource.runtimeLicenseStored" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The full MIT license text is kept in the app resource %@." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整 MIT 许可文本保留在应用资源 %@。" } }
+      }
+    },
+    "openSource.saveLocation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save location" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存位置" } }
+      }
+    },
+    "openSource.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings / Open Source Licenses and Model Info" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置 / 开源许可与模型信息" } }
+      }
+    },
+    "permission.openedSystemSettings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "System Settings opened. Finish authorization in the System Settings window." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已打开系统设置，请在系统设置窗口中完成授权。" } }
+      }
+    },
+    "permission.openSystemSettingsFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not open System Settings automatically. Open it manually using the path above." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法自动打开系统设置，请按上方路径手动打开。" } }
+      }
+    },
+    "permission.openSystemSettingsFailedWithDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not open System Settings automatically: %@. Open it manually using the path above." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法自动打开系统设置：%@。请按上方路径手动打开。" } }
+      }
+    },
+    "privacy.pageTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings / Privacy" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置 / 隐私" } }
+      }
+    },
+    "review.count" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Count" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "次数" } }
+      }
+    },
+    "review.otherApps" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他" } }
+      }
+    },
+    "statusItem.analyzing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Analyzing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 判断中" } }
+      }
+    },
+    "statusItem.away" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Away" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 已离开" } }
+      }
+    },
+    "statusItem.distracted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Off Track" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 跑偏" } }
+      }
+    },
+    "statusItem.focused" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Focused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 专注中" } }
+      }
+    },
+    "statusItem.paused" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Paused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 已暂停" } }
+      }
+    },
+    "statusItem.resting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Resting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 休息中" } }
+      }
+    },
+    "statusItem.review" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Review" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 复盘" } }
+      }
+    },
+    "statusItem.stuck" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Stalled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 停滞" } }
+      }
+    },
+    "statusItem.uncertain" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : " Drifting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : " 轻微跑偏" } }
+      }
+    },
+    "toast.ruleBasedSkipped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This focus session uses rule-based evaluation; accuracy may be lower than the local model." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次专注使用基础规则判断，准确性可能低于本地模型" } }
+      }
+    },
+    "welcome.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you drift, I gently bring you back"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分心时，我会轻轻把你带回当前任务"
+          }
+        }
+      }
+    },
+    "welcome.primaryAction" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Setup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始设置" } }
+      }
+    },
+    "welcome.privacy.gentle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "It only reminds you when needed, without constant interruptions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只在判断需要时提醒，不持续打扰。" } }
+      }
+    },
+    "welcome.privacy.local" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing is local by default. Your screen, camera, and task text are not uploaded." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "默认在本机处理，不上传你的屏幕、摄像头或任务内容。" } }
+      }
+    },
+    "welcome.privacy.storage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Focus summaries and evaluation events stay on this Mac, and you can stop anytime." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "专注摘要和评估事件保存在本机，你可以随时停止使用。" } }
+      }
+    },
+    "welcome.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Write down the one thing you most want to finish. After that, I gently remind you only when you drift, and every judgment stays on this Mac." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先写下这段时间最想完成的一件事。之后我只在你偏离时轻轻提醒，所有判断都在本机完成。" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

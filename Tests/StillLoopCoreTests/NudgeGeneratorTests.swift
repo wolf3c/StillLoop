@@ -33,4 +33,15 @@ final class NudgeGeneratorTests: XCTestCase {
         XCTAssertFalse(message.contains("wrong"))
         XCTAssertFalse(message.contains("failed"))
     }
+
+    func testNudgeCanUseEnglishTemplateWithoutTranslatingTaskText() {
+        let generator = NudgeGenerator(language: .english)
+
+        let message = generator.message(
+            for: .stuck,
+            task: "写 App Store 回复"
+        )
+
+        XCTAssertEqual(message, "Take one step on: 写 App Store 回复")
+    }
 }

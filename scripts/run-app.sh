@@ -21,11 +21,20 @@ export STILLLOOP_SKIP_MODEL_DOWNLOAD=1
 
 cd "$ROOT_DIR"
 swift build
+BIN_DIR="$(swift build --show-bin-path)"
+RESOURCE_BUNDLE="$BIN_DIR/StillLoop_StillLoop.bundle"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR"
-cp "$ROOT_DIR/.build/arm64-apple-macosx/debug/StillLoop" "$MACOS_DIR/StillLoop"
+cp "$BIN_DIR/StillLoop" "$MACOS_DIR/StillLoop"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+  echo "SwiftPM resource bundle not found: $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
+find "$RESOURCES_DIR/StillLoop_StillLoop.bundle" -type f \( -name "llama-server" -o -name "lib*.dylib" \) -delete
 cp "$ROOT_DIR/Sources/StillLoop/Resources/StillLoop.icns" "$RESOURCES_DIR/StillLoop.icns"
+cp "$RUNTIME_SOURCE_DIR/LICENSE.llama.cpp" "$RESOURCES_DIR/LICENSE.llama.cpp"
 if [[ -f "$RUNTIME_SOURCE" ]]; then
   cp "$RUNTIME_SOURCE" "$HELPERS_DIR/$HELPER_EXECUTABLE_NAME"
   cp -R "$RUNTIME_SOURCE_DIR"/lib*.dylib "$HELPERS_DIR"/

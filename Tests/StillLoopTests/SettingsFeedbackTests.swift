@@ -15,11 +15,11 @@ final class SettingsFeedbackTests: XCTestCase {
         let privacyStart = try XCTUnwrap(source.range(of: "private struct PrivacySettingsView: View"))
         let settingsSnippet = String(source[settingsStart.lowerBound..<privacyStart.lowerBound])
 
-        XCTAssertTrue(settingsSnippet.contains("反馈与建议"))
+        XCTAssertTrue(settingsSnippet.contains("L10n.text(\"settings.feedback.title\")"))
         XCTAssertTrue(settingsSnippet.contains("UserFeedbackSheet"))
         XCTAssertTrue(settingsSnippet.contains(".sheet(isPresented: $model.isUserFeedbackPresented)"))
-        XCTAssertTrue(source.contains("联系方式（可选）"))
-        XCTAssertTrue(source.contains("仅用于回复本次反馈"))
+        XCTAssertTrue(source.contains("L10n.text(\"feedback.contactPlaceholder\")"))
+        XCTAssertTrue(source.contains("L10n.text(\"feedback.contactConsent\")"))
         XCTAssertTrue(source.contains("Toggle(isOn: $model.userFeedbackAllowsContact)"))
         XCTAssertTrue(source.contains("text: $model.userFeedbackReplyAddress"))
         XCTAssertTrue(source.contains("private struct UserFeedbackSheet: View"))
@@ -32,8 +32,8 @@ final class SettingsFeedbackTests: XCTestCase {
         let privacyStart = try XCTUnwrap(source.range(of: "private struct PrivacySettingsView: View"))
         let settingsSnippet = String(source[settingsStart.lowerBound..<privacyStart.lowerBound])
 
-        XCTAssertTrue(settingsSnippet.contains("开源许可与模型信息"))
-        XCTAssertTrue(settingsSnippet.contains("查看内置模型、GGUF 来源和本地运行时许可。"))
+        XCTAssertTrue(settingsSnippet.contains("L10n.text(\"settings.openSource.title\")"))
+        XCTAssertTrue(settingsSnippet.contains("L10n.text(\"settings.openSource.detail\")"))
         XCTAssertTrue(settingsSnippet.contains("Image(systemName: \"doc.text.magnifyingglass\")"))
         XCTAssertTrue(settingsSnippet.contains("model.screen = .openSourceModelInfo"))
     }
@@ -44,9 +44,9 @@ final class SettingsFeedbackTests: XCTestCase {
         XCTAssertTrue(source.contains("case .openSourceModelInfo:"))
         XCTAssertTrue(source.contains("OpenSourceModelLicenseView()"))
         XCTAssertTrue(source.contains("private struct OpenSourceModelLicenseView: View"))
-        XCTAssertTrue(source.contains("设置 / 开源许可与模型信息"))
+        XCTAssertTrue(source.contains("L10n.text(\"openSource.title\")"))
         XCTAssertTrue(source.contains("OpenSourceModelDisclosure.builtIn"))
-        XCTAssertTrue(source.contains("返回设置"))
+        XCTAssertTrue(source.contains("L10n.text(\"nav.backToSettings\")"))
         XCTAssertTrue(source.contains("model.screen = .settings"))
     }
 
@@ -66,7 +66,7 @@ final class SettingsFeedbackTests: XCTestCase {
         let rowStart = try XCTUnwrap(source.range(of: "private struct SettingsLaunchAtLoginRow: View"))
         let settingsSnippet = String(source[settingsStart.lowerBound..<rowStart.lowerBound])
         let launchRowRange = try XCTUnwrap(settingsSnippet.range(of: "SettingsLaunchAtLoginRow()"))
-        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "Text(\"模型设置\")"))
+        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "L10n.text(\"settings.model.title\")"))
 
         XCTAssertLessThan(launchRowRange.lowerBound, modelSettingsRange.lowerBound)
     }
@@ -77,7 +77,7 @@ final class SettingsFeedbackTests: XCTestCase {
         let rowStart = try XCTUnwrap(source.range(of: "private struct SettingsLaunchAtLoginRow: View"))
         let settingsSnippet = String(source[settingsStart.lowerBound..<rowStart.lowerBound])
         let launchRowRange = try XCTUnwrap(settingsSnippet.range(of: "SettingsLaunchAtLoginRow()"))
-        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "Text(\"模型设置\")"))
+        let modelSettingsRange = try XCTUnwrap(settingsSnippet.range(of: "L10n.text(\"settings.model.title\")"))
         let launchEntrySnippet = String(settingsSnippet[launchRowRange.lowerBound..<modelSettingsRange.lowerBound])
 
         XCTAssertTrue(launchEntrySnippet.contains(".padding(14)"))

@@ -7,7 +7,7 @@ final class AnalysisProgressPresentationTests: XCTestCase {
         let presentation = AnalysisProgressPresentation.make(
             snapshot: makeSnapshot(),
             phase: .capturing,
-            modelStatus: "当前评估：自带模型运算中",
+            modelStatus: .bundledRunning,
             loopDescription: "正在采集本机上下文"
         )
 
@@ -26,7 +26,7 @@ final class AnalysisProgressPresentationTests: XCTestCase {
         let presentation = AnalysisProgressPresentation.make(
             snapshot: makeSnapshot(),
             phase: .capturing,
-            modelStatus: "当前评估：自带模型已连接",
+            modelStatus: .bundledReady,
             loopDescription: "正在采集本机上下文"
         )
 
@@ -43,7 +43,7 @@ final class AnalysisProgressPresentationTests: XCTestCase {
         let presentation = AnalysisProgressPresentation.make(
             snapshot: makeSnapshot(),
             phase: .scheduled,
-            modelStatus: "当前评估：自带模型已连接",
+            modelStatus: .bundledReady,
             loopDescription: "本轮耗时 4 秒，11 秒后再次评估"
         )
 
@@ -53,6 +53,22 @@ final class AnalysisProgressPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.judgementState, .done)
         XCTAssertEqual(presentation.resultText, "已放入时间线")
         XCTAssertEqual(presentation.resultState, .done)
+    }
+
+    func testEnglishAnalysisPresentationDoesNotDependOnChineseModelStatusText() {
+        let presentation = AnalysisProgressPresentation.make(
+            snapshot: makeSnapshot(),
+            phase: .capturing,
+            modelStatus: .manualRunning,
+            loopDescription: "Collecting local context",
+            language: .english
+        )
+
+        XCTAssertEqual(presentation.phaseTitle, "Model running")
+        XCTAssertEqual(presentation.judgementText, "Manual model running")
+        XCTAssertEqual(presentation.judgementState, .running)
+        XCTAssertEqual(presentation.captureText, "Captured")
+        XCTAssertEqual(presentation.visualSignalText, "Screen+Camera")
     }
 
     private func makeSnapshot() -> ContextSnapshot {

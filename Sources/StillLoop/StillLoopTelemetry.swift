@@ -203,13 +203,13 @@ enum StillLoopUserFeedbackKind: String, CaseIterable, Equatable, Identifiable {
     var title: String {
         switch self {
         case .issue:
-            return "问题"
+            return L10n.text("feedback.kind.issue")
         case .idea:
-            return "建议"
+            return L10n.text("feedback.kind.idea")
         case .question:
-            return "疑问"
+            return L10n.text("feedback.kind.question")
         case .other:
-            return "其他"
+            return L10n.text("feedback.kind.other")
         }
     }
 }

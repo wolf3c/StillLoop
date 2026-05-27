@@ -4,19 +4,19 @@ import Charts
 import SwiftUI
 
 enum StillLoopWelcomeCopy {
-    static let title = "分心时，我会轻轻把你带回当前任务"
-    static let subtitle = "先写下这段时间最想完成的一件事。之后我只在你偏离时轻轻提醒，所有判断都在本机完成。"
-    static let primaryActionTitle = "开始设置"
+    static let title = L10n.text("welcome.title")
+    static let subtitle = L10n.text("welcome.subtitle")
+    static let primaryActionTitle = L10n.text("welcome.primaryAction")
     static let privacyPrinciples = [
-        "默认在本机处理，不上传你的屏幕、摄像头或任务内容。",
-        "只在判断需要时提醒，不持续打扰。",
-        "专注摘要和评估事件保存在本机，你可以随时停止使用。"
+        L10n.text("welcome.privacy.local"),
+        L10n.text("welcome.privacy.gentle"),
+        L10n.text("welcome.privacy.storage")
     ]
 }
 
 enum StillLoopPermissionsCopy {
-    static let subtitle = "StillLoop 仅在本机读取必要的屏幕与摄像头状态，用于判断是否需要提醒；不会保存截图或摄像头画面。"
-    static let primaryActionTitle = "继续"
+    static let subtitle = L10n.text("permissions.subtitle")
+    static let primaryActionTitle = L10n.text("common.continue")
     static let footerActionTitles = [primaryActionTitle]
 }
 
@@ -92,7 +92,7 @@ private struct HeaderView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("StillLoop")
                     .font(.system(size: 18, weight: .semibold))
-                Text("跑偏？回来。")
+                Text(L10n.text("header.tagline"))
                     .foregroundStyle(.secondary)
             }
 
@@ -103,7 +103,7 @@ private struct HeaderView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "house")
                             .font(.system(size: 22, weight: .semibold))
-                        Text("主页")
+                        Text(L10n.text("nav.home"))
                             .font(.system(size: 20, weight: .semibold))
                     }
                     .padding(.vertical, 12)
@@ -116,15 +116,15 @@ private struct HeaderView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .help("返回主页")
-                .accessibilityLabel("返回主页")
+                .help(L10n.text("nav.home.help"))
+                .accessibilityLabel(L10n.text("nav.home.help"))
 
                 SetupIssueButtons()
             }
 
             Spacer()
             if model.shouldShowSettingsNavigation {
-                Button("设置") { model.screen = .settings }
+                Button(L10n.text("settings.title")) { model.screen = .settings }
             }
         }
         .padding(.top, 36)
@@ -207,21 +207,21 @@ private struct PermissionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("权限获取引导")
+            Text(L10n.text("permissions.title"))
                 .font(.largeTitle.weight(.semibold))
             Text(StillLoopPermissionsCopy.subtitle)
                 .foregroundStyle(.secondary)
             PermissionRow(
-                title: "屏幕录制",
+                title: L10n.text("permissions.screenRecording"),
                 detail: model.screenCapturePermission,
                 guidance: model.screenCapturePermissionGuidance,
-                isAllowed: model.screenCapturePermission == "已允许"
+                isAllowed: model.screenCapturePermissionStatusForView.isAllowed
             )
             PermissionRow(
-                title: "摄像头",
+                title: L10n.text("permissions.camera"),
                 detail: model.cameraPermission,
                 guidance: model.cameraPermissionGuidance,
-                isAllowed: model.cameraPermission == "已允许"
+                isAllowed: model.cameraPermissionStatusForView.isAllowed
             )
             if !model.permissionOpenStatus.isEmpty {
                 Text(model.permissionOpenStatus)
@@ -258,10 +258,10 @@ private struct PermissionRow: View {
             }
             Spacer()
             if isAllowed {
-                Label("已就绪", systemImage: "checkmark.circle.fill")
+                Label(L10n.text("permissions.ready"), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                Text("待处理")
+                Text(L10n.text("permissions.pending"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
@@ -278,9 +278,9 @@ private struct LaunchAtLoginPreferenceView: View {
     var body: some View {
         Toggle(isOn: launchAtLoginBinding) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("登录时启动 StillLoop")
+                Text(L10n.text("launchAtLogin.title"))
                     .font(.headline)
-                Text("登录后只保留菜单栏入口，不会自动开始专注、采集屏幕/摄像头或启动模型。")
+                Text(L10n.text("launchAtLogin.detail"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -317,22 +317,22 @@ private struct ModelSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
-                Text("模型准备")
+                Text(L10n.text("modelSetup.title"))
                     .font(.largeTitle.weight(.semibold))
                 Spacer()
                 if model.shouldShowHomeNavigation {
-                    Button("返回主页") {
+                    Button(L10n.text("nav.home.help")) {
                         model.openHome()
                     }
                 }
             }
-            Text("StillLoop 默认使用应用自带模型评估专注状态。你也可以手动连接本地或线上 OpenAI-compatible HTTP 模型服务。")
+            Text(L10n.text("modelSetup.subtitle"))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Picker("模型来源", selection: $model.modelSetupSelection.source) {
-                Text("应用自带模型").tag(ModelSetupSelection.Source.bundled)
-                Text("手动配置大模型").tag(ModelSetupSelection.Source.manual)
+            Picker(L10n.text("modelSetup.sourcePicker"), selection: $model.modelSetupSelection.source) {
+                Text(L10n.text("modelSetup.source.bundled")).tag(ModelSetupSelection.Source.bundled)
+                Text(L10n.text("modelSetup.source.manual")).tag(ModelSetupSelection.Source.manual)
             }
             .pickerStyle(.radioGroup)
             .onChange(of: model.modelSetupSelection.source) { source in
@@ -372,7 +372,7 @@ private struct ModelSetupView: View {
                     bundledModelActionButton(action)
                 }
             }
-            Text("下载会留在本页显示状态；下载完成后再继续，也可以随时切换到手动配置。")
+            Text(L10n.text("modelSetup.downloadNote"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -394,9 +394,9 @@ private struct ModelSetupView: View {
 
     private var manualModelSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("服务类型", selection: $model.modelSetupSelection.manualService) {
-                Text("本地模型 HTTP 服务").tag(ModelSetupSelection.ManualService.localHTTP)
-                Text("在线模型服务").tag(ModelSetupSelection.ManualService.online)
+            Picker(L10n.text("modelSetup.serviceType"), selection: $model.modelSetupSelection.manualService) {
+                Text(L10n.text("modelSetup.service.localHTTP")).tag(ModelSetupSelection.ManualService.localHTTP)
+                Text(L10n.text("modelSetup.service.online")).tag(ModelSetupSelection.ManualService.online)
             }
             .pickerStyle(.radioGroup)
             .onChange(of: model.modelSetupSelection.manualService) { service in
@@ -416,7 +416,7 @@ private struct ModelSetupView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if model.modelSetupSelection.manualService == .localHTTP {
                     HStack(spacing: 8) {
-                        TextField("服务根地址，例如 http://127.0.0.1:8080", text: localHTTPBaseURLRootText)
+                        TextField(L10n.text("modelSetup.localHTTPPlaceholder"), text: localHTTPBaseURLRootText)
                             .textFieldStyle(.roundedBorder)
                             .onChange(of: model.llmBaseURLText) { _ in
                                 model.modelConfigurationChanged()
@@ -430,18 +430,18 @@ private struct ModelSetupView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 } else {
-                    TextField("服务地址，例如 https://api.openai.com/v1", text: $model.llmBaseURLText)
+                    TextField(L10n.text("modelSetup.onlineURLPlaceholder"), text: $model.llmBaseURLText)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: model.llmBaseURLText) { _ in
                             model.modelConfigurationChanged()
                         }
                 }
-                Text("Supported endpoints: OpenAI-compatible /v1/models and /v1/chat/completions.")
+                Text(L10n.text("modelSetup.supportedEndpoints"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            TextField("模型名称", text: $model.llmModelText)
+            TextField(L10n.text("modelSetup.modelNamePlaceholder"), text: $model.llmModelText)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: model.llmModelText) { _ in
                     model.modelConfigurationChanged()
@@ -455,11 +455,11 @@ private struct ModelSetupView: View {
             }
 
             HStack {
-                Button(model.isCheckingModelConnection ? "检查中" : "检查连接") {
+                Button(model.isCheckingModelConnection ? L10n.text("modelSetup.checking") : L10n.text("modelSetup.checkConnection")) {
                     model.checkModelConnection()
                 }
                 .disabled(model.isCheckingModelConnection)
-                Button("继续") {
+                Button(L10n.text("common.continue")) {
                     model.continueAfterModelCheck()
                 }
                 .buttonStyle(.borderedProminent)
@@ -475,7 +475,7 @@ private struct ModelSetupView: View {
                 Divider()
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("应用自带模型下载不受当前配置影响")
+                        Text(L10n.text("modelSetup.bundledDownloadUnaffected"))
                             .font(.headline)
                         Text(model.modelReadiness.detail)
                             .font(.caption)
@@ -483,7 +483,7 @@ private struct ModelSetupView: View {
                     }
                     Spacer()
                     if model.modelReadiness.isDownloading {
-                        Button("暂停下载") { model.pauseModelDownload() }
+                        Button(L10n.text("modelAction.pauseDownload")) { model.pauseModelDownload() }
                     }
                 }
             }
@@ -515,9 +515,9 @@ private struct ModelDownloadPromptSheet: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Label(ModelDownloadSpec.builtIn.downloadSizeText, systemImage: "externaldrive.badge.plus")
-                Label("来源：Hugging Face / \(ModelDownloadSpec.builtIn.repoID)", systemImage: "network")
-                Label("保存位置：Application Support/StillLoop/Models/\(ModelDownloadSpec.builtIn.localSubdirectory)", systemImage: "folder")
-                Label("暂不下载时，本次专注会使用基础规则判断，准确性可能低于本地模型。", systemImage: "exclamationmark.triangle")
+                Label(L10n.text("modelDownload.source", ModelDownloadSpec.builtIn.repoID), systemImage: "network")
+                Label(L10n.text("modelDownload.saveLocation", ModelDownloadSpec.builtIn.localSubdirectory), systemImage: "folder")
+                Label(L10n.text("modelDownload.skipWarning"), systemImage: "exclamationmark.triangle")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -526,11 +526,11 @@ private struct ModelDownloadPromptSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             HStack {
-                Button("暂不下载") {
+                Button(L10n.text("modelDownload.skip")) {
                     model.skipModelDownloadForCurrentContext()
                 }
                 Spacer()
-                Button("下载模型") {
+                Button(L10n.text("modelDownload.download")) {
                     model.confirmModelDownload()
                 }
                 .buttonStyle(.borderedProminent)
@@ -543,18 +543,18 @@ private struct ModelDownloadPromptSheet: View {
     private var title: String {
         switch model.modelDownloadPromptMode {
         case .setup:
-            return "下载本地模型"
+            return L10n.text("modelDownload.setupTitle")
         case .startTask:
-            return "开始前下载本地模型？"
+            return L10n.text("modelDownload.startTaskTitle")
         }
     }
 
     private var message: String {
         switch model.modelDownloadPromptMode {
         case .setup:
-            return "StillLoop 可以下载应用自带模型，在本机完成更细致的专注判断。下载开始前需要你的确认。"
+            return L10n.text("modelDownload.setupMessage")
         case .startTask:
-            return "当前尚未下载应用自带模型。你可以先下载模型，也可以暂不下载并立即开始本次专注。"
+            return L10n.text("modelDownload.startTaskMessage")
         }
     }
 }
@@ -564,12 +564,12 @@ private struct TaskSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("当前任务")
+            Text(L10n.text("taskSetup.title"))
                 .font(.largeTitle.weight(.semibold))
-            Text("写下你接下来最想完成的一件事，StillLoop 会围绕它判断是否跑偏。")
+            Text(L10n.text("taskSetup.subtitle"))
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            TextField("整理产品方案，完成第一版草稿", text: $model.taskText)
+            TextField(L10n.text("taskSetup.placeholder"), text: $model.taskText)
                 .font(.system(size: 28, weight: .regular))
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 16)
@@ -578,19 +578,19 @@ private struct TaskSetupView: View {
             if model.modelReadiness.shouldShowInTaskSetup || model.modelReadiness.isDownloading {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("应用自带模型下载状态")
+                        Text(L10n.text("taskSetup.downloadStatus"))
                             .font(.headline)
                         Spacer()
                         if model.modelReadiness.isDownloading {
-                            Button("暂停") { model.pauseModelDownload() }
-                            Button("取消") { model.cancelModelDownload() }
+                            Button(L10n.text("common.pause")) { model.pauseModelDownload() }
+                            Button(L10n.text("common.cancel")) { model.cancelModelDownload() }
                         }
                     }
                     ModelReadinessCard()
                 }
             }
             HStack {
-                Button("开始专注") { model.startSession() }
+                Button(L10n.text("taskSetup.startFocus")) { model.startSession() }
                     .disabled(model.taskText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
                 Spacer()
@@ -611,7 +611,7 @@ private struct ModelReadinessCard: View {
                     .font(.headline)
                 Spacer()
                 if case .failed = model.modelReadiness {
-                    Button("重试") { model.startModelDownloadIfNeeded() }
+                    Button(L10n.text("common.retry")) { model.startModelDownloadIfNeeded() }
                 }
             }
             Text(model.modelReadiness.detail)
@@ -685,9 +685,9 @@ private struct FocusRunningView: View {
 
     private var metrics: some View {
         HStack(spacing: 16) {
-            Metric(title: "已专注", value: formatted(model.elapsed))
-            Metric(title: "当前状态", value: model.currentStateDisplayName)
-            Metric(title: "提醒", value: model.lastNudge)
+            Metric(title: L10n.text("focus.elapsed"), value: formatted(model.elapsed))
+            Metric(title: L10n.text("focus.currentStatus"), value: model.currentStateDisplayName)
+            Metric(title: L10n.text("focus.reminder"), value: model.lastNudge)
         }
     }
 
@@ -695,7 +695,7 @@ private struct FocusRunningView: View {
         AnalysisContextPanel(
             snapshot: model.latestContext,
             phase: model.analysisPhase,
-            modelStatus: model.localLLMStatus,
+            modelStatus: model.analysisModelStatus,
             loopDescription: model.evaluationLoopDescription
         )
         .animation(.easeInOut(duration: 0.24), value: model.analysisPhase)
@@ -711,10 +711,10 @@ private struct FocusRunningView: View {
 
     private var actions: some View {
         HStack(alignment: .top, spacing: 24) {
-            Button(model.status == .paused ? "继续" : "暂停") {
+            Button(model.status == .paused ? L10n.text("common.continue") : L10n.text("common.pause")) {
                 model.status == .paused ? model.resumeSession() : model.pauseSession()
             }
-            Button("结束并复盘") { model.endSession() }
+            Button(L10n.text("focus.endAndReview")) { model.endSession() }
                 .keyboardShortcut(.defaultAction)
         }
     }
@@ -749,6 +749,49 @@ enum AnalysisProgressStepState: Equatable {
     case result
 }
 
+enum AnalysisModelStatus: Equatable {
+    case ruleBased
+    case bundledStarting
+    case bundledRunning
+    case bundledReady
+    case manualRunning
+    case manualReady
+    case other(String)
+
+    var isBusy: Bool {
+        switch self {
+        case .bundledStarting, .bundledRunning, .manualRunning:
+            return true
+        case .ruleBased, .bundledReady, .manualReady, .other:
+            return false
+        }
+    }
+
+    var isStarting: Bool {
+        if case .bundledStarting = self { return true }
+        return false
+    }
+
+    func judgementText(language: AppLanguage) -> String {
+        switch self {
+        case .ruleBased:
+            return L10n.text("analysis.model.ruleBased", language: language)
+        case .bundledStarting:
+            return L10n.text("analysis.model.bundledStarting", language: language)
+        case .bundledRunning:
+            return L10n.text("analysis.model.bundledRunning", language: language)
+        case .bundledReady:
+            return L10n.text("analysis.model.bundledReady", language: language)
+        case .manualRunning:
+            return L10n.text("analysis.model.manualRunning", language: language)
+        case .manualReady:
+            return L10n.text("analysis.model.manualReady", language: language)
+        case .other(let value):
+            return value
+        }
+    }
+}
+
 struct AnalysisProgressPresentation: Equatable {
     var phaseTitle: String
     var phaseDetail: String
@@ -764,13 +807,11 @@ struct AnalysisProgressPresentation: Equatable {
     static func make(
         snapshot: ContextSnapshot?,
         phase: AppModel.AnalysisPhase,
-        modelStatus: String,
-        loopDescription: String
+        modelStatus: AnalysisModelStatus,
+        loopDescription: String,
+        language: AppLanguage = L10n.currentLanguage
     ) -> AnalysisProgressPresentation {
-        let normalizedModelStatus = modelStatus
-            .replacingOccurrences(of: "当前评估：", with: "")
-            .replacingOccurrences(of: "模型评估：", with: "")
-        let modelIsBusy = modelStatusIndicatesBusy(normalizedModelStatus) || isEvaluating(phase)
+        let modelIsBusy = modelStatus.isBusy || isEvaluating(phase)
         let hasSnapshot = snapshot != nil
         let hasVisualSignal = snapshot?.screenshotAvailable == true || snapshot?.cameraFrameAvailable == true
 
@@ -779,21 +820,23 @@ struct AnalysisProgressPresentation: Equatable {
                 phase: phase,
                 hasSnapshot: hasSnapshot,
                 modelIsBusy: modelIsBusy,
-                modelStatus: normalizedModelStatus
+                modelStatus: modelStatus,
+                language: language
             ),
             phaseDetail: phaseDetail(
                 phase: phase,
                 hasSnapshot: hasSnapshot,
                 modelIsBusy: modelIsBusy,
-                loopDescription: loopDescription
+                loopDescription: loopDescription,
+                language: language
             ),
-            captureText: captureText(phase: phase, hasSnapshot: hasSnapshot),
+            captureText: captureText(phase: phase, hasSnapshot: hasSnapshot, language: language),
             captureState: captureState(phase: phase, hasSnapshot: hasSnapshot),
-            visualSignalText: visualSignalText(for: snapshot),
+            visualSignalText: visualSignalText(for: snapshot, language: language),
             visualState: hasVisualSignal ? .done : .waiting,
-            judgementText: judgementText(phase: phase, normalizedModelStatus: normalizedModelStatus),
+            judgementText: judgementText(phase: phase, modelStatus: modelStatus, language: language),
             judgementState: judgementState(phase: phase, modelIsBusy: modelIsBusy),
-            resultText: resultText(phase: phase),
+            resultText: resultText(phase: phase, language: language),
             resultState: resultState(phase: phase)
         )
     }
@@ -802,26 +845,31 @@ struct AnalysisProgressPresentation: Equatable {
         phase: AppModel.AnalysisPhase,
         hasSnapshot: Bool,
         modelIsBusy: Bool,
-        modelStatus: String
+        modelStatus: AnalysisModelStatus,
+        language: AppLanguage
     ) -> String {
         if modelIsBusy {
-            return modelStatus.contains("启动中") ? "模型启动中" : "模型运算中"
+            return modelStatus.isStarting
+                ? L10n.text("analysis.phase.modelStarting", language: language)
+                : L10n.text("analysis.phase.modelRunning", language: language)
         }
         switch phase {
         case .idle:
-            return "等待开始"
+            return L10n.text("analysis.phase.idle", language: language)
         case .capturing:
-            return hasSnapshot ? "持续采样中" : "正在采集"
+            return hasSnapshot
+                ? L10n.text("analysis.phase.sampling", language: language)
+                : L10n.text("analysis.phase.capturing", language: language)
         case .contextReady:
-            return "上下文已准备"
+            return L10n.text("analysis.phase.contextReady", language: language)
         case .evaluating:
-            return "模型运算中"
+            return L10n.text("analysis.phase.modelRunning", language: language)
         case .presenting(let state, _):
-            return "结果：\(state.displayName)"
+            return L10n.text("analysis.phase.result", language: language, state.displayName(language: language.coreLanguage))
         case .committed:
-            return "已写入时间线"
+            return L10n.text("analysis.phase.committed", language: language)
         case .scheduled:
-            return "等待下一轮"
+            return L10n.text("analysis.phase.scheduled", language: language)
         }
     }
 
@@ -829,42 +877,43 @@ struct AnalysisProgressPresentation: Equatable {
         phase: AppModel.AnalysisPhase,
         hasSnapshot: Bool,
         modelIsBusy: Bool,
-        loopDescription: String
+        loopDescription: String,
+        language: AppLanguage
     ) -> String {
         if modelIsBusy {
-            return "正在提交已采样上下文给模型判断；后台仍按 5 秒继续采样。"
+            return L10n.text("analysis.detail.modelBusy", language: language)
         }
         switch phase {
         case .idle:
-            return "开始专注后才会采集。"
+            return L10n.text("analysis.detail.idle", language: language)
         case .capturing:
             return hasSnapshot
-                ? "已拿到最近上下文，继续补充样本等待下一轮判断。"
-                : "读取前台窗口、压缩屏幕和摄像头视觉信号。"
+                ? L10n.text("analysis.detail.sampling", language: language)
+                : L10n.text("analysis.detail.capturing", language: language)
         case .contextReady:
-            return "本机上下文已准备，等待提交给模型。"
+            return L10n.text("analysis.detail.contextReady", language: language)
         case .evaluating:
-            return "正在提交给模型判断当前状态。"
+            return L10n.text("analysis.detail.evaluating", language: language)
         case .presenting(_, let nudge):
-            return nudge ?? "模型已返回判断，准备写入右侧时间线。"
+            return nudge ?? L10n.text("analysis.detail.presenting", language: language)
         case .committed:
-            return "这轮结果已放入右侧时间线。"
+            return L10n.text("analysis.detail.committed", language: language)
         case .scheduled:
             return loopDescription
         }
     }
 
-    private static func captureText(phase: AppModel.AnalysisPhase, hasSnapshot: Bool) -> String {
+    private static func captureText(phase: AppModel.AnalysisPhase, hasSnapshot: Bool, language: AppLanguage) -> String {
         if hasSnapshot {
-            return "已采集"
+            return L10n.text("analysis.step.captured", language: language)
         }
         switch phase {
         case .idle:
-            return "等待"
+            return L10n.text("common.waiting", language: language)
         case .capturing:
-            return "进行中"
+            return L10n.text("common.running", language: language)
         default:
-            return "已完成"
+            return L10n.text("common.done", language: language)
         }
     }
 
@@ -882,41 +931,23 @@ struct AnalysisProgressPresentation: Equatable {
         }
     }
 
-    private static func visualSignalText(for snapshot: ContextSnapshot?) -> String {
-        guard let snapshot else { return "等待" }
-        let screenshot = snapshot.screenshotAvailable ? "屏幕" : nil
-        let camera = snapshot.cameraFrameAvailable ? "摄像头" : nil
+    private static func visualSignalText(for snapshot: ContextSnapshot?, language: AppLanguage) -> String {
+        guard let snapshot else { return L10n.text("common.waiting", language: language) }
+        let screenshot = snapshot.screenshotAvailable ? L10n.text("analysis.signal.screen", language: language) : nil
+        let camera = snapshot.cameraFrameAvailable ? L10n.text("analysis.signal.camera", language: language) : nil
         let signals = [screenshot, camera].compactMap { $0 }
-        return signals.isEmpty ? "不可用" : signals.joined(separator: "+")
+        return signals.isEmpty ? L10n.text("common.unavailable", language: language) : signals.joined(separator: "+")
     }
 
     private static func judgementText(
         phase: AppModel.AnalysisPhase,
-        normalizedModelStatus: String
+        modelStatus: AnalysisModelStatus,
+        language: AppLanguage
     ) -> String {
-        if normalizedModelStatus.contains("自带模型运算中") {
-            return "自带模型运算中"
-        }
-        if normalizedModelStatus.contains("手动模型运算中") {
-            return "手动模型运算中"
-        }
-        if normalizedModelStatus.contains("启动中") {
-            return normalizedModelStatus
-        }
         if isEvaluating(phase) {
-            return "运算中"
+            return L10n.text("common.running", language: language)
         }
-        if normalizedModelStatus.contains("自带模型已连接")
-            || normalizedModelStatus.contains("自带模型已预热") {
-            return "自带模型待命"
-        }
-        if normalizedModelStatus.contains("手动模型已连接") {
-            return "手动模型待命"
-        }
-        if normalizedModelStatus.contains("基础规则") {
-            return "基础规则"
-        }
-        return normalizedModelStatus
+        return modelStatus.judgementText(language: language)
     }
 
     private static func judgementState(
@@ -934,14 +965,14 @@ struct AnalysisProgressPresentation: Equatable {
         }
     }
 
-    private static func resultText(phase: AppModel.AnalysisPhase) -> String {
+    private static func resultText(phase: AppModel.AnalysisPhase, language: AppLanguage) -> String {
         switch phase {
         case .presenting(let state, _):
-            return state.displayName
+            return state.displayName(language: language.coreLanguage)
         case .committed, .scheduled:
-            return "已放入时间线"
+            return L10n.text("analysis.result.addedToTimeline", language: language)
         default:
-            return "等待"
+            return L10n.text("common.waiting", language: language)
         }
     }
 
@@ -956,10 +987,6 @@ struct AnalysisProgressPresentation: Equatable {
         }
     }
 
-    private static func modelStatusIndicatesBusy(_ modelStatus: String) -> Bool {
-        modelStatus.contains("运算中") || modelStatus.contains("启动中")
-    }
-
     private static func isEvaluating(_ phase: AppModel.AnalysisPhase) -> Bool {
         if case .evaluating = phase {
             return true
@@ -971,7 +998,7 @@ struct AnalysisProgressPresentation: Equatable {
 private struct AnalysisContextPanel: View {
     var snapshot: ContextSnapshot?
     var phase: AppModel.AnalysisPhase
-    var modelStatus: String
+    var modelStatus: AnalysisModelStatus
     var loopDescription: String
 
     private var presentation: AnalysisProgressPresentation {
@@ -987,9 +1014,9 @@ private struct AnalysisContextPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("最近本地上下文")
+                    Text(L10n.text("analysis.localContext"))
                         .font(.headline)
-                    Text(snapshot?.activeAppName ?? "等待采集")
+                    Text(snapshot?.activeAppName ?? L10n.text("analysis.waitingForCapture"))
                         .font(.title3.weight(.semibold))
                     if let windowTitle = snapshot?.displayWindowTitle {
                         Text(windowTitle)
@@ -997,7 +1024,7 @@ private struct AnalysisContextPanel: View {
                             .lineLimit(2)
                             .truncationMode(.tail)
                     } else if snapshot == nil {
-                        Text("开始任务后采集真实本机上下文")
+                        Text(L10n.text("analysis.captureAfterStart"))
                             .foregroundStyle(.secondary)
                     }
                     if let browserTitle = snapshot?.browserTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1016,7 +1043,7 @@ private struct AnalysisContextPanel: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    Text(snapshot?.visualSummary ?? "等待视觉信号")
+                    Text(snapshot?.visualSummary ?? L10n.text("analysis.waitingForVisualSignal"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -1024,7 +1051,7 @@ private struct AnalysisContextPanel: View {
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("当前分析")
+                    Text(L10n.text("analysis.currentAnalysis"))
                         .font(.headline)
                     Text(presentation.phaseTitle)
                         .font(.title3.weight(.semibold))
@@ -1039,13 +1066,13 @@ private struct AnalysisContextPanel: View {
 
             Divider()
 
-            Text("分析过程")
+            Text(L10n.text("analysis.process"))
                 .font(.headline)
             HStack(spacing: 10) {
-                AnalysisStep(title: "采集", value: presentation.captureText, state: .init(presentation.captureState))
-                AnalysisStep(title: "视觉信号", value: presentation.visualSignalText, state: .init(presentation.visualState))
-                AnalysisStep(title: "模型运算", value: presentation.judgementText, state: .init(presentation.judgementState))
-                AnalysisStep(title: "结果入列", value: presentation.resultText, state: .init(presentation.resultState))
+                AnalysisStep(title: L10n.text("analysis.capture"), value: presentation.captureText, state: .init(presentation.captureState))
+                AnalysisStep(title: L10n.text("analysis.visualSignal"), value: presentation.visualSignalText, state: .init(presentation.visualState))
+                AnalysisStep(title: L10n.text("analysis.modelRun"), value: presentation.judgementText, state: .init(presentation.judgementState))
+                AnalysisStep(title: L10n.text("analysis.resultQueue"), value: presentation.resultText, state: .init(presentation.resultState))
             }
         }
         .padding(16)
@@ -1146,7 +1173,7 @@ private struct TimelineView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("状态变化时间线")
+            Text(L10n.text("timeline.title"))
                 .font(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -1158,7 +1185,7 @@ private struct TimelineView: View {
                         }
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
-                        .help("查看识别详情")
+                        .help(L10n.text("timeline.detailHelp"))
                         Divider()
                     }
                 }
@@ -1180,7 +1207,7 @@ private struct TimelineEventRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(event.state.displayName)
+                Text(event.state.displayName(language: L10n.currentLanguage.coreLanguage))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(timeText)
@@ -1455,7 +1482,7 @@ private struct ReviewView: View {
     private var scrollingReviewContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("专注复盘")
+                Text(L10n.text("review.title"))
                     .font(.largeTitle.weight(.semibold))
                 if let session = model.currentSession, let summary, let stats {
                     ReviewTaskSummary(task: session.task) {
@@ -1477,7 +1504,7 @@ private struct ReviewView: View {
     }
 
     private var reviewActions: some View {
-        Button("开始新的专注") {
+        Button(L10n.text("review.newFocus")) {
             model.prepareNewSession()
         }
         .buttonStyle(.borderedProminent)
@@ -1496,7 +1523,7 @@ private struct ReviewCommentCard: View {
                 .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("本次表现")
+                Text(L10n.text("review.commentTitle"))
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Text(comment)
@@ -1525,10 +1552,10 @@ private struct ReviewMetricRow: View {
 
     var body: some View {
         HStack(spacing: ReviewLayout.metricSpacing) {
-            Metric(title: "总时长", value: "\(Int(summary.totalDuration / 60)) 分钟")
-            Metric(title: "评估轮次", value: "\(stats.evaluationCount)")
-            Metric(title: "偏离/卡住", value: "\(stats.offTrackOrStuckCount)")
-            Metric(title: "提醒次数", value: "\(summary.nudgeCount)")
+            Metric(title: L10n.text("review.totalDuration"), value: L10n.text("review.minutes", Int(summary.totalDuration / 60)))
+            Metric(title: L10n.text("review.evaluationCount"), value: "\(stats.evaluationCount)")
+            Metric(title: L10n.text("review.offTrackOrStuck"), value: "\(stats.offTrackOrStuckCount)")
+            Metric(title: L10n.text("review.nudgeCount"), value: "\(summary.nudgeCount)")
         }
         .frame(maxWidth: ReviewLayout.maximumContentWidth, alignment: .leading)
     }
@@ -1540,7 +1567,7 @@ private struct ReviewTaskSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("本次任务")
+            Text(L10n.text("review.taskTitle"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -1561,7 +1588,7 @@ private struct ReviewTaskSummary: View {
     }
 
     private var continueButton: some View {
-        Button("继续这个任务", action: continueAction)
+        Button(L10n.text("review.continueTask"), action: continueAction)
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .layoutPriority(1)
@@ -1582,15 +1609,15 @@ private struct ReviewAppUsageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("常用 App")
+                Text(L10n.text("review.topApps"))
                     .font(.headline)
-                Text("按分析样本统计")
+                Text(L10n.text("review.bySamples"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if items.isEmpty {
-                Text("暂无足够样本")
+                Text(L10n.text("review.noSamples"))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if #available(macOS 14.0, *) {
@@ -1674,7 +1701,7 @@ private struct ReviewAppUsageChart: View {
         ZStack {
             Chart(items) { item in
                 SectorMark(
-                    angle: .value("次数", item.count),
+                    angle: .value(L10n.text("review.count"), item.count),
                     innerRadius: .ratio(0.62),
                     angularInset: 1.5
                 )
@@ -1685,13 +1712,13 @@ private struct ReviewAppUsageChart: View {
             VStack(spacing: 2) {
                 Text("\(totalCount)")
                     .font(.headline.monospacedDigit())
-                Text("样本")
+                Text(L10n.text("review.samples"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
         .frame(width: ReviewAppUsageLayout.chartSize, height: ReviewAppUsageLayout.chartSize)
-        .accessibilityLabel("常用 App 占比图")
+        .accessibilityLabel(L10n.text("review.appUsageChart"))
     }
 }
 
@@ -1719,7 +1746,7 @@ private struct ReviewAppUsageItem: Identifiable {
         let topCount = 5
         let visible = Array(sorted.prefix(topCount))
         let otherCount = sorted.dropFirst(topCount).reduce(0) { $0 + $1.value }
-        let combined = otherCount > 0 ? visible + [("其他", otherCount)] : visible
+        let combined = otherCount > 0 ? visible + [(L10n.text("review.otherApps"), otherCount)] : visible
         let total = combined.reduce(0) { $0 + $1.value }
         guard total > 0 else { return [] }
 
@@ -1764,7 +1791,7 @@ private struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("设置")
+                Text(L10n.text("settings.title"))
                     .font(.largeTitle.weight(.semibold))
                 SettingsLaunchAtLoginRow()
                     .padding(14)
@@ -1777,9 +1804,9 @@ private struct SettingsView: View {
                     HStack {
                         Image(systemName: "cpu")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("模型设置")
+                            Text(L10n.text("settings.model.title"))
                                 .font(.headline)
-                            Text("配置本地 HTTP 或线上 OpenAI-compatible 模型服务。")
+                            Text(L10n.text("settings.model.detail"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1799,9 +1826,9 @@ private struct SettingsView: View {
                     HStack {
                         Image(systemName: "bubble.left.and.bubble.right")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("反馈与建议")
+                            Text(L10n.text("settings.feedback.title"))
                                 .font(.headline)
-                            Text("提交问题、建议或其他使用反馈。")
+                            Text(L10n.text("settings.feedback.detail"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1821,9 +1848,9 @@ private struct SettingsView: View {
                     HStack {
                         Image(systemName: "doc.text.magnifyingglass")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("开源许可与模型信息")
+                            Text(L10n.text("settings.openSource.title"))
                                 .font(.headline)
-                            Text("查看内置模型、GGUF 来源和本地运行时许可。")
+                            Text(L10n.text("settings.openSource.detail"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1861,9 +1888,9 @@ private struct SettingsLaunchAtLoginRow: View {
                 .toggleStyle(.checkbox)
                 .controlSize(.small)
             VStack(alignment: .leading, spacing: 4) {
-                Text("登录时启动 StillLoop")
+                Text(L10n.text("launchAtLogin.title"))
                     .font(.body.weight(.medium))
-                Text("登录后只保留菜单栏入口，不会自动开始专注、采集屏幕/摄像头或启动模型。")
+                Text(L10n.text("launchAtLogin.detail"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1894,13 +1921,13 @@ private struct SettingsPrivacySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("隐私")
+            Text(L10n.text("privacy.title"))
                 .font(.headline)
-            Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
-            Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
-            Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
+            Label(L10n.text("privacy.localFirst"), systemImage: "lock")
+            Label(L10n.text("privacy.noImageStorage"), systemImage: "eye.slash")
+            Label(L10n.text("privacy.localSummaries"), systemImage: "internaldrive")
             if !model.diagnosticLogPath.isEmpty {
-                Label("开发诊断日志：\(model.diagnosticLogPath)", systemImage: "doc.text.magnifyingglass")
+                Label(L10n.text("privacy.diagnosticLog", model.diagnosticLogPath), systemImage: "doc.text.magnifyingglass")
             }
             Label(model.modelReadiness.title, systemImage: "cpu")
             Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
@@ -1919,10 +1946,10 @@ private struct UserFeedbackSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("反馈与建议")
+            Text(L10n.text("settings.feedback.title"))
                 .font(.title2.weight(.semibold))
 
-            Picker("类型", selection: $model.userFeedbackKind) {
+            Picker(L10n.text("feedback.type"), selection: $model.userFeedbackKind) {
                 ForEach(StillLoopUserFeedbackKind.allCases) { kind in
                     Text(kind.title).tag(kind)
                 }
@@ -1940,7 +1967,7 @@ private struct UserFeedbackSheet: View {
                         .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                 )
 
-            TextField("联系方式（可选）", text: $model.userFeedbackReplyAddress)
+            TextField(L10n.text("feedback.contactPlaceholder"), text: $model.userFeedbackReplyAddress)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: model.userFeedbackReplyAddress) { value in
                     if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1949,7 +1976,7 @@ private struct UserFeedbackSheet: View {
                 }
 
             Toggle(isOn: $model.userFeedbackAllowsContact) {
-                Text("仅用于回复本次反馈")
+                Text(L10n.text("feedback.contactConsent"))
             }
             .disabled(model.userFeedbackReplyAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
@@ -1961,10 +1988,10 @@ private struct UserFeedbackSheet: View {
 
             HStack {
                 Spacer()
-                Button(model.userFeedbackSubmissionStatus == .sent ? "关闭" : "取消") {
+                Button(model.userFeedbackSubmissionStatus == .sent ? L10n.text("common.close") : L10n.text("common.cancel")) {
                     dismiss()
                 }
-                Button(model.userFeedbackSubmissionStatus == .submitting ? "发送中..." : "发送") {
+                Button(model.userFeedbackSubmissionStatus == .submitting ? L10n.text("feedback.sending") : L10n.text("feedback.send")) {
                     Task { await model.submitUserFeedback() }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1983,40 +2010,40 @@ private struct OpenSourceModelLicenseView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("设置 / 开源许可与模型信息")
+                Text(L10n.text("openSource.title"))
                     .font(.largeTitle.weight(.semibold))
 
-                OpenSourceLicenseSection(title: "内置模型", systemImage: "cpu") {
-                    OpenSourceLicenseRow(label: "基础模型", value: disclosure.baseModelID)
-                    OpenSourceLicenseRow(label: "许可证", value: disclosure.baseModelLicenseName)
-                    Link("Qwen 官方许可证", destination: disclosure.baseModelLicenseURL)
-                    OpenSourceLicenseRow(label: "GGUF 来源", value: "Hugging Face / \(disclosure.ggufRepositoryID)")
-                    OpenSourceLicenseList(label: "模型文件", values: disclosure.modelFilenames)
-                    OpenSourceLicenseRow(label: "保存位置", value: disclosure.localModelPathDescription)
+                OpenSourceLicenseSection(title: L10n.text("openSource.builtInModel"), systemImage: "cpu") {
+                    OpenSourceLicenseRow(label: L10n.text("openSource.baseModel"), value: disclosure.baseModelID)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.license"), value: disclosure.baseModelLicenseName)
+                    Link(L10n.text("openSource.qwenLicense"), destination: disclosure.baseModelLicenseURL)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.ggufSource"), value: "Hugging Face / \(disclosure.ggufRepositoryID)")
+                    OpenSourceLicenseList(label: L10n.text("openSource.modelFiles"), values: disclosure.modelFilenames)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.saveLocation"), value: disclosure.localModelPathDescription)
                     Text(disclosure.ggufLicenseNote)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                OpenSourceLicenseSection(title: "本地运行时", systemImage: "server.rack") {
-                    OpenSourceLicenseRow(label: "运行时", value: disclosure.runtimeName)
-                    OpenSourceLicenseRow(label: "许可证", value: disclosure.runtimeLicenseName)
-                    OpenSourceLicenseRow(label: "版权", value: disclosure.runtimeCopyright)
-                    OpenSourceLicenseRow(label: "许可文件", value: disclosure.runtimeLicenseResourceName)
-                    Text("完整 MIT 许可文本保留在应用资源 \(disclosure.runtimeLicenseResourceName)。")
+                OpenSourceLicenseSection(title: L10n.text("openSource.localRuntime"), systemImage: "server.rack") {
+                    OpenSourceLicenseRow(label: L10n.text("openSource.runtime"), value: disclosure.runtimeName)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.license"), value: disclosure.runtimeLicenseName)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.copyright"), value: disclosure.runtimeCopyright)
+                    OpenSourceLicenseRow(label: L10n.text("openSource.licenseFile"), value: disclosure.runtimeLicenseResourceName)
+                    Text(L10n.text("openSource.runtimeLicenseStored", disclosure.runtimeLicenseResourceName))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                OpenSourceLicenseSection(title: "手动模型服务", systemImage: "network") {
+                OpenSourceLicenseSection(title: L10n.text("openSource.manualModelService"), systemImage: "network") {
                     Text(disclosure.manualModelServiceNote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Button("返回设置") {
+                Button(L10n.text("nav.backToSettings")) {
                     model.screen = .settings
                 }
                 .buttonStyle(.borderedProminent)
@@ -2086,19 +2113,19 @@ private struct PrivacySettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("设置 / 隐私")
+            Text(L10n.text("privacy.pageTitle"))
                 .font(.largeTitle.weight(.semibold))
-            Label("本地优先：默认使用应用自带模型；手动模型服务只在用户选择后使用。", systemImage: "lock")
-            Label("截图或摄像头画面只在内存中压缩为轻量视觉信号，不保存原图。", systemImage: "eye.slash")
-            Label("专注摘要和评估事件保存在本机 Application Support/StillLoop；不保存图片、照片或截图。", systemImage: "internaldrive")
+            Label(L10n.text("privacy.localFirst"), systemImage: "lock")
+            Label(L10n.text("privacy.noImageStorage"), systemImage: "eye.slash")
+            Label(L10n.text("privacy.localSummaries"), systemImage: "internaldrive")
             if !model.diagnosticLogPath.isEmpty {
-                Label("开发诊断日志：\(model.diagnosticLogPath)", systemImage: "doc.text.magnifyingglass")
+                Label(L10n.text("privacy.diagnosticLog", model.diagnosticLogPath), systemImage: "doc.text.magnifyingglass")
             }
             Label(model.modelReadiness.title, systemImage: "cpu")
             Label(model.bundledModelRuntimeStatus, systemImage: "server.rack")
             Label(model.localLLMStatus, systemImage: "point.3.connected.trianglepath.dotted")
             if model.shouldShowHomeNavigation {
-                Button("返回主页") { model.openHome() }
+                Button(L10n.text("nav.backHome")) { model.openHome() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }

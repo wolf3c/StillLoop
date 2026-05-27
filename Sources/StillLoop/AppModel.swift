@@ -52,36 +52,36 @@ final class AppModel: ObservableObject {
 
         var title: String {
             switch self {
-            case .skipped: return "应用自带模型：本次开发运行已跳过下载"
-            case .ready: return "应用自带模型：已准备好"
-            case .checking: return "应用自带模型：尚未下载"
+            case .skipped: return L10n.text("modelReadiness.skipped.title")
+            case .ready: return L10n.text("modelReadiness.ready.title")
+            case .checking: return L10n.text("modelReadiness.checking.title")
             case .downloading(_, let progress):
                 if let percentageText = Self.progressPercentageText(progress) {
-                    return "应用自带模型：正在下载 \(percentageText)"
+                    return L10n.text("modelReadiness.downloading.titleWithProgress", percentageText)
                 }
-                return "应用自带模型：正在下载"
-            case .paused: return "应用自带模型：下载已暂停"
-            case .failed: return "应用自带模型：下载失败"
+                return L10n.text("modelReadiness.downloading.title")
+            case .paused: return L10n.text("modelReadiness.paused.title")
+            case .failed: return L10n.text("modelReadiness.failed.title")
             }
         }
 
         var detail: String {
             switch self {
             case .skipped:
-                return "为了快速试用界面，当前没有下载模型；正式运行会在本机下载。"
+                return L10n.text("modelReadiness.skipped.detail")
             case .ready:
-                return "模型文件已保存在本机，后续可接入本地推理。"
+                return L10n.text("modelReadiness.ready.detail")
             case .checking:
-                return "可以先下载，也可以手动配置本地或在线模型服务。"
+                return L10n.text("modelReadiness.checking.detail")
             case .downloading(let file, let progress):
                 if let percentageText = Self.progressPercentageText(progress) {
-                    return "正在下载 \(file)，已完成 \(percentageText)，下载完成后即可使用应用自带模型。"
+                    return L10n.text("modelReadiness.downloading.detailWithProgress", file, percentageText)
                 }
-                return "正在下载 \(file)，下载完成后即可使用应用自带模型。"
+                return L10n.text("modelReadiness.downloading.detail", file)
             case .paused:
-                return "下载已停止；需要时可以重新开始下载。"
+                return L10n.text("modelReadiness.paused.detail")
             case .failed:
-                return "请确认网络可访问 Hugging Face 后重试。"
+                return L10n.text("modelReadiness.failed.detail")
             }
         }
 
@@ -125,17 +125,17 @@ final class AppModel: ObservableObject {
         var title: String {
             switch self {
             case .continueSetup:
-                return "继续"
+                return L10n.text("common.continue")
             case .startDownload:
-                return "开始下载"
+                return L10n.text("modelAction.startDownload")
             case .pauseDownload:
-                return "暂停下载"
+                return L10n.text("modelAction.pauseDownload")
             case .cancelDownload:
-                return "取消下载"
+                return L10n.text("modelAction.cancelDownload")
             case .resumeDownload:
-                return "继续下载"
+                return L10n.text("modelAction.resumeDownload")
             case .retryDownload:
-                return "重新下载"
+                return L10n.text("modelAction.retryDownload")
             }
         }
 
@@ -172,6 +172,96 @@ final class AppModel: ObservableObject {
         case systemOpen(String)
     }
 
+    enum PermissionStatus: Equatable {
+        case unchecked
+        case allowed
+        case developmentModeUnavailable
+        case notEffective
+        case notRequested
+        case denied
+        case restricted
+        case unknown
+        case requesting
+
+        init(displayText: String) {
+            switch displayText {
+            case "已允许", "Allowed":
+                self = .allowed
+            case "未生效", "Not enabled":
+                self = .notEffective
+            case "未请求", "Not requested":
+                self = .notRequested
+            case "已拒绝", "Denied":
+                self = .denied
+            case "受限制", "Restricted":
+                self = .restricted
+            case "请求中", "Requesting":
+                self = .requesting
+            case "开发运行模式无法注册到系统权限列表", "Development run cannot appear in the system permissions list":
+                self = .developmentModeUnavailable
+            default:
+                self = .unchecked
+            }
+        }
+
+        var isAllowed: Bool {
+            self == .allowed
+        }
+
+        func detail(language: AppLanguage = L10n.currentLanguage) -> String {
+            L10n.text(detailKey, language: language)
+        }
+
+        func guidance(language: AppLanguage = L10n.currentLanguage) -> String {
+            guard let guidanceKey else { return "" }
+            return L10n.text(guidanceKey, language: language)
+        }
+
+        private var detailKey: String {
+            switch self {
+            case .unchecked:
+                return "permission.status.unchecked"
+            case .allowed:
+                return "permission.status.allowed"
+            case .developmentModeUnavailable:
+                return "permission.status.developmentUnavailable"
+            case .notEffective:
+                return "permission.status.notEffective"
+            case .notRequested:
+                return "permission.status.notRequested"
+            case .denied:
+                return "permission.status.denied"
+            case .restricted:
+                return "permission.status.restricted"
+            case .unknown:
+                return "permission.status.unknown"
+            case .requesting:
+                return "permission.status.requesting"
+            }
+        }
+
+        private var guidanceKey: String? {
+            switch self {
+            case .unchecked, .allowed:
+                return nil
+            case .developmentModeUnavailable:
+                return "permission.guidance.developmentUnavailable"
+            case .notEffective:
+                return "permission.guidance.screenRecordingNotEffective"
+            case .notRequested:
+                return "permission.guidance.cameraNotRequested"
+            case .denied:
+                return "permission.guidance.cameraDenied"
+            case .restricted:
+                return "permission.guidance.cameraRestricted"
+            case .unknown:
+                return "permission.guidance.cameraUnknown"
+            case .requesting:
+                return "permission.guidance.cameraRequesting"
+            }
+        }
+    }
+
     enum SetupIssueIndicator: Hashable {
         case permissions
         case model
@@ -180,35 +270,57 @@ final class AppModel: ObservableObject {
         var title: String {
             switch self {
             case .permissions:
-                return "缺少权限"
+                return L10n.text("setupIssue.permissions")
             case .model:
-                return "缺少模型设置"
+                return L10n.text("setupIssue.model")
             case .modelDownloading(let progress):
                 if let percentageText = ModelReadiness.progressPercentageText(progress) {
-                    return "模型下载中 \(percentageText)"
+                    return L10n.text("setupIssue.modelDownloadingWithProgress", percentageText)
                 }
-                return "模型下载中"
+                return L10n.text("setupIssue.modelDownloading")
             }
         }
 
         var help: String {
             switch self {
             case .permissions:
-                return "返回权限获取引导"
+                return L10n.text("setupIssue.permissions.help")
             case .model:
-                return "返回模型准备"
+                return L10n.text("setupIssue.model.help")
             case .modelDownloading:
-                return "查看模型下载状态"
+                return L10n.text("setupIssue.modelDownloading.help")
             }
         }
     }
 
     struct PermissionPresentation: Equatable {
-        var detail: String
-        var guidance: String
-        var actionTitle: String
+        var status: PermissionStatus
         var action: PermissionAction
         var isAllowed: Bool
+
+        var detail: String {
+            detail()
+        }
+
+        var guidance: String {
+            guidance()
+        }
+
+        var actionTitle: String {
+            actionTitle()
+        }
+
+        func detail(language: AppLanguage = L10n.currentLanguage) -> String {
+            status.detail(language: language)
+        }
+
+        func guidance(language: AppLanguage = L10n.currentLanguage) -> String {
+            status.guidance(language: language)
+        }
+
+        func actionTitle(language: AppLanguage = L10n.currentLanguage) -> String {
+            action == .none ? "" : L10n.text("common.continue", language: language)
+        }
     }
 
     @Published var screen: Screen = .welcome {
@@ -222,24 +334,43 @@ final class AppModel: ObservableObject {
     @Published var currentSession: FocusSession?
     @Published var currentState: FocusState = .uncertain
     @Published private(set) var isAwaitingInitialEvaluation = false
-    @Published var lastNudge: String = "暂无提醒"
+    @Published var lastNudge: String = L10n.text("focus.noNudge")
     @Published var lastFocusedReturnTarget: FocusReturnTarget?
     @Published var elapsed: TimeInterval = 0
     @Published var latestContext: ContextSnapshot?
     @Published var summaries: [SessionSummary] = []
-    @Published var modelStatus = "应用自带模型：未检查"
+    @Published var modelStatus = L10n.text("modelStatus.initial")
     @Published var modelReadiness: ModelReadiness = .checking
     @Published var isModelDownloadPromptPresented = false
     @Published private(set) var modelDownloadPromptMode: ModelDownloadPromptMode = .setup
     @Published var modelSetupSelection = ModelSetupSelection()
-    @Published var screenCapturePermission = "未检查"
-    @Published var screenCapturePermissionGuidance = ""
-    @Published var cameraPermission = "未检查"
-    @Published var cameraPermissionGuidance = ""
+    @Published private var screenCapturePermissionStatus: PermissionStatus = .unchecked
+    @Published private var cameraPermissionStatus: PermissionStatus = .unchecked
+    var screenCapturePermission: String {
+        get { screenCapturePermissionStatus.detail() }
+        set { screenCapturePermissionStatus = PermissionStatus(displayText: newValue) }
+    }
+    var screenCapturePermissionGuidance: String {
+        screenCapturePermissionStatus.guidance()
+    }
+    var screenCapturePermissionStatusForView: PermissionStatus {
+        screenCapturePermissionStatus
+    }
+    var cameraPermission: String {
+        get { cameraPermissionStatus.detail() }
+        set { cameraPermissionStatus = PermissionStatus(displayText: newValue) }
+    }
+    var cameraPermissionGuidance: String {
+        cameraPermissionStatus.guidance()
+    }
+    var cameraPermissionStatusForView: PermissionStatus {
+        cameraPermissionStatus
+    }
     @Published var permissionOpenStatus = ""
     @Published var useLocalLLM = false
-    @Published var localLLMStatus = "模型评估：基础规则"
-    @Published var bundledModelRuntimeStatus = "自带模型：未启动"
+    @Published var localLLMStatus = L10n.text("localLLM.ruleBased")
+    @Published var analysisModelStatus: AnalysisModelStatus = .ruleBased
+    @Published var bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.notStarted")
     @Published var llmBaseURLText = ""
     @Published var llmModelText = ""
     @Published var onlineAPIKeyText = ""
@@ -251,13 +382,13 @@ final class AppModel: ObservableObject {
     @Published var userFeedbackSubmissionStatus: UserFeedbackSubmissionStatus = .idle
     @Published var userFeedbackSubmissionMessage = ""
     @Published var toastMessage = ""
-    @Published var modelConnectionStatus = "尚未检查"
-    @Published var modelConnectionDetail = "修改模型配置后会自动检查服务、模型名称和一次最小推理。"
+    @Published var modelConnectionStatus = L10n.text("modelConnection.unchecked")
+    @Published var modelConnectionDetail = L10n.text("modelConnection.initialDetail")
     @Published var isModelConnectionUsable = false
     @Published var isCheckingModelConnection = false
     @Published var isAdvancedModelConfigExpanded = false
-    @Published var contextSourceDescription = "上下文来源：真实本机"
-    @Published var evaluationLoopDescription = "每轮完成后按耗时安排下一次采集"
+    @Published var contextSourceDescription = L10n.text("contextSource.realLocal")
+    @Published var evaluationLoopDescription = L10n.text("evaluationLoop.nextByDuration")
     @Published private(set) var diagnosticLogPath = ""
     @Published var analysisPhase: AnalysisPhase = .idle
     @Published var unanalyzedCaptureCount = 0
@@ -275,7 +406,7 @@ final class AppModel: ObservableObject {
     nonisolated static let taskProgressVisualSampleMaxCount = 3
 
     var currentStateDisplayName: String {
-        isAwaitingInitialEvaluation ? "判断中" : currentState.displayName
+        isAwaitingInitialEvaluation ? L10n.text("status.analyzing") : currentState.displayName(language: L10n.currentLanguage.coreLanguage)
     }
 
     private let evaluator = FocusEvaluator()
@@ -367,23 +498,19 @@ final class AppModel: ObservableObject {
         isRunningAsAppBundle: Bool
     ) -> PermissionPresentation {
         if isAllowedForCurrentProcess {
-            return PermissionPresentation(detail: "已允许", guidance: "", actionTitle: "", action: .none, isAllowed: true)
+            return PermissionPresentation(status: .allowed, action: .none, isAllowed: true)
         }
 
         guard isRunningAsAppBundle else {
             return PermissionPresentation(
-                detail: "开发运行模式无法注册到系统权限列表",
-                guidance: "请用 scripts/run-app.sh 启动应用包后再检查权限。",
-                actionTitle: "",
+                status: .developmentModeUnavailable,
                 action: .none,
                 isAllowed: false
             )
         }
 
         return PermissionPresentation(
-            detail: "未生效",
-            guidance: "请在系统设置 > 隐私与安全性 > 录屏与系统录音 中允许 StillLoop。若已经开启但仍未生效，请关闭后重新开启一次，然后重启 StillLoop。",
-            actionTitle: "继续",
+            status: .notEffective,
             action: .openSettings,
             isAllowed: false
         )
@@ -392,36 +519,28 @@ final class AppModel: ObservableObject {
     nonisolated static func cameraPermissionPresentation(for status: AVAuthorizationStatus) -> PermissionPresentation {
         switch status {
         case .authorized:
-            return PermissionPresentation(detail: "已允许", guidance: "", actionTitle: "", action: .none, isAllowed: true)
+            return PermissionPresentation(status: .allowed, action: .none, isAllowed: true)
         case .notDetermined:
             return PermissionPresentation(
-                detail: "未请求",
-                guidance: "继续后，macOS 会弹出摄像头授权窗口。",
-                actionTitle: "继续",
+                status: .notRequested,
                 action: .request,
                 isAllowed: false
             )
         case .denied:
             return PermissionPresentation(
-                detail: "已拒绝",
-                guidance: "请在系统设置 > 隐私与安全性 > 摄像头 中允许 StillLoop。",
-                actionTitle: "继续",
+                status: .denied,
                 action: .openSettings,
                 isAllowed: false
             )
         case .restricted:
             return PermissionPresentation(
-                detail: "受限制",
-                guidance: "当前系统限制了摄像头访问，请在系统设置 > 隐私与安全性 > 摄像头 中检查 StillLoop。",
-                actionTitle: "继续",
+                status: .restricted,
                 action: .openSettings,
                 isAllowed: false
             )
         @unknown default:
             return PermissionPresentation(
-                detail: "未知",
-                guidance: "无法确认摄像头授权状态，请在系统设置中检查 StillLoop 的摄像头权限。",
-                actionTitle: "继续",
+                status: .unknown,
                 action: .openSettings,
                 isAllowed: false
             )
@@ -761,20 +880,20 @@ final class AppModel: ObservableObject {
             modelSource: modelSetupSelection.source
         )
         userFeedbackSubmissionStatus = .submitting
-        userFeedbackSubmissionMessage = "正在发送..."
+        userFeedbackSubmissionMessage = L10n.text("feedback.submittingMessage")
 
         do {
             try await telemetry.submitUserFeedback(draft)
             userFeedbackSubmissionStatus = .sent
             userFeedbackSubmissionMessage = ""
             isUserFeedbackPresented = false
-            showToast("已提交")
+            showToast(L10n.text("feedback.submittedToast"))
             userFeedbackBody = ""
             userFeedbackReplyAddress = ""
             userFeedbackAllowsContact = false
         } catch {
             userFeedbackSubmissionStatus = .failed
-            userFeedbackSubmissionMessage = "发送失败，请稍后重试。"
+            userFeedbackSubmissionMessage = L10n.text("feedback.failedMessage")
         }
     }
 
@@ -831,9 +950,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var hasMissingRequiredPermissionsForTesting: Bool {
+        hasMissingPermissions
+    }
+
     private var hasMissingPermissions: Bool {
-        screenCapturePermission != "已允许"
-            || cameraPermission != "已允许"
+        !screenCapturePermissionStatus.isAllowed
+            || !cameraPermissionStatus.isAllowed
     }
 
     private var hasMissingModelSetup: Bool {
@@ -882,17 +1005,17 @@ final class AppModel: ObservableObject {
             }
             updateLaunchAtLoginStatusText()
         } catch {
-            launchAtLoginStatus = "无法更新登录时启动：\(error.localizedDescription)"
+            launchAtLoginStatus = L10n.text("launchAtLogin.updateFailed", error.localizedDescription)
         }
     }
 
     private func updateLaunchAtLoginStatusText() {
         if launchAtLoginEnabled {
             launchAtLoginStatus = hasBypassedInitialSetup
-                ? "已开启。登录后只显示菜单栏入口，不会自动开始专注或采集。"
-                : "完成设置后开启。登录后只显示菜单栏入口，不会自动开始专注或采集。"
+                ? L10n.text("launchAtLogin.enabledStatus")
+                : L10n.text("launchAtLogin.enabledAfterSetupStatus")
         } else {
-            launchAtLoginStatus = "已关闭。StillLoop 不会在登录后自动启动。"
+            launchAtLoginStatus = L10n.text("launchAtLogin.disabledStatus")
         }
     }
 
@@ -928,10 +1051,7 @@ final class AppModel: ObservableObject {
         case .request:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 Task { @MainActor in
-                    self?.cameraPermission = granted ? "已允许" : "已拒绝"
-                    self?.cameraPermissionGuidance = granted
-                        ? ""
-                        : "请在系统设置 > 隐私与安全性 > 摄像头 中允许 StillLoop。"
+                    self?.cameraPermissionStatus = granted ? .allowed : .denied
                 }
             }
         case .openSettings:
@@ -951,14 +1071,12 @@ final class AppModel: ObservableObject {
     }
 
     private func applyScreenCapturePermissionPresentation(_ presentation: PermissionPresentation) {
-        screenCapturePermission = presentation.detail
-        screenCapturePermissionGuidance = presentation.guidance
+        screenCapturePermissionStatus = presentation.status
     }
 
     private func applyCameraPermissionPresentation(for status: AVAuthorizationStatus) {
         let presentation = AppModel.cameraPermissionPresentation(for: status)
-        cameraPermission = presentation.detail
-        cameraPermissionGuidance = presentation.guidance
+        cameraPermissionStatus = presentation.status
     }
 
     private func openCameraPrivacySettings() {
@@ -977,14 +1095,14 @@ final class AppModel: ObservableObject {
                 case .workspaceURL(let urlString):
                     guard let url = URL(string: urlString) else { continue }
                     if NSWorkspace.shared.open(url) {
-                        permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
+                        permissionOpenStatus = L10n.text("permission.openedSystemSettings")
                         activateSystemSettingsSoon()
                         return true
                     }
                 case .systemOpen(let urlString):
                     let openResult = openWithSystemOpen(urlString)
                     if openResult.succeeded {
-                        permissionOpenStatus = "已打开系统设置，请在系统设置窗口中完成授权。"
+                        permissionOpenStatus = L10n.text("permission.openedSystemSettings")
                         activateSystemSettingsSoon()
                         return true
                     }
@@ -993,7 +1111,7 @@ final class AppModel: ObservableObject {
             }
         }
         if permissionOpenStatus.isEmpty {
-            permissionOpenStatus = "无法自动打开系统设置，请按上方路径手动打开。"
+            permissionOpenStatus = L10n.text("permission.openSystemSettingsFailed")
         }
         return false
     }
@@ -1015,10 +1133,12 @@ final class AppModel: ObservableObject {
             let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             let errorText = String(data: errorData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let detail = errorText?.isEmpty == false ? "：\(errorText!)" : ""
-            return (false, "无法自动打开系统设置\(detail)。请按上方路径手动打开。")
+            guard let detail = errorText, !detail.isEmpty else {
+                return (false, L10n.text("permission.openSystemSettingsFailed"))
+            }
+            return (false, L10n.text("permission.openSystemSettingsFailedWithDetail", detail))
         } catch {
-            return (false, "无法自动打开系统设置：\(error.localizedDescription)。请按上方路径手动打开。")
+            return (false, L10n.text("permission.openSystemSettingsFailedWithDetail", error.localizedDescription))
         }
     }
 
@@ -1099,8 +1219,7 @@ final class AppModel: ObservableObject {
     }
 
     private func requestCameraAuthorizationBeforeStarting(task: String) {
-        cameraPermission = "请求中"
-        cameraPermissionGuidance = "请在系统授权窗口中允许 StillLoop 使用摄像头。"
+        cameraPermissionStatus = .requesting
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
@@ -1126,11 +1245,11 @@ final class AppModel: ObservableObject {
         provider = MacLocalContextProvider(browserAutomationNoticePresenter: browserAutomationNoticePresenter)
         isCurrentSessionUsingRuleBasedModelFallback = forceRuleBasedModel
         shouldValidateBundledRuntimeForActiveRun = modelSetupSelection.source == .bundled && !forceRuleBasedModel
-        contextSourceDescription = "上下文来源：真实本机"
+        contextSourceDescription = L10n.text("contextSource.realLocal")
         status = .running
         currentState = .uncertain
         isAwaitingInitialEvaluation = true
-        lastNudge = "暂无提醒"
+        lastNudge = L10n.text("focus.noNudge")
         lastFocusedReturnTarget = nil
         elapsed = 0
         isSuspendedForSystemInactivity = false
@@ -1138,14 +1257,15 @@ final class AppModel: ObservableObject {
         accumulatedSystemSuspendedDuration = 0
         analysisPhase = .idle
         if forceRuleBasedModel {
-            localLLMStatus = "当前评估：基础规则（暂不下载自带模型，准确性可能低于本地模型）"
+            localLLMStatus = L10n.text("localLLM.ruleBasedSkipped")
+            analysisModelStatus = .ruleBased
         }
         screen = .focus
         telemetry.record(
             .focusSessionStarted(
                 modelSource: modelSetupSelection.source,
-                screenCaptureAllowed: screenCapturePermission == "已允许",
-                cameraAllowed: cameraPermission == "已允许"
+                screenCaptureAllowed: screenCapturePermissionStatus.isAllowed,
+                cameraAllowed: cameraPermissionStatus.isAllowed
             )
         )
         postStatusItemMode(.analyzing)
@@ -1217,7 +1337,7 @@ final class AppModel: ObservableObject {
         status = .ended
         isAwaitingInitialEvaluation = false
         screen = .review
-        evaluationLoopDescription = "任务已结束，已停止采集"
+        evaluationLoopDescription = L10n.text("evaluationLoop.ended")
         analysisPhase = .idle
         postStatusItemMode(.review)
         startReviewCommentGeneration(for: session)
@@ -1236,12 +1356,12 @@ final class AppModel: ObservableObject {
         status = .idle
         currentState = .uncertain
         isAwaitingInitialEvaluation = false
-        lastNudge = "暂无提醒"
+        lastNudge = L10n.text("focus.noNudge")
         elapsed = 0
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
         accumulatedSystemSuspendedDuration = 0
-        evaluationLoopDescription = "等待开始任务"
+        evaluationLoopDescription = L10n.text("evaluationLoop.waitingTask")
         analysisPhase = .idle
         screen = .taskSetup
         postStatusItemMode(.idle)
@@ -1279,14 +1399,14 @@ final class AppModel: ObservableObject {
         shouldValidateBundledRuntimeForActiveRun = modelSetupSelection.source == .bundled && !isCurrentSessionUsingRuleBasedModelFallback
         currentState = .uncertain
         isAwaitingInitialEvaluation = true
-        lastNudge = "暂无提醒"
+        lastNudge = L10n.text("focus.noNudge")
         isSuspendedForSystemInactivity = false
         systemSuspendedAt = nil
         accumulatedSystemSuspendedDuration = 0
         elapsed = activeElapsed(at: now)
-        evaluationLoopDescription = "继续采集"
+        evaluationLoopDescription = L10n.text("evaluationLoop.continuing")
         analysisPhase = .idle
-        contextSourceDescription = "上下文来源：真实本机"
+        contextSourceDescription = L10n.text("contextSource.realLocal")
         screen = .focus
         try? store.update(session: session)
         try? store.removeSummary(id: session.id)
@@ -1500,7 +1620,8 @@ final class AppModel: ObservableObject {
         screen = .taskSetup
         startModelDownloadIfNeeded()
         if mode == .startTask {
-            localLLMStatus = "当前评估：等待自带模型下载完成"
+            localLLMStatus = L10n.text("localLLM.waitingDownload")
+            analysisModelStatus = .ruleBased
         }
     }
 
@@ -1514,12 +1635,13 @@ final class AppModel: ObservableObject {
                 bypassInitialSetup()
             }
             screen = .taskSetup
-            localLLMStatus = "当前评估：基础规则（暂不下载自带模型，准确性可能低于本地模型）"
+            localLLMStatus = L10n.text("localLLM.ruleBasedSkipped")
+            analysisModelStatus = .ruleBased
             return
         }
 
         beginSession(task: task, forceRuleBasedModel: true)
-        showToast("本次专注使用基础规则判断，准确性可能低于本地模型")
+        showToast(L10n.text("toast.ruleBasedSkipped"))
     }
 
     func selectModelSource(_ source: ModelSetupSelection.Source) {
@@ -1548,7 +1670,8 @@ final class AppModel: ObservableObject {
             bundledModelRuntime.stop()
             llmEngine = nil
             llmEvaluator = nil
-            bundledModelRuntimeStatus = "自带模型：已停止"
+            bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.stopped")
+            analysisModelStatus = .ruleBased
             modelConfigurationChanged()
         }
     }
@@ -1582,16 +1705,18 @@ final class AppModel: ObservableObject {
             return
         }
         bundledModelRuntimeStatus = modelDownloader.isDownloaded()
-            ? "自带模型：待主页预热"
-            : "自带模型：等待模型文件"
+            ? L10n.text("bundledRuntime.status.prewarmPending")
+            : L10n.text("bundledRuntime.status.waitingModelFile")
         localLLMStatus = modelDownloader.isDownloaded()
-            ? "当前评估：进入主页后后台预热自带模型"
-            : "当前评估：基础规则（等待自带模型文件）"
+            ? L10n.text("localLLM.bundledPrewarmPending")
+            : L10n.text("localLLM.ruleBasedWaitingModelFile")
+        analysisModelStatus = modelDownloader.isDownloaded() ? .bundledReady : .ruleBased
     }
 
     func configureLocalLLM() {
         guard useLocalLLM else {
-            localLLMStatus = "当前评估：基础规则"
+            localLLMStatus = L10n.text("localLLM.ruleBased")
+            analysisModelStatus = .ruleBased
             isModelConnectionUsable = false
             llmEngine = nil
             llmEvaluator = nil
@@ -1601,7 +1726,8 @@ final class AppModel: ObservableObject {
         let trimmedBaseURLText = llmBaseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModelText = llmModelText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedBaseURLText.isEmpty, !trimmedModelText.isEmpty else {
-            localLLMStatus = "模型服务：待配置"
+            localLLMStatus = L10n.text("localLLM.manualPendingConfig")
+            analysisModelStatus = .ruleBased
             isModelConnectionUsable = false
             llmEngine = nil
             llmEvaluator = nil
@@ -1610,7 +1736,8 @@ final class AppModel: ObservableObject {
         }
         let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
         guard let baseURL = URL(string: effectiveBaseURLText) else {
-            localLLMStatus = "模型服务：端点无效"
+            localLLMStatus = L10n.text("localLLM.manualInvalidEndpoint")
+            analysisModelStatus = .ruleBased
             isModelConnectionUsable = false
             llmEngine = nil
             llmEvaluator = nil
@@ -1626,7 +1753,8 @@ final class AppModel: ObservableObject {
             taskAlignmentEngine: taskAlignmentEngine,
             taskProgressEngine: taskProgressEngine
         )
-        localLLMStatus = "当前评估：手动模型 \(effectiveBaseURLText)"
+        localLLMStatus = L10n.text("localLLM.manualSelected", effectiveBaseURLText)
+        analysisModelStatus = .manualReady
         persistManualModelConfiguration()
     }
 
@@ -1664,8 +1792,8 @@ final class AppModel: ObservableObject {
         }
         configureLocalLLM()
         isModelConnectionUsable = false
-        modelConnectionStatus = "配置已修改，正在检查"
-        modelConnectionDetail = "会在停止输入后自动检查服务、模型名称和一次最小推理。"
+        modelConnectionStatus = L10n.text("modelConnection.configChanged")
+        modelConnectionDetail = L10n.text("modelConnection.configChangedDetail")
         modelConnectionCheckTask?.cancel()
         modelConnectionCheckTask = Task {
             try? await Task.sleep(for: .milliseconds(650))
@@ -1683,12 +1811,12 @@ final class AppModel: ObservableObject {
         status = .paused
         currentState = .away
         isAwaitingInitialEvaluation = false
-        lastNudge = "屏幕已锁定，已暂停运行"
+        lastNudge = L10n.text("nudge.systemLocked")
         unanalyzedSnapshots.removeAll()
         unanalyzedCaptureCount = 0
         analysisPhase = .scheduled
-        evaluationLoopDescription = "屏幕锁定或休眠，已暂停采集和模型运算"
-        contextSourceDescription = "上下文来源：屏幕锁定或休眠期间暂停"
+        evaluationLoopDescription = L10n.text("evaluationLoop.suspended")
+        contextSourceDescription = L10n.text("contextSource.suspended")
         cancelSessionLoops()
         stopBundledModelRuntime()
         postStatusItemMode(.paused)
@@ -1713,11 +1841,11 @@ final class AppModel: ObservableObject {
         status = .running
         currentState = .uncertain
         isAwaitingInitialEvaluation = true
-        lastNudge = "暂无提醒"
+        lastNudge = L10n.text("focus.noNudge")
         elapsed = activeElapsed(at: now)
         analysisPhase = .idle
-        evaluationLoopDescription = "屏幕已唤醒，继续采集"
-        contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 0 条"
+        evaluationLoopDescription = L10n.text("evaluationLoop.woke")
+        contextSourceDescription = L10n.text("contextSource.captureStats", Int(captureCadenceSeconds), 0)
         postStatusItemMode(.analyzing)
         startCaptureLoop()
         startEvaluationLoop()
@@ -1746,13 +1874,13 @@ final class AppModel: ObservableObject {
     @discardableResult
     func checkModelConnectionNow() async -> Bool {
         isCheckingModelConnection = true
-        modelConnectionStatus = "正在检查连接"
+        modelConnectionStatus = L10n.text("modelConnection.checking")
         guard modelSetupSelection.source == .manual else {
             useLocalLLM = false
             userDefaults.set(false, forKey: DefaultsKey.useLocalLLM)
             configureBundledModelSelectionStatus()
-            modelConnectionStatus = "应用自带模型已选中"
-            modelConnectionDetail = "当前不使用手动 HTTP 模型服务；自带模型会在进入主页后后台预热，并在首次评估前完成图片输入探测。"
+            modelConnectionStatus = L10n.text("modelConnection.bundledSelected")
+            modelConnectionDetail = L10n.text("modelConnection.bundledSelectedDetail")
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
@@ -1761,16 +1889,16 @@ final class AppModel: ObservableObject {
 
         let effectiveBaseURLText = Self.effectiveLLMBaseURLText(llmBaseURLText)
         guard let baseURL = URL(string: effectiveBaseURLText) else {
-            modelConnectionStatus = "端点无效"
-            modelConnectionDetail = "请输入服务根地址。StillLoop 会使用 OpenAI-compatible /v1 端点。"
+            modelConnectionStatus = L10n.text("modelConnection.invalidEndpoint")
+            modelConnectionDetail = L10n.text("modelConnection.invalidEndpointDetail")
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
         }
         let trimmedModelText = llmModelText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedModelText.isEmpty else {
-            modelConnectionStatus = "模型名称为空"
-            modelConnectionDetail = "请输入模型名称。"
+            modelConnectionStatus = L10n.text("modelConnection.emptyModel")
+            modelConnectionDetail = L10n.text("modelConnection.emptyModelDetail")
             isModelConnectionUsable = false
             isCheckingModelConnection = false
             return false
@@ -1783,14 +1911,14 @@ final class AppModel: ObservableObject {
             useLocalLLM = true
             userDefaults.set(true, forKey: DefaultsKey.useLocalLLM)
             configureLocalLLM()
-            modelConnectionStatus = "模型可用"
+            modelConnectionStatus = L10n.text("modelConnection.usable")
             modelConnectionDetail = modelConnectionDetail(for: result)
             isCheckingModelConnection = false
             return true
         } catch {
             isModelConnectionUsable = false
-            modelConnectionStatus = "模型不可用"
-            modelConnectionDetail = "请检查服务地址、/v1 路径、模型名称，以及服务是否支持 chat/completions。"
+            modelConnectionStatus = L10n.text("modelConnection.unusable")
+            modelConnectionDetail = L10n.text("modelConnection.unusableDetail")
             isCheckingModelConnection = false
             telemetry.record(
                 .modelIssueDetected(
@@ -1807,13 +1935,13 @@ final class AppModel: ObservableObject {
         let visualText: String
         switch result.visualCapability {
         case .supported:
-            visualText = "视觉能力：模型名称显示支持视觉输入。"
+            visualText = L10n.text("modelConnection.visualSupported")
         case .notAdvertised:
-            visualText = "视觉能力：模型未声明视觉输入；运行时会直接提交压缩截图和摄像头图片验证真实表现。"
+            visualText = L10n.text("modelConnection.visualNotAdvertised")
         case .unknown:
-            visualText = "视觉能力：服务未提供可确认信息；运行时会直接提交压缩截图和摄像头图片验证真实表现。"
+            visualText = L10n.text("modelConnection.visualUnknown")
         }
-        return "服务可达；目标模型存在；最小推理成功。\(visualText)"
+        return L10n.text("modelConnection.successDetail", visualText)
     }
 
     @discardableResult
@@ -1829,10 +1957,10 @@ final class AppModel: ObservableObject {
         }
 
         return await startBundledModelRuntime(
-            startingRuntimeStatus: "自带模型：启动中",
-            startingLocalStatus: "当前评估：自带模型启动中",
-            readyRuntimeStatus: "自带模型：已启动",
-            readyLocalStatus: "当前评估：自带模型已连接"
+            startingRuntimeStatus: L10n.text("bundledRuntime.status.starting"),
+            startingLocalStatus: L10n.text("localLLM.bundledStarting"),
+            readyRuntimeStatus: L10n.text("bundledRuntime.status.started"),
+            readyLocalStatus: L10n.text("localLLM.bundledConnected")
         )
     }
 
@@ -1848,8 +1976,9 @@ final class AppModel: ObservableObject {
         }
         guard bundledModelPrewarmTask == nil else { return }
 
-        bundledModelRuntimeStatus = "自带模型：后台预热中"
-        localLLMStatus = "当前评估：自带模型后台预热中"
+        bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.prewarming")
+        localLLMStatus = L10n.text("localLLM.bundledPrewarming")
+        analysisModelStatus = .bundledStarting
         bundledModelPrewarmTask = Task { [weak self] in
             await self?.prewarmBundledModelRuntimeForHome()
         }
@@ -1860,10 +1989,10 @@ final class AppModel: ObservableObject {
         guard screen == .taskSetup, status == .idle else { return }
 
         _ = await startBundledModelRuntime(
-            startingRuntimeStatus: "自带模型：后台预热中",
-            startingLocalStatus: "当前评估：自带模型后台预热中",
-            readyRuntimeStatus: "自带模型：已预热",
-            readyLocalStatus: "当前评估：自带模型已预热"
+            startingRuntimeStatus: L10n.text("bundledRuntime.status.prewarming"),
+            startingLocalStatus: L10n.text("localLLM.bundledPrewarming"),
+            readyRuntimeStatus: L10n.text("bundledRuntime.status.prewarmed"),
+            readyLocalStatus: L10n.text("localLLM.bundledPrewarmed")
         )
     }
 
@@ -1886,10 +2015,11 @@ final class AppModel: ObservableObject {
             return false
         }
         guard modelDownloader.isDownloaded() else {
-            let status = "自带模型：等待模型文件"
+            let status = L10n.text("bundledRuntime.status.waitingModelFile")
             bundledModelRuntimeUnavailableStatus = status
             bundledModelRuntimeStatus = status
-            localLLMStatus = "当前评估：基础规则（等待自带模型文件）"
+            localLLMStatus = L10n.text("localLLM.ruleBasedWaitingModelFile")
+            analysisModelStatus = .ruleBased
             llmEngine = nil
             llmEvaluator = nil
             return false
@@ -1897,6 +2027,7 @@ final class AppModel: ObservableObject {
 
         bundledModelRuntimeStatus = startingRuntimeStatus
         localLLMStatus = startingLocalStatus
+        analysisModelStatus = .bundledStarting
         do {
             try await bundledModelRuntime.startIfNeeded()
             guard !Task.isCancelled, modelSetupSelection.source == .bundled else {
@@ -1917,6 +2048,7 @@ final class AppModel: ObservableObject {
             await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: taskProgressEngine)
             bundledModelRuntimeStatus = readyRuntimeStatus
             localLLMStatus = readyLocalStatus
+            analysisModelStatus = .bundledReady
             shouldValidateBundledRuntimeForActiveRun = false
             bundledModelRuntimeFailureStatus = nil
             bundledModelRuntimeUnavailableStatus = nil
@@ -1991,7 +2123,8 @@ final class AppModel: ObservableObject {
 
     private func applyBundledRuntimeFailureStatus(_ status: String) {
         bundledModelRuntimeStatus = status
-        localLLMStatus = "当前评估：基础规则（\(Self.bundledRuntimeFallbackReason(from: status))）"
+        localLLMStatus = L10n.text("localLLM.ruleBasedBundledFailure", Self.bundledRuntimeFallbackReason(from: status))
+        analysisModelStatus = .ruleBased
     }
 
     private static func shouldCacheBundledRuntimeFailure(_ error: Error) -> Bool {
@@ -2007,26 +2140,29 @@ final class AppModel: ObservableObject {
     }
 
     private static func bundledRuntimeFallbackReason(from status: String) -> String {
-        status.replacingOccurrences(of: "自带模型：", with: "")
+        status
+            .replacingOccurrences(of: L10n.text("bundledRuntime.prefix"), with: "")
+            .replacingOccurrences(of: "自带模型：", with: "")
+            .replacingOccurrences(of: "Built-in model: ", with: "")
     }
 
     private static func bundledRuntimeStatusText(for error: Error) -> String {
         guard let runtimeError = error as? BundledModelRuntime.RuntimeError else {
-            return "自带模型：启动失败"
+            return L10n.text("bundledRuntime.status.launchFailed")
         }
         switch runtimeError {
         case .imageInputUnavailable:
-            return "自带模型：不支持图片输入"
+            return L10n.text("bundledRuntime.status.imageInputUnavailable")
         case .missingExecutable:
-            return "自带模型：缺少 stillloop-llama-server"
+            return L10n.text("bundledRuntime.status.missingExecutable")
         case .missingModel:
-            return "自带模型：缺少模型文件"
+            return L10n.text("bundledRuntime.status.missingModel")
         case .missingProjector:
-            return "自带模型：缺少视觉投影文件"
+            return L10n.text("bundledRuntime.status.missingProjector")
         case .launchFailed:
-            return "自带模型：启动失败"
+            return L10n.text("bundledRuntime.status.launchFailed")
         case .readinessFailed:
-            return "自带模型：探测失败"
+            return L10n.text("bundledRuntime.status.readinessFailed")
         }
     }
 
@@ -2065,9 +2201,13 @@ final class AppModel: ObservableObject {
                 let elapsed = Date().timeIntervalSince(startedAt)
                 let powerStatus = self.devicePowerStatusProvider.currentDevicePowerStatus()
                 let delay = self.evaluationDelay(after: elapsed, powerStatus: powerStatus)
-                self.evaluationLoopDescription = "本轮耗时 \(Int(ceil(elapsed))) 秒，\(Int(ceil(delay))) 秒后再次评估"
+                self.evaluationLoopDescription = L10n.text(
+                    "evaluationLoop.roundDelay",
+                    Int(ceil(elapsed)),
+                    Int(ceil(delay))
+                )
                 try? await Task.sleep(for: .seconds(delay))
-                self.evaluationLoopDescription = "等待下一轮分析"
+                self.evaluationLoopDescription = L10n.text("evaluationLoop.waitingNext")
             }
         }
     }
@@ -2099,8 +2239,9 @@ final class AppModel: ObservableObject {
         if let bundledModelRuntimeFailureStatus {
             applyBundledRuntimeFailureStatus(bundledModelRuntimeFailureStatus)
         } else {
-            bundledModelRuntimeStatus = "自带模型：已停止"
-            localLLMStatus = "当前评估：进入主页后后台预热自带模型"
+            bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.stopped")
+            localLLMStatus = L10n.text("localLLM.bundledPrewarmPending")
+            analysisModelStatus = .bundledReady
         }
     }
 
@@ -2111,8 +2252,9 @@ final class AppModel: ObservableObject {
             return
         }
         guard bundledModelRuntime.state == .running else { return }
-        bundledModelRuntimeStatus = "自带模型：已预热"
-        localLLMStatus = "当前评估：自带模型已预热"
+        bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.prewarmed")
+        localLLMStatus = L10n.text("localLLM.bundledPrewarmed")
+        analysisModelStatus = .bundledReady
     }
 
     private func startCaptureLoop() {
@@ -2330,7 +2472,7 @@ final class AppModel: ObservableObject {
         guard status == .running, let session = currentSession, let provider else { return }
         let sessionID = session.id
         analysisPhase = .capturing
-        evaluationLoopDescription = "正在采集本机上下文"
+        evaluationLoopDescription = L10n.text("evaluationLoop.collecting")
         elapsed = activeElapsed()
         let snapshot = await provider.capture()
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return }
@@ -2347,7 +2489,7 @@ final class AppModel: ObservableObject {
                 ]
             )
         )
-        contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 \(unanalyzedSnapshots.count) 条"
+        contextSourceDescription = L10n.text("contextSource.captureStats", Int(captureCadenceSeconds), unanalyzedSnapshots.count)
         if unanalyzedSnapshots.count == 1 {
             analysisPhase = .contextReady
         }
@@ -2358,14 +2500,14 @@ final class AppModel: ObservableObject {
         let sessionID = session.id
         guard !unanalyzedSnapshots.isEmpty else {
             analysisPhase = .capturing
-            evaluationLoopDescription = "等待采集样本"
+            evaluationLoopDescription = L10n.text("evaluationLoop.waitingSamples")
             return false
         }
         let allPendingSnapshots = unanalyzedSnapshots.sorted { $0.timestamp < $1.timestamp }
         let evaluationWindowEnd = Date()
         if isAwaitingInitialEvaluation, shouldDeferInitialEvaluation(for: allPendingSnapshots, now: evaluationWindowEnd) {
             analysisPhase = .contextReady
-            evaluationLoopDescription = "等待首轮上下文稳定（\(Int(targetEvaluationCadenceSeconds)) 秒）"
+            evaluationLoopDescription = L10n.text("evaluationLoop.waitingInitial", Int(targetEvaluationCadenceSeconds))
             return false
         }
         let pendingCount = allPendingSnapshots.count
@@ -2406,8 +2548,13 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID else { return false }
         analysisPhase = .evaluating
         evaluationLoopDescription = presenceVisualSnapshots.count == contextCount && taskVisualSnapshots.count == contextCount
-            ? "正在分析最近 1 分钟 \(contextCount) 条上下文"
-            : "正在分析最近 1 分钟 \(contextCount) 条文本上下文，抽样 \(presenceVisualSnapshots.count) 条用户照片、\(taskVisualSnapshots.count) 条电脑截图"
+            ? L10n.text("evaluationLoop.analyzingAllContext", contextCount)
+            : L10n.text(
+                "evaluationLoop.analyzingSampledContext",
+                contextCount,
+                presenceVisualSnapshots.count,
+                taskVisualSnapshots.count
+            )
         let evaluationStartedAt = Date()
         let result = await evaluateFocus(
             task: session.task,
@@ -2548,7 +2695,7 @@ final class AppModel: ObservableObject {
         let analyzedIDs = Set(snapshots.map(\.id))
         unanalyzedSnapshots.removeAll { analyzedIDs.contains($0.id) }
         unanalyzedCaptureCount = unanalyzedSnapshots.count
-        contextSourceDescription = "上下文来源：真实本机，每 \(Int(captureCadenceSeconds)) 秒采集一次，未分析样本 \(unanalyzedSnapshots.count) 条"
+        contextSourceDescription = L10n.text("contextSource.captureStats", Int(captureCadenceSeconds), unanalyzedSnapshots.count)
     }
 
     private func diagnosticFields(
@@ -2777,7 +2924,8 @@ final class AppModel: ObservableObject {
             let canUseBundledModel = await prepareBundledModelForEvaluation()
             if canUseBundledModel, let llmEvaluator {
                 do {
-                    localLLMStatus = "当前评估：自带模型运算中"
+                    localLLMStatus = L10n.text("localLLM.bundledRunning")
+                    analysisModelStatus = .bundledRunning
                     return try await evaluateWithBundledModel(
                         llmEvaluator,
                         task: task,
@@ -2820,8 +2968,9 @@ final class AppModel: ObservableObject {
                             extra: fallbackFields
                         )
                     )
-                    localLLMStatus = "当前评估：基础规则（自带模型：\(failure.statusText)）"
-                    bundledModelRuntimeStatus = "自带模型：推理失败（\(failure.debugText)）"
+                    localLLMStatus = L10n.text("localLLM.ruleBasedBundledFailure", failure.statusText)
+                    analysisModelStatus = .ruleBased
+                    bundledModelRuntimeStatus = L10n.text("bundledRuntime.status.inferenceFailed", failure.statusText)
                     telemetry.record(
                         .modelIssueDetected(
                             modelSource: .bundled,
@@ -2860,7 +3009,8 @@ final class AppModel: ObservableObject {
             }
         } else if useLocalLLM, let llmEvaluator {
             do {
-                localLLMStatus = "当前评估：手动模型运算中"
+                localLLMStatus = L10n.text("localLLM.manualRunning")
+                analysisModelStatus = .manualRunning
                 var result = try await llmEvaluator.evaluate(
                     task: task,
                     textSnapshots: snapshots,
@@ -2875,7 +3025,8 @@ final class AppModel: ObservableObject {
                     targetJudgments: targetJudgments
                 )
                 result.evaluator = "手动模型"
-                localLLMStatus = "当前评估：手动模型已连接"
+                localLLMStatus = L10n.text("localLLM.manualConnected")
+                analysisModelStatus = .manualReady
                 return result
             } catch {
                 let failure = Self.modelInferenceFailurePresentation(for: error)
@@ -2891,7 +3042,8 @@ final class AppModel: ObservableObject {
                         ].merging(splitFailureFields) { current, _ in current }
                     )
                 )
-                localLLMStatus = "当前评估：基础规则（手动模型：\(failure.statusText)）"
+                localLLMStatus = L10n.text("localLLM.ruleBasedManualFailure", failure.statusText)
+                analysisModelStatus = .ruleBased
                 telemetry.record(
                     .modelIssueDetected(
                         modelSource: .manual,
@@ -2998,7 +3150,8 @@ final class AppModel: ObservableObject {
                 ].merging(llmDiagnosticFields) { current, _ in current }
             )
         )
-        localLLMStatus = "当前评估：自带模型已连接"
+        localLLMStatus = L10n.text("localLLM.bundledConnected")
+        analysisModelStatus = .bundledReady
         return result
     }
 

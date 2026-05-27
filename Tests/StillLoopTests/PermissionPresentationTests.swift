@@ -21,12 +21,17 @@ final class PermissionPresentationTests: XCTestCase {
             isRunningAsAppBundle: true
         )
 
-        XCTAssertEqual(presentation.detail, "未生效")
-        XCTAssertEqual(presentation.actionTitle, "继续")
+        XCTAssertEqual(presentation.status, .notEffective)
+        XCTAssertEqual(presentation.detail(language: .simplifiedChinese), "未生效")
+        XCTAssertEqual(presentation.detail(language: .english), "Not enabled")
+        XCTAssertEqual(presentation.actionTitle(language: .simplifiedChinese), "继续")
+        XCTAssertEqual(presentation.actionTitle(language: .english), "Continue")
         XCTAssertEqual(presentation.action, .openSettings)
-        XCTAssertTrue(presentation.guidance.contains("系统设置"))
-        XCTAssertTrue(presentation.guidance.contains("重新开启"))
-        XCTAssertTrue(presentation.guidance.contains("重启 StillLoop"))
+        XCTAssertTrue(presentation.guidance(language: .simplifiedChinese).contains("系统设置"))
+        XCTAssertTrue(presentation.guidance(language: .simplifiedChinese).contains("重新开启"))
+        XCTAssertTrue(presentation.guidance(language: .simplifiedChinese).contains("重启 StillLoop"))
+        XCTAssertTrue(presentation.guidance(language: .english).contains("System Settings"))
+        XCTAssertTrue(presentation.guidance(language: .english).contains("restart StillLoop"))
         XCTAssertFalse(presentation.isAllowed)
     }
 
@@ -36,7 +41,9 @@ final class PermissionPresentationTests: XCTestCase {
             isRunningAsAppBundle: true
         )
 
-        XCTAssertEqual(presentation.detail, "已允许")
+        XCTAssertEqual(presentation.status, .allowed)
+        XCTAssertEqual(presentation.detail(language: .simplifiedChinese), "已允许")
+        XCTAssertEqual(presentation.detail(language: .english), "Allowed")
         XCTAssertEqual(presentation.action, .none)
         XCTAssertTrue(presentation.isAllowed)
     }
@@ -44,19 +51,36 @@ final class PermissionPresentationTests: XCTestCase {
     func testDeniedCameraPermissionOpensSystemSettingsWithGuidance() {
         let presentation = AppModel.cameraPermissionPresentation(for: .denied)
 
-        XCTAssertEqual(presentation.detail, "已拒绝")
-        XCTAssertEqual(presentation.actionTitle, "继续")
+        XCTAssertEqual(presentation.status, .denied)
+        XCTAssertEqual(presentation.detail(language: .simplifiedChinese), "已拒绝")
+        XCTAssertEqual(presentation.detail(language: .english), "Denied")
+        XCTAssertEqual(presentation.actionTitle(language: .english), "Continue")
         XCTAssertEqual(presentation.action, .openSettings)
-        XCTAssertTrue(presentation.guidance.contains("系统设置"))
-        XCTAssertTrue(presentation.guidance.contains("摄像头"))
+        XCTAssertTrue(presentation.guidance(language: .simplifiedChinese).contains("系统设置"))
+        XCTAssertTrue(presentation.guidance(language: .simplifiedChinese).contains("摄像头"))
+        XCTAssertTrue(presentation.guidance(language: .english).contains("Camera"))
     }
 
     func testUndeterminedCameraPermissionRequestsAuthorization() {
         let presentation = AppModel.cameraPermissionPresentation(for: .notDetermined)
 
-        XCTAssertEqual(presentation.detail, "未请求")
-        XCTAssertEqual(presentation.actionTitle, "继续")
+        XCTAssertEqual(presentation.status, .notRequested)
+        XCTAssertEqual(presentation.detail(language: .simplifiedChinese), "未请求")
+        XCTAssertEqual(presentation.detail(language: .english), "Not requested")
+        XCTAssertEqual(presentation.actionTitle(language: .english), "Continue")
         XCTAssertEqual(presentation.action, .request)
+    }
+
+    @MainActor
+    func testMissingPermissionUsesStructuredStatusInsteadOfDisplayText() {
+        let model = AppModel(
+            userDefaults: UserDefaults(suiteName: "PermissionPresentationTests.\(UUID().uuidString)")!
+        )
+
+        model.screenCapturePermission = "Allowed"
+        model.cameraPermission = "Allowed"
+
+        XCTAssertFalse(model.hasMissingRequiredPermissionsForTesting)
     }
 
     func testOnboardingPermissionRowsDoNotUsePermissionRequestButtonText() throws {

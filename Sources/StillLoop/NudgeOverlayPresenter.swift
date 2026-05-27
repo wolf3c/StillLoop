@@ -54,10 +54,10 @@ enum NudgeIntensity: Equatable {
 
     var title: String {
         switch self {
-        case .gentle: return "轻轻提醒"
-        case .noticeable: return "回来一下"
-        case .strong: return "先停一下"
-        case .permission: return "权限说明"
+        case .gentle: return L10n.text("nudge.title.gentle")
+        case .noticeable: return L10n.text("nudge.title.noticeable")
+        case .strong: return L10n.text("nudge.title.strong")
+        case .permission: return L10n.text("nudge.title.permission")
         }
     }
 }
@@ -793,7 +793,7 @@ final class BrowserAutomationNoticePresenter: BrowserAutomationNoticePresenting 
 
     private static func noticeMessage(for appName: String) -> String {
         let displayName = appName == "Google Chrome" ? "Chrome" : appName
-        return "读取 \(displayName) 当前标签标题和网址，仅用于本机判断"
+        return L10n.text("browserAutomation.notice", displayName)
     }
 }
 

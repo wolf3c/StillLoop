@@ -7,14 +7,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var mainWindow: NSWindow?
     private lazy var statusMenu: NSMenu = {
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "StillLoop 正在本地运行", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L10n.text("menu.running"), action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
 
-        let showItem = NSMenuItem(title: "显示 StillLoop", action: #selector(showApp), keyEquivalent: "s")
+        let showItem = NSMenuItem(title: L10n.text("menu.show"), action: #selector(showApp), keyEquivalent: "s")
         showItem.target = self
         menu.addItem(showItem)
 
-        let quitItem = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: L10n.text("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
         return menu
     }()
