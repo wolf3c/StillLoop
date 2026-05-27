@@ -1,4 +1,4 @@
 interface:
   display_name: "StillLoop App Store Release"
-  short_description: "Package, upload, and submit StillLoop releases"
-  default_prompt: "Use $stillloop-app-store-release to package, upload, deliver, and submit a StillLoop Mac App Store release."
+  short_description: "Draft notes, package, upload, and submit StillLoop releases"
+  default_prompt: "Use $stillloop-app-store-release to draft release notes from recent commits, package, upload, deliver, and submit a StillLoop Mac App Store release."
