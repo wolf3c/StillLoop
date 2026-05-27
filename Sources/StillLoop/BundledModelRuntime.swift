@@ -202,7 +202,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging {
             "--parallel", String(spec.recommendedParallelSlots),
             "--n-gpu-layers", "99",
             "--cache-type-k", spec.recommendedCacheTypeK,
-            "--cache-type-v", spec.recommendedCacheTypeV
+            "--cache-type-v", spec.recommendedCacheTypeV,
+            "--mlock"
         ]
         if tuning.promptCacheEnabled {
             arguments.append(contentsOf: [

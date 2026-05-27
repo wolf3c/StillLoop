@@ -41,6 +41,7 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--n-gpu-layers", "99",
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
+            "--mlock",
             "--cache-prompt",
             "--cache-reuse", "64",
             "--cache-ram", "128",
@@ -99,6 +100,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--n-gpu-layers")! + 1], "99")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-k")! + 1], "q4_1")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")
+        XCTAssertTrue(arguments.contains("--mlock"))
         XCTAssertTrue(arguments.contains("--cache-prompt"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "64")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "128")
