@@ -20,6 +20,8 @@ Avoid relying on generated files, local IDE state, or machine-specific paths as 
 - Work only on files required for the current task. Do not modify, revert, reformat, stage, or clean up unrelated files.
 - The user may provide multiple requirements in one message. Unless there is an obvious dependency, decompose them and execute in parallel where safe, including using subagents for disjoint subtasks.
 - For independent subtasks, prefer dispatching them to separate subagents and merge only the results that do not overlap files or flow assumptions.
+- Start every functional adjustment from the relevant product documentation, so the intended behavior, user-facing contract, and code stay aligned throughout the task.
+- Reflect carefully on every requirement and proposed change before implementation. If requirements, existing product behavior, documentation, or technical constraints conflict, stop and confirm the tradeoff with the user before editing production code.
 - Before behavior changes, state the current behavior, target behavior, affected modules, risks, verification plan, and concise implementation plan.
 - Implement behavior changes with TDD: write or update a focused failing test first, confirm it fails for the expected reason, then make the smallest production change that turns it green.
 - Keep changes minimal and aligned with existing product semantics. Avoid opportunistic refactors and broad cleanup.
@@ -56,8 +58,10 @@ Add entries here only when a mistake reveals a reusable rule for future work.
 
 For every optimization or behavior-changing improvement, do the design work before editing production code:
 
+- Update or draft the relevant product documentation first, then implement code to match that documented behavior. If no durable product doc is needed, state why it is out of scope before editing code.
 - Identify current behavior, target behavior, affected modules, risks, and verification plan.
 - Check all relevant surfaces for the change: macOS app UI, persistence, background work, permissions, notifications, network calls, and tests. Mark any surface out of scope explicitly.
+- Re-check the request, current implementation, and documentation for contradictions before implementation. Confirm with the user when a conflict or ambiguous tradeoff appears.
 - Write a concise implementation plan before changing code.
 - Treat tests passing as insufficient by itself; confirm the implementation, docs, and verification all match the requested behavior.
 
