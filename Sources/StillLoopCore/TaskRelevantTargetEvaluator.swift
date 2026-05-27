@@ -3,7 +3,7 @@ import Foundation
 public enum TaskRelevantTargetMonitorAction: Equatable {
     case none
     case refresh(ActiveWorkTarget)
-    case judge(ActiveWorkTarget)
+    case collect(ActiveWorkTarget)
 }
 
 public struct TaskRelevantTargetMonitorState: Equatable {
@@ -13,7 +13,7 @@ public struct TaskRelevantTargetMonitorState: Equatable {
     private var observedSince: Date?
     private var inFlightTargetKeys: Set<String> = []
 
-    public init(stableDuration: TimeInterval = 5, judgmentExpiration: TimeInterval = 600) {
+    public init(stableDuration: TimeInterval = 5, judgmentExpiration: TimeInterval = 300) {
         self.stableDuration = stableDuration
         self.judgmentExpiration = judgmentExpiration
     }
@@ -44,7 +44,7 @@ public struct TaskRelevantTargetMonitorState: Equatable {
         else {
             return .none
         }
-        return .judge(target)
+        return .collect(target)
     }
 
     public mutating func markJudgmentStarted(for target: ActiveWorkTarget) {
@@ -72,18 +72,226 @@ public struct TaskRelevantTargetScreenshot: Equatable {
     }
 }
 
+public struct TaskRelevantTargetEvidence: Equatable {
+    public var target: ActiveWorkTarget
+    public var screenshot: TaskRelevantTargetScreenshot
+    public var capturedAt: Date
+
+    public init(
+        capturedAt: Date,
+        target: ActiveWorkTarget,
+        screenshot: TaskRelevantTargetScreenshot
+    ) {
+        self.target = target
+        self.screenshot = screenshot
+        self.capturedAt = capturedAt
+    }
+}
+
+public struct TaskRelevantTargetReadyEvidence: Equatable {
+    public var target: ActiveWorkTarget
+    public var evidence: [TaskRelevantTargetEvidence]
+    public var cumulativeForegroundSeconds: TimeInterval
+    public var evidenceSpanSeconds: TimeInterval
+    public var evidenceCount: Int { evidence.count }
+
+    public init(
+        target: ActiveWorkTarget,
+        evidence: [TaskRelevantTargetEvidence],
+        cumulativeForegroundSeconds: TimeInterval,
+        evidenceSpanSeconds: TimeInterval
+    ) {
+        self.target = target
+        self.evidence = evidence.sorted { $0.capturedAt < $1.capturedAt }
+        self.cumulativeForegroundSeconds = cumulativeForegroundSeconds
+        self.evidenceSpanSeconds = evidenceSpanSeconds
+    }
+}
+
+public struct TaskRelevantTargetEvidenceBuffer: Equatable {
+    public static let staleInterval: TimeInterval = 300
+    public static let readyForegroundDuration: TimeInterval = 30
+    public static let readyEvidenceSpan: TimeInterval = 20
+    public static let middleEvidenceOffset: TimeInterval = 15
+
+    public private(set) var target: ActiveWorkTarget
+    public private(set) var firstObservedAt: Date
+    public private(set) var lastObservedAt: Date
+    public private(set) var cumulativeForegroundSeconds: TimeInterval
+    private var firstEvidence: TaskRelevantTargetEvidence?
+    private var middleEvidence: TaskRelevantTargetEvidence?
+    private var latestEvidence: TaskRelevantTargetEvidence?
+
+    public init(target: ActiveWorkTarget, observedAt: Date) {
+        self.target = target
+        firstObservedAt = observedAt
+        lastObservedAt = observedAt
+        cumulativeForegroundSeconds = 0
+    }
+
+    public var evidence: [TaskRelevantTargetEvidence] {
+        var ordered: [TaskRelevantTargetEvidence] = []
+        for item in [firstEvidence, middleEvidence, latestEvidence].compactMap({ $0 }) {
+            guard !ordered.contains(where: { $0.capturedAt == item.capturedAt }) else { continue }
+            ordered.append(item)
+        }
+        return ordered.sorted { $0.capturedAt < $1.capturedAt }
+    }
+
+    public var evidenceCount: Int {
+        evidence.count
+    }
+
+    public var evidenceSpanSeconds: TimeInterval {
+        guard let first = evidence.first?.capturedAt,
+              let last = evidence.last?.capturedAt
+        else { return 0 }
+        return max(0, last.timeIntervalSince(first))
+    }
+
+    public func isStale(at date: Date) -> Bool {
+        date.timeIntervalSince(lastObservedAt) > Self.staleInterval
+    }
+
+    public mutating func record(
+        target newTarget: ActiveWorkTarget,
+        screenshot: TaskRelevantTargetScreenshot?,
+        at date: Date,
+        continuesPreviousObservation: Bool
+    ) {
+        if continuesPreviousObservation {
+            cumulativeForegroundSeconds += max(0, date.timeIntervalSince(lastObservedAt))
+        }
+        target = newTarget
+        lastObservedAt = date
+
+        guard let screenshot else { return }
+        let item = TaskRelevantTargetEvidence(
+            capturedAt: date,
+            target: newTarget,
+            screenshot: screenshot
+        )
+        if firstEvidence == nil {
+            firstEvidence = item
+        }
+        latestEvidence = item
+
+        if cumulativeForegroundSeconds >= Self.middleEvidenceOffset {
+            let oldDistance = middleEvidence.map {
+                abs($0.capturedAt.timeIntervalSince(firstObservedAt) - Self.middleEvidenceOffset)
+            } ?? .greatestFiniteMagnitude
+            let newDistance = abs(date.timeIntervalSince(firstObservedAt) - Self.middleEvidenceOffset)
+            if newDistance < oldDistance {
+                middleEvidence = item
+            }
+        }
+    }
+
+    public var readyEvidence: TaskRelevantTargetReadyEvidence? {
+        let orderedEvidence = evidence
+        guard cumulativeForegroundSeconds >= Self.readyForegroundDuration,
+              orderedEvidence.count >= 3,
+              evidenceSpanSeconds >= Self.readyEvidenceSpan
+        else { return nil }
+        return TaskRelevantTargetReadyEvidence(
+            target: target,
+            evidence: orderedEvidence,
+            cumulativeForegroundSeconds: cumulativeForegroundSeconds,
+            evidenceSpanSeconds: evidenceSpanSeconds
+        )
+    }
+}
+
+public struct TaskRelevantTargetEvidenceBufferRecordResult: Equatable {
+    public var buffer: TaskRelevantTargetEvidenceBuffer?
+    public var readyEvidence: TaskRelevantTargetReadyEvidence?
+}
+
+public struct TaskRelevantTargetEvidenceBufferStore: Equatable {
+    private var buffers: [String: TaskRelevantTargetEvidenceBuffer] = [:]
+    private var currentTargetKey: String?
+
+    public init() {}
+
+    public mutating func record(
+        target: ActiveWorkTarget,
+        screenshot: TaskRelevantTargetScreenshot?,
+        at date: Date
+    ) -> TaskRelevantTargetEvidenceBufferRecordResult {
+        pruneStaleBuffers(at: date)
+        let key = target.identityKey
+        let continuesPreviousObservation = currentTargetKey == key
+        var buffer = buffers[key] ?? TaskRelevantTargetEvidenceBuffer(target: target, observedAt: date)
+        if buffer.isStale(at: date) {
+            buffer = TaskRelevantTargetEvidenceBuffer(target: target, observedAt: date)
+        }
+        buffer.record(
+            target: target,
+            screenshot: screenshot,
+            at: date,
+            continuesPreviousObservation: continuesPreviousObservation
+        )
+        buffers[key] = buffer
+        currentTargetKey = key
+        return TaskRelevantTargetEvidenceBufferRecordResult(
+            buffer: buffer,
+            readyEvidence: buffer.readyEvidence
+        )
+    }
+
+    public mutating func clearBuffer(for target: ActiveWorkTarget) {
+        buffers.removeValue(forKey: target.identityKey)
+        if currentTargetKey == target.identityKey {
+            currentTargetKey = nil
+        }
+    }
+
+    public func buffer(for target: ActiveWorkTarget) -> TaskRelevantTargetEvidenceBuffer? {
+        buffers[target.identityKey]
+    }
+
+    public mutating func pauseCurrentObservation() {
+        currentTargetKey = nil
+    }
+
+    public mutating func reset() {
+        buffers.removeAll()
+        currentTargetKey = nil
+    }
+
+    private mutating func pruneStaleBuffers(at date: Date) {
+        buffers = buffers.filter { !$0.value.isStale(at: date) }
+        if let currentTargetKey, buffers[currentTargetKey] == nil {
+            self.currentTargetKey = nil
+        }
+    }
+}
+
+public enum TaskRelevantTargetEvaluationError: Error, Equatable {
+    case insufficientEvidence
+}
+
 public struct TaskRelevantTargetEvaluationResult: Equatable {
     public var alignment: TaskTargetAlignment
     public var reason: String
+    public var evidenceCount: Int?
+    public var evidenceSpanSeconds: TimeInterval?
+    public var cumulativeForegroundSeconds: TimeInterval?
     public var requestDebugMetrics: LLMRequestDebugMetrics?
 
     public init(
         alignment: TaskTargetAlignment,
         reason: String,
+        evidenceCount: Int? = nil,
+        evidenceSpanSeconds: TimeInterval? = nil,
+        cumulativeForegroundSeconds: TimeInterval? = nil,
         requestDebugMetrics: LLMRequestDebugMetrics? = nil
     ) {
         self.alignment = alignment
         self.reason = reason
+        self.evidenceCount = evidenceCount
+        self.evidenceSpanSeconds = evidenceSpanSeconds
+        self.cumulativeForegroundSeconds = cumulativeForegroundSeconds
         self.requestDebugMetrics = requestDebugMetrics
     }
 }
@@ -104,9 +312,23 @@ public struct TaskRelevantTargetEvaluator {
     public func evaluate(
         task: String,
         target: ActiveWorkTarget,
-        screenshot: TaskRelevantTargetScreenshot?
+        evidence: [TaskRelevantTargetEvidence],
+        cumulativeForegroundSeconds: TimeInterval
     ) async throws -> TaskRelevantTargetEvaluationResult {
-        let messages = messages(task: task, target: target, screenshot: screenshot)
+        let orderedEvidence = evidence.sorted { $0.capturedAt < $1.capturedAt }
+        guard orderedEvidence.count >= 3 else {
+            throw TaskRelevantTargetEvaluationError.insufficientEvidence
+        }
+        let evidenceSpanSeconds = max(
+            0,
+            (orderedEvidence.last?.capturedAt ?? Date()).timeIntervalSince(orderedEvidence.first?.capturedAt ?? Date())
+        )
+        let messages = messages(
+            task: task,
+            target: target,
+            evidence: orderedEvidence,
+            cumulativeForegroundSeconds: cumulativeForegroundSeconds
+        )
         let inputTextCharacterCount = Self.inputTextCharacterCount(in: messages)
         let imageCount = Self.imageCount(in: messages)
         let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
@@ -129,8 +351,11 @@ public struct TaskRelevantTargetEvaluator {
         return TaskRelevantTargetEvaluationResult(
             alignment: decoded.alignment,
             reason: decoded.reason.trimmingCharacters(in: .whitespacesAndNewlines),
+            evidenceCount: orderedEvidence.count,
+            evidenceSpanSeconds: evidenceSpanSeconds,
+            cumulativeForegroundSeconds: cumulativeForegroundSeconds,
             requestDebugMetrics: LLMRequestDebugMetrics(
-                visualCaptureCount: screenshot == nil ? 0 : 1,
+                visualCaptureCount: orderedEvidence.count,
                 imageCount: imageCount,
                 textSnapshotCount: 0,
                 previousEventCount: 0,
@@ -148,13 +373,21 @@ public struct TaskRelevantTargetEvaluator {
     private func messages(
         task: String,
         target: ActiveWorkTarget,
-        screenshot: TaskRelevantTargetScreenshot?
+        evidence: [TaskRelevantTargetEvidence],
+        cumulativeForegroundSeconds: TimeInterval
     ) -> [LLMMessage] {
         var content: [LLMMessage.Content] = [
-            .text(targetPromptText(task: task, target: target, screenshot: screenshot))
+            .text(
+                targetPromptText(
+                    task: task,
+                    target: target,
+                    evidence: evidence,
+                    cumulativeForegroundSeconds: cumulativeForegroundSeconds
+                )
+            )
         ]
-        if let screenshot {
-            content.append(.image(mimeType: screenshot.mimeType, data: screenshot.data))
+        for item in evidence {
+            content.append(.image(mimeType: item.screenshot.mimeType, data: item.screenshot.data))
         }
         return [
             LLMMessage(role: .system, content: [.text(systemPrompt)]),
@@ -164,12 +397,12 @@ public struct TaskRelevantTargetEvaluator {
 
     private var systemPrompt: String {
         """
-        You judge whether one foreground app/window/browser target belongs to the user's current task.
-        Use only the current task, app/window/browser metadata, Space metadata, and the attached screenshot.
+        You judge whether one foreground app/window/browser target belongs to the user's current task across multiple time-ordered evidence frames.
+        Use only the current task, app/window/browser metadata, Space metadata, cumulative foreground duration, observation span, and attached screenshots.
         Do not judge user presence or task progress.
         Do not quote or transcribe private visible text verbatim.
-        A browser/page/window title that literally matches the current task title is strong alignment evidence. Treat it as aligned when the screenshot does not contradict it.
-        StillLoop control, debug, or reminder windows are not task content unless the current task explicitly says to use StillLoop.
+        Treat the frames as evidence of sustained or cumulative use of the same target.
+        Prefer unclear when the evidence is too thin or ambiguous after considering all frames.
 
         alignment:
         - aligned: the target directly supports the current task.
@@ -184,14 +417,21 @@ public struct TaskRelevantTargetEvaluator {
     private func targetPromptText(
         task: String,
         target: ActiveWorkTarget,
-        screenshot: TaskRelevantTargetScreenshot?
+        evidence: [TaskRelevantTargetEvidence],
+        cumulativeForegroundSeconds: TimeInterval
     ) -> String {
+        let evidenceSpanSeconds = max(
+            0,
+            (evidence.last?.capturedAt ?? Date()).timeIntervalSince(evidence.first?.capturedAt ?? Date())
+        )
         var lines = [
             "Current task:",
             task,
             "",
             "Foreground target:",
-            "app: \(target.appName)"
+            "app: \(target.appName)",
+            "cumulativeForegroundSeconds: \(Self.roundedSecondsText(cumulativeForegroundSeconds))",
+            "evidenceSpanSeconds: \(Self.roundedSecondsText(evidenceSpanSeconds))"
         ]
         if let bundleIdentifier = target.bundleIdentifier {
             lines.append("bundleIdentifier: \(bundleIdentifier)")
@@ -211,12 +451,44 @@ public struct TaskRelevantTargetEvaluator {
         if let spaceIdentifier = target.spaceIdentifier {
             lines.append("space: \(spaceIdentifier)")
         }
-        if let screenshot {
-            lines.append("screenshot: \(screenshot.width)x\(screenshot.height),\(screenshot.compressedBytes)B")
-        } else {
-            lines.append("screenshot: unavailable")
+        for (index, item) in evidence.enumerated() {
+            let evidenceTarget = item.target
+            lines.append("")
+            lines.append("evidence[\(index + 1)]")
+            lines.append("time: \(Self.formattedPromptDate(item.capturedAt))")
+            lines.append("app: \(evidenceTarget.appName)")
+            if let bundleIdentifier = evidenceTarget.bundleIdentifier {
+                lines.append("bundleIdentifier: \(bundleIdentifier)")
+            }
+            if let windowTitle = evidenceTarget.windowTitle {
+                lines.append("window: \(windowTitle)")
+            }
+            if let browserTitle = evidenceTarget.browserTitle {
+                lines.append("browserTitle: \(browserTitle)")
+            }
+            if let browserURL = evidenceTarget.browserURL {
+                lines.append("browserURL: \(browserURL)")
+            }
+            if let windowNumber = evidenceTarget.windowNumber {
+                lines.append("windowNumber: \(windowNumber)")
+            }
+            if let spaceIdentifier = evidenceTarget.spaceIdentifier {
+                lines.append("space: \(spaceIdentifier)")
+            }
+            lines.append("screenshot: \(item.screenshot.width)x\(item.screenshot.height),\(item.screenshot.compressedBytes)B")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private static func formattedPromptDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: date)
+    }
+
+    private static func roundedSecondsText(_ value: TimeInterval) -> String {
+        "\(Int(value.rounded()))"
     }
 
     private static func inputText(in messages: [LLMMessage]) -> String {

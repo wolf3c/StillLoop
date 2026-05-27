@@ -171,7 +171,15 @@ final class SessionStoreTests: XCTestCase {
                 AppUsageInterval(startedAt: Date(timeIntervalSince1970: 11), endedAt: Date(timeIntervalSince1970: 30), target: target)
             ],
             targetJudgments: [
-                TaskTargetJudgment(target: target, alignment: .aligned, reason: "Gmail 匹配任务。", judgedAt: Date(timeIntervalSince1970: 16))
+                TaskTargetJudgment(
+                    target: target,
+                    alignment: .aligned,
+                    reason: "Gmail 匹配任务。",
+                    judgedAt: Date(timeIntervalSince1970: 16),
+                    evidenceCount: 3,
+                    evidenceSpanSeconds: 35,
+                    cumulativeForegroundSeconds: 30
+                )
             ],
             taskRelevantTargets: [
                 TaskRelevantTarget(target: target, reason: "Gmail 匹配任务。", lastAlignedAt: Date(timeIntervalSince1970: 16), lastForegroundAt: Date(timeIntervalSince1970: 30))
@@ -183,8 +191,38 @@ final class SessionStoreTests: XCTestCase {
         let loaded = try XCTUnwrap(try store.loadSessions().first)
         XCTAssertEqual(loaded.appUsageIntervals, session.appUsageIntervals)
         XCTAssertEqual(loaded.targetJudgments, session.targetJudgments)
+        XCTAssertEqual(loaded.targetJudgments.first?.evidenceCount, 3)
+        XCTAssertEqual(loaded.targetJudgments.first?.evidenceSpanSeconds, 35)
+        XCTAssertEqual(loaded.targetJudgments.first?.cumulativeForegroundSeconds, 30)
         XCTAssertEqual(loaded.taskRelevantTargets, session.taskRelevantTargets)
         XCTAssertEqual(loaded.appUsageIntervals.first?.target.browserURL, "https://mail.google.com/mail/u/0/")
+    }
+
+    func testDecodesLegacyTargetJudgmentWithoutEvidenceSummary() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = Data("""
+        {
+          "id": "14141414-aaaa-4aaa-8aaa-141414141414",
+          "target": {
+            "id": "15151515-aaaa-4aaa-8aaa-151515151515",
+            "appName": "Notes",
+            "bundleIdentifier": "com.example.Notes",
+            "processIdentifier": 99,
+            "windowTitle": "Working Draft",
+            "windowNumber": 200
+          },
+          "alignment": "aligned",
+          "reason": "相关。",
+          "judgedAt": "1970-01-01T00:00:10Z"
+        }
+        """.utf8)
+
+        let judgment = try decoder.decode(TaskTargetJudgment.self, from: data)
+
+        XCTAssertNil(judgment.evidenceCount)
+        XCTAssertNil(judgment.evidenceSpanSeconds)
+        XCTAssertNil(judgment.cumulativeForegroundSeconds)
     }
 
     func testDecodesLegacySessionWithoutAppUsageFields() throws {

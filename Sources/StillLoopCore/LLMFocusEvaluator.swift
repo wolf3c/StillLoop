@@ -2107,22 +2107,23 @@ public struct LLMFocusEvaluator {
         for targetSnapshots: [PromptTargetSnapshot],
         targetJudgments: [TaskTargetJudgment]
     ) -> String? {
-        guard !targetSnapshots.isEmpty, !targetJudgments.isEmpty else { return nil }
+        let alignedTargetJudgments = targetJudgments.filter { $0.alignment == .aligned }
+        guard !targetSnapshots.isEmpty, !alignedTargetJudgments.isEmpty else { return nil }
         let currentTargets = targetSnapshots.map { activeWorkTarget(from: $0.snapshot) }
         let exactKeys = Set(currentTargets.map(\.identityKey))
         var selected: [TaskTargetJudgment] = []
         appendTargetJudgments(
-            targetJudgments.filter { exactKeys.contains($0.target.identityKey) },
+            alignedTargetJudgments.filter { exactKeys.contains($0.target.identityKey) },
             to: &selected
         )
         appendTargetJudgments(
-            targetJudgments.filter { judgment in
+            alignedTargetJudgments.filter { judgment in
                 !exactKeys.contains(judgment.target.identityKey)
                     && currentTargets.contains { isRelated(judgment.target, to: $0) }
             },
             to: &selected
         )
-        appendTargetJudgments(targetJudgments, to: &selected)
+        appendTargetJudgments(alignedTargetJudgments, to: &selected)
         guard !selected.isEmpty else { return nil }
 
         var lines = [

@@ -2,36 +2,38 @@ import XCTest
 @testable import StillLoopCore
 
 final class TaskRelevantTargetEvaluatorTests: XCTestCase {
-    func testEvaluatorSendsTaskTargetMetadataAndScreenshotToStructuredEngine() async throws {
-        let engine = RecordingStructuredEngine(response: #"{"alignment":"aligned","reason":"Gmail 收件箱匹配任务。"}"#)
+    func testEvaluatorSendsTaskTargetMetadataAndOrderedEvidenceToStructuredEngine() async throws {
+        let engine = RecordingStructuredEngine(response: #"{"alignment":"aligned","reason":"多帧证据显示目标支持当前任务。"}"#)
         let evaluator = TaskRelevantTargetEvaluator(engine: engine)
         let target = ActiveWorkTarget(
-            appName: "Google Chrome",
-            bundleIdentifier: "com.google.Chrome",
+            appName: "Drafting App",
+            bundleIdentifier: "com.example.DraftingApp",
             processIdentifier: 1200,
-            windowTitle: "Inbox",
-            browserTitle: "Inbox (3) - Gmail",
-            browserURL: "https://mail.google.com/mail/u/0/#inbox?token=secret",
+            windowTitle: "Working Draft",
+            browserTitle: "Working Draft",
+            browserURL: "https://example.com/workspace?token=secret",
             windowNumber: 8801,
             spaceIdentifier: "space-1"
         )
 
         let result = try await evaluator.evaluate(
-            task: "处理 Gmail 未读邮件",
+            task: "整理今日计划",
             target: target,
-            screenshot: TaskRelevantTargetScreenshot(
-                width: 1280,
-                height: 720,
-                compressedBytes: 12_345,
-                mimeType: "image/jpeg",
-                data: Data([0xFF, 0xD8])
-            )
+            evidence: [
+                makeEvidence(at: 10, data: [1], target: target),
+                makeEvidence(at: 25, data: [2], target: target),
+                makeEvidence(at: 45, data: [3], target: target)
+            ],
+            cumulativeForegroundSeconds: 35
         )
 
         XCTAssertEqual(result.alignment, .aligned)
-        XCTAssertEqual(result.reason, "Gmail 收件箱匹配任务。")
-        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 1)
-        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 1)
+        XCTAssertEqual(result.reason, "多帧证据显示目标支持当前任务。")
+        XCTAssertEqual(result.evidenceCount, 3)
+        XCTAssertEqual(result.evidenceSpanSeconds, 35)
+        XCTAssertEqual(result.cumulativeForegroundSeconds, 35)
+        XCTAssertEqual(result.requestDebugMetrics?.visualCaptureCount, 3)
+        XCTAssertEqual(result.requestDebugMetrics?.imageCount, 3)
         XCTAssertEqual(result.requestDebugMetrics?.textSnapshotCount, 0)
         XCTAssertEqual(result.requestDebugMetrics?.previousEventCount, 0)
         XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 88_000)
@@ -47,17 +49,75 @@ final class TaskRelevantTargetEvaluatorTests: XCTestCase {
             }
             return nil
         }.joined(separator: "\n")
-        XCTAssertTrue(promptText.contains("Current task:\n处理 Gmail 未读邮件"))
-        XCTAssertTrue(promptText.contains("app: Google Chrome"))
-        XCTAssertTrue(promptText.contains("window: Inbox"))
-        XCTAssertTrue(promptText.contains("browserTitle: Inbox (3) - Gmail"))
-        XCTAssertTrue(promptText.contains("browserURL: https://mail.google.com/mail/u/0/"))
+        XCTAssertTrue(promptText.contains("Current task:\n整理今日计划"))
+        XCTAssertTrue(promptText.contains("Foreground target:"))
+        XCTAssertTrue(promptText.contains("app: Drafting App"))
+        XCTAssertTrue(promptText.contains("window: Working Draft"))
+        XCTAssertTrue(promptText.contains("browserTitle: Working Draft"))
+        XCTAssertTrue(promptText.contains("browserURL: https://example.com/workspace"))
         XCTAssertFalse(promptText.contains("token=secret"))
         XCTAssertTrue(promptText.contains("space: space-1"))
-        XCTAssertTrue(promptText.contains("screenshot: 1280x720,12345B"))
-        XCTAssertTrue(promptText.contains("A browser/page/window title that literally matches the current task title is strong alignment evidence."))
-        XCTAssertTrue(promptText.contains("StillLoop control, debug, or reminder windows are not task content unless the current task explicitly says to use StillLoop."))
-        XCTAssertEqual(engine.imageCount, 1)
+        XCTAssertTrue(promptText.contains("evidence[1]"))
+        XCTAssertTrue(promptText.contains("evidence[2]"))
+        XCTAssertTrue(promptText.contains("evidence[3]"))
+        XCTAssertTrue(promptText.contains("cumulativeForegroundSeconds: 35"))
+        XCTAssertTrue(promptText.contains("screenshot: 1280x720,12001B"))
+        XCTAssertTrue(promptText.contains("screenshot: 1280x720,12002B"))
+        XCTAssertTrue(promptText.contains("screenshot: 1280x720,12003B"))
+        let systemPrompt = engine.messages.first?.textContent ?? ""
+        XCTAssertFalse(systemPrompt.contains("Gmail"))
+        XCTAssertFalse(systemPrompt.contains("WorkFlowy"))
+        XCTAssertFalse(systemPrompt.contains("StillLoop"))
+        XCTAssertFalse(systemPrompt.contains("日记"))
+        XCTAssertEqual(engine.imageCount, 3)
+    }
+
+    func testEvaluatorRejectsInsufficientEvidenceBeforeCallingEngine() async throws {
+        let engine = RecordingStructuredEngine(response: #"{"alignment":"aligned","reason":"unused"}"#)
+        let evaluator = TaskRelevantTargetEvaluator(engine: engine)
+        let target = ActiveWorkTarget(
+            appName: "Drafting App",
+            bundleIdentifier: "com.example.DraftingApp",
+            processIdentifier: 1200,
+            windowTitle: "Working Draft",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 8801,
+            spaceIdentifier: nil
+        )
+
+        do {
+            _ = try await evaluator.evaluate(
+                task: "整理今日计划",
+                target: target,
+                evidence: [
+                    makeEvidence(at: 10, data: [1], target: target),
+                    makeEvidence(at: 20, data: [2], target: target)
+                ],
+                cumulativeForegroundSeconds: 20
+            )
+            XCTFail("Expected insufficient evidence to fail before calling the LLM")
+        } catch TaskRelevantTargetEvaluationError.insufficientEvidence {
+            XCTAssertTrue(engine.messages.isEmpty)
+        }
+    }
+
+    private func makeEvidence(
+        at seconds: TimeInterval,
+        data: [UInt8],
+        target: ActiveWorkTarget
+    ) -> TaskRelevantTargetEvidence {
+        TaskRelevantTargetEvidence(
+            capturedAt: Date(timeIntervalSince1970: seconds),
+            target: target,
+            screenshot: TaskRelevantTargetScreenshot(
+                width: 1280,
+                height: 720,
+                compressedBytes: 12_000 + (data.first.map(Int.init) ?? 0),
+                mimeType: "image/jpeg",
+                data: Data(data)
+            )
+        )
     }
 }
 
@@ -109,6 +169,17 @@ private final class RecordingStructuredEngine: StructuredLocalLLMEngine, LLMRequ
 
     func inputTextTokenCount(for text: String) async -> Int? {
         321
+    }
+}
+
+private extension LLMMessage {
+    var textContent: String {
+        content.compactMap { content in
+            if case .text(let text) = content {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n")
     }
 }
 

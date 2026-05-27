@@ -267,6 +267,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var hasBypassedInitialSetup = false
     @Published private(set) var isCurrentSessionUsingRuleBasedModelFallback = false
     let captureCadenceSeconds: TimeInterval = 5
+    let targetMonitorCadenceSeconds: TimeInterval = 5
     let targetEvaluationCadenceSeconds: TimeInterval = 15
     let normalEvaluationCooldownSeconds: TimeInterval = 10
     let powerSavingEvaluationCooldownSeconds: TimeInterval = 60
@@ -314,6 +315,7 @@ final class AppModel: ObservableObject {
     private var systemSuspendedAt: Date?
     private var accumulatedSystemSuspendedDuration: TimeInterval = 0
     private var targetMonitorState = TaskRelevantTargetMonitorState()
+    private var targetEvidenceBuffers = TaskRelevantTargetEvidenceBufferStore()
     private var targetJudgmentInFlightTarget: ActiveWorkTarget?
     var startPermissionDecisionOverride: StartPermissionDecision?
 
@@ -2083,6 +2085,7 @@ final class AppModel: ObservableObject {
             targetMonitorState.markJudgmentFinished(for: targetJudgmentInFlightTarget)
         }
         targetJudgmentInFlightTarget = nil
+        targetEvidenceBuffers.reset()
     }
 
     func stopBundledModelRuntime() {
@@ -2127,12 +2130,13 @@ final class AppModel: ObservableObject {
     private func startTargetMonitorLoop() {
         targetMonitorTask?.cancel()
         targetMonitorState = TaskRelevantTargetMonitorState()
+        targetEvidenceBuffers.reset()
         targetMonitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.pollActiveWorkTarget()
                 guard !Task.isCancelled else { return }
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(self.targetMonitorCadenceSeconds))
             }
         }
     }
@@ -2145,8 +2149,24 @@ final class AppModel: ObservableObject {
         let now = Date()
         let sessionID = session.id
         recordActiveWorkTarget(capture.target, at: now)
-        guard capture.target.isTaskRelevantCandidate else { return }
+        guard capture.target.isTaskRelevantCandidate else {
+            targetEvidenceBuffers.pauseCurrentObservation()
+            return
+        }
         guard !Task.isCancelled, status == .running, currentSession?.id == sessionID, let latestSession = currentSession else { return }
+        let shouldCollectEvidence = shouldCollectTargetEvidence(for: capture.target, at: now, session: latestSession)
+        let evidenceResult: TaskRelevantTargetEvidenceBufferRecordResult?
+        if shouldCollectEvidence {
+            evidenceResult = targetEvidenceBuffers.record(
+                target: capture.target,
+                screenshot: capture.screenshot,
+                at: now
+            )
+        } else {
+            targetEvidenceBuffers.clearBuffer(for: capture.target)
+            targetEvidenceBuffers.pauseCurrentObservation()
+            evidenceResult = nil
+        }
         let action = targetMonitorState.observe(target: capture.target, at: now, session: latestSession)
         switch action {
         case .none:
@@ -2155,14 +2175,19 @@ final class AppModel: ObservableObject {
             guard var session = currentSession else { return }
             session.refreshTaskRelevantTarget(target, foregroundAt: now)
             currentSession = session
-        case .judge(let target):
+        case .collect(let target):
+            guard let readyEvidence = evidenceResult?.readyEvidence else { return }
             startTaskRelevantTargetJudgment(
                 target: target,
-                screenshot: capture.screenshot,
+                readyEvidence: readyEvidence,
                 foregroundAt: now,
                 sessionID: sessionID
             )
         }
+    }
+
+    func shouldCollectTargetEvidence(for target: ActiveWorkTarget, at date: Date, session: FocusSession) -> Bool {
+        session.shouldJudgeTarget(target, at: date, expiration: targetMonitorState.judgmentExpiration)
     }
 
     func recordActiveWorkTarget(_ target: ActiveWorkTarget, at date: Date) {
@@ -2193,7 +2218,7 @@ final class AppModel: ObservableObject {
 
     private func startTaskRelevantTargetJudgment(
         target: ActiveWorkTarget,
-        screenshot: TaskRelevantTargetScreenshot?,
+        readyEvidence: TaskRelevantTargetReadyEvidence,
         foregroundAt: Date,
         sessionID: UUID
     ) {
@@ -2206,7 +2231,7 @@ final class AppModel: ObservableObject {
         targetJudgmentTask = Task { [weak self] in
             await self?.runTaskRelevantTargetJudgment(
                 target: target,
-                screenshot: screenshot,
+                readyEvidence: readyEvidence,
                 foregroundAt: foregroundAt,
                 sessionID: sessionID
             )
@@ -2215,12 +2240,13 @@ final class AppModel: ObservableObject {
 
     private func runTaskRelevantTargetJudgment(
         target: ActiveWorkTarget,
-        screenshot: TaskRelevantTargetScreenshot?,
+        readyEvidence: TaskRelevantTargetReadyEvidence,
         foregroundAt: Date,
         sessionID: UUID
     ) async {
         defer {
             targetMonitorState.markJudgmentFinished(for: target)
+            targetEvidenceBuffers.clearBuffer(for: target)
             if targetJudgmentInFlightTarget?.identityKey == target.identityKey {
                 targetJudgmentInFlightTarget = nil
                 targetJudgmentTask = nil
@@ -2234,7 +2260,8 @@ final class AppModel: ObservableObject {
             let result = try await TaskRelevantTargetEvaluator(engine: engine).evaluate(
                 task: currentSession?.task ?? "",
                 target: target,
-                screenshot: screenshot
+                evidence: readyEvidence.evidence,
+                cumulativeForegroundSeconds: readyEvidence.cumulativeForegroundSeconds
             )
             guard !Task.isCancelled,
                   status == .running,
@@ -2246,7 +2273,10 @@ final class AppModel: ObservableObject {
                 alignment: result.alignment,
                 reason: result.reason,
                 judgedAt: Date(),
-                foregroundAt: foregroundAt
+                foregroundAt: foregroundAt,
+                evidenceCount: result.evidenceCount,
+                evidenceSpanSeconds: result.evidenceSpanSeconds,
+                cumulativeForegroundSeconds: result.cumulativeForegroundSeconds
             )
             currentSession = session
             diagnosticLogger.record(
@@ -3023,6 +3053,15 @@ final class AppModel: ObservableObject {
             "alignment": .string(result.alignment.rawValue),
             "reason": .string(result.reason)
         ]
+        if let evidenceCount = result.evidenceCount {
+            fields["targetEvidenceCount"] = .int(evidenceCount)
+        }
+        if let evidenceSpanSeconds = result.evidenceSpanSeconds {
+            fields["targetEvidenceSpanSeconds"] = .int(Int(evidenceSpanSeconds.rounded()))
+        }
+        if let cumulativeForegroundSeconds = result.cumulativeForegroundSeconds {
+            fields["targetCumulativeForegroundSeconds"] = .int(Int(cumulativeForegroundSeconds.rounded()))
+        }
         fields.merge(
             Self.llmDiagnosticFields(
                 from: result.requestDebugMetrics,

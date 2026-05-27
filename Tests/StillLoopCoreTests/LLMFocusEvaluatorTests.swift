@@ -452,7 +452,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(userMessages[2].content.containsImageData(Data([10, 20, 30])))
     }
 
-    func testTaskAlignmentPromptIncludesAllTargetJudgmentContextEntries() async throws {
+    func testTaskAlignmentPromptIncludesOnlyAlignedTargetJudgmentContextEntries() async throws {
         let presenceEngine = StructuredStubEngine(response: """
         {"presence":"present","engagement":"engaged","reason":"用户在场。"}
         """)
@@ -512,9 +512,11 @@ final class LLMFocusEvaluatorTests: XCTestCase {
 
         let prompt = taskEngine.flattenedPrompt
         XCTAssertTrue(prompt.contains("judgment[1]"))
-        XCTAssertTrue(prompt.contains("judgment[4]"))
         XCTAssertTrue(prompt.contains("判断 1"))
-        XCTAssertTrue(prompt.contains("判断 4"))
+        XCTAssertFalse(prompt.contains("judgment[2]"))
+        XCTAssertFalse(prompt.contains("判断 2"))
+        XCTAssertFalse(prompt.contains("判断 3"))
+        XCTAssertFalse(prompt.contains("判断 4"))
     }
 
     func testTaskProgressPromptOrdersTaskThenSelectedScreenshotMetadataAndImages() async throws {
@@ -622,7 +624,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.responseChars, 0)
     }
 
-    func testTaskAlignmentPromptIncludesMatchingTargetJudgmentAsContextOnly() async throws {
+    func testTaskAlignmentPromptOmitsMatchingUnalignedTargetJudgmentContext() async throws {
         let presenceEngine = StructuredStubEngine(response: """
         {"presence":"present","engagement":"engaged","reason":"用户在场。"}
         """)
@@ -679,11 +681,9 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         )
 
         let prompt = taskEngine.flattenedPrompt
-        XCTAssertTrue(prompt.contains("Target judgment context"))
-        XCTAssertTrue(prompt.contains("context only"))
-        XCTAssertTrue(prompt.contains("主评估仍以当前截图和当前 metadata 为准"))
-        XCTAssertTrue(prompt.contains("alignment: unaligned"))
-        XCTAssertTrue(prompt.contains("独立判断认为当前目标不支持阅读任务。"))
+        XCTAssertFalse(prompt.contains("Target judgment context"))
+        XCTAssertFalse(prompt.contains("alignment: unaligned"))
+        XCTAssertFalse(prompt.contains("独立判断认为当前目标不支持阅读任务。"))
         XCTAssertTrue(prompt.contains("https://cn.nytimes.com/business/20260520/ai-anxiety/"))
         XCTAssertFalse(prompt.contains("utm_source"))
         XCTAssertFalse(prompt.contains("#comments"))

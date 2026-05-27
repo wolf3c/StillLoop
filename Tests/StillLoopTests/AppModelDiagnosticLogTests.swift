@@ -184,7 +184,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
-    func testBundledEvaluationPassesTargetJudgmentsToAlignmentPrompt() async throws {
+    func testBundledEvaluationOmitsUnalignedTargetJudgmentsFromAlignmentPrompt() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         var engines: [SuccessfulDiagnosticLLMEngine] = []
@@ -239,8 +239,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         )
 
         let alignmentEngine = try XCTUnwrap(engines.dropFirst().first)
-        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("Target judgment context"))
-        XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("独立判断认为 Accio 页面与阅读任务不匹配。"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("Target judgment context"))
+        XCTAssertFalse(alignmentEngine.flattenedPrompt.contains("独立判断认为 Accio 页面与阅读任务不匹配。"))
     }
 
     func testSuccessfulBundledModelWritesProgressFailureDiagnosticWhenOnlyProgressFails() async throws {
@@ -292,9 +292,12 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let result = TaskRelevantTargetEvaluationResult(
             alignment: .aligned,
             reason: "目标匹配当前任务。",
+            evidenceCount: 3,
+            evidenceSpanSeconds: 35,
+            cumulativeForegroundSeconds: 30,
             requestDebugMetrics: LLMRequestDebugMetrics(
-                visualCaptureCount: 1,
-                imageCount: 1,
+                visualCaptureCount: 3,
+                imageCount: 3,
                 textSnapshotCount: 0,
                 previousEventCount: 0,
                 payloadBytes: 900,
@@ -323,6 +326,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(fields["target"], .string("Codex · StillLoop"))
         XCTAssertEqual(fields["alignment"], .string("aligned"))
         XCTAssertEqual(fields["reason"], .string("目标匹配当前任务。"))
+        XCTAssertEqual(fields["targetEvidenceCount"], .int(3))
+        XCTAssertEqual(fields["targetEvidenceSpanSeconds"], .int(35))
+        XCTAssertEqual(fields["targetCumulativeForegroundSeconds"], .int(30))
+        XCTAssertEqual(fields["targetLLMVisualCaptureCount"], .int(3))
+        XCTAssertEqual(fields["targetLLMImageCount"], .int(3))
         XCTAssertEqual(fields["targetLLMPayloadBytes"], .int(900))
         XCTAssertEqual(fields["targetLLMInputTextTokenCount"], .int(75))
         XCTAssertEqual(fields["targetLLMPromptN"], .int(275))

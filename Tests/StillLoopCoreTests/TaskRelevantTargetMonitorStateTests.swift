@@ -2,21 +2,27 @@ import XCTest
 @testable import StillLoopCore
 
 final class TaskRelevantTargetMonitorStateTests: XCTestCase {
-    func testMonitorWaitsForStableTargetThenRequestsJudgmentOnlyOnceUntilCompleted() {
+    func testDefaultJudgmentExpirationIsFiveMinutes() {
+        let state = TaskRelevantTargetMonitorState()
+
+        XCTAssertEqual(state.judgmentExpiration, 300)
+    }
+
+    func testMonitorWaitsForStableTargetThenRequestsCollectionOnlyOnceUntilCompleted() {
         var state = TaskRelevantTargetMonitorState()
         let target = makeTarget(windowNumber: 11)
         let session = makeSession()
 
         XCTAssertEqual(state.observe(target: target, at: date(0), session: session), .none)
         XCTAssertEqual(state.observe(target: target, at: date(4.9), session: session), .none)
-        XCTAssertEqual(state.observe(target: target, at: date(5.1), session: session), .judge(target))
+        XCTAssertEqual(state.observe(target: target, at: date(5.1), session: session), .collect(target))
 
         state.markJudgmentStarted(for: target)
 
         XCTAssertEqual(state.observe(target: target, at: date(6), session: session), .none)
     }
 
-    func testMonitorRejudgesSameTargetAfterTenMinuteExpiration() {
+    func testMonitorRejudgesSameTargetAfterFiveMinuteExpiration() {
         var state = TaskRelevantTargetMonitorState()
         let target = makeTarget(windowNumber: 12)
         var session = makeSession()
@@ -28,9 +34,9 @@ final class TaskRelevantTargetMonitorStateTests: XCTestCase {
             foregroundAt: date(5)
         )
 
-        XCTAssertEqual(state.observe(target: target, at: date(600), session: session), .refresh(target))
-        XCTAssertEqual(state.observe(target: target, at: date(609), session: session), .none)
-        XCTAssertEqual(state.observe(target: target, at: date(611), session: session), .judge(target))
+        XCTAssertEqual(state.observe(target: target, at: date(300), session: session), .refresh(target))
+        XCTAssertEqual(state.observe(target: target, at: date(309), session: session), .none)
+        XCTAssertEqual(state.observe(target: target, at: date(311), session: session), .collect(target))
     }
 
     func testMonitorRefreshesAlignedTargetWhenItBecomesForegroundAgain() {

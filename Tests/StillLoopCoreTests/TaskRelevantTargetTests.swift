@@ -118,7 +118,7 @@ final class TaskRelevantTargetTests: XCTestCase {
         XCTAssertTrue(session.taskRelevantTargets.isEmpty)
     }
 
-    func testJudgmentCadenceRequiresNewTargetOrTenMinuteExpiry() {
+    func testJudgmentCadenceRequiresNewTargetOrFiveMinuteExpiry() {
         let target = ActiveWorkTarget(
             appName: "Zed",
             bundleIdentifier: "dev.zed.Zed",
@@ -137,7 +137,7 @@ final class TaskRelevantTargetTests: XCTestCase {
             feedback: nil
         )
 
-        XCTAssertTrue(session.shouldJudgeTarget(target, at: date(5), expiration: 600))
+        XCTAssertTrue(session.shouldJudgeTarget(target, at: date(5), expiration: 300))
 
         session.recordTargetJudgment(
             target: target,
@@ -147,8 +147,43 @@ final class TaskRelevantTargetTests: XCTestCase {
             foregroundAt: date(5)
         )
 
-        XCTAssertFalse(session.shouldJudgeTarget(target, at: date(609), expiration: 600))
-        XCTAssertTrue(session.shouldJudgeTarget(target, at: date(611), expiration: 600))
+        XCTAssertFalse(session.shouldJudgeTarget(target, at: date(309), expiration: 300))
+        XCTAssertTrue(session.shouldJudgeTarget(target, at: date(311), expiration: 300))
+    }
+
+    func testTargetJudgmentStoresEvidenceSummary() {
+        let target = ActiveWorkTarget(
+            appName: "Notes",
+            bundleIdentifier: "com.example.Notes",
+            processIdentifier: 99,
+            windowTitle: "Working Draft",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 200,
+            spaceIdentifier: nil
+        )
+        var session = FocusSession(
+            task: "整理计划",
+            startedAt: date(0),
+            endedAt: nil,
+            events: [],
+            feedback: nil
+        )
+
+        session.recordTargetJudgment(
+            target: target,
+            alignment: .aligned,
+            reason: "多帧证据相关。",
+            judgedAt: date(40),
+            foregroundAt: date(35),
+            evidenceCount: 3,
+            evidenceSpanSeconds: 35,
+            cumulativeForegroundSeconds: 30
+        )
+
+        XCTAssertEqual(session.targetJudgments.first?.evidenceCount, 3)
+        XCTAssertEqual(session.targetJudgments.first?.evidenceSpanSeconds, 35)
+        XCTAssertEqual(session.targetJudgments.first?.cumulativeForegroundSeconds, 30)
     }
 
     private func date(_ seconds: TimeInterval) -> Date {

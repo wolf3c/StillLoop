@@ -34,6 +34,7 @@ final class AppModelEvaluationCadenceTests: XCTestCase {
         let model = AppModel()
 
         XCTAssertEqual(model.targetEvaluationCadenceSeconds, 15)
+        XCTAssertEqual(model.targetMonitorCadenceSeconds, 5)
         XCTAssertEqual(model.normalEvaluationCooldownSeconds, 10)
         XCTAssertEqual(
             model.evaluationDelay(
@@ -48,6 +49,52 @@ final class AppModelEvaluationCadenceTests: XCTestCase {
                 powerStatus: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
             ),
             13
+        )
+    }
+
+    func testTargetEvidenceCollectionWaitsForCachedJudgmentExpiry() {
+        let model = AppModel()
+        let target = ActiveWorkTarget(
+            appName: "Drafting App",
+            bundleIdentifier: "com.example.DraftingApp",
+            processIdentifier: 100,
+            windowTitle: "Working Draft",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 1,
+            spaceIdentifier: nil
+        )
+        var session = FocusSession(
+            task: "整理今日计划",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [],
+            feedback: nil
+        )
+        session.recordTargetJudgment(
+            target: target,
+            alignment: .unaligned,
+            reason: "不相关",
+            judgedAt: Date(timeIntervalSince1970: 0),
+            foregroundAt: Date(timeIntervalSince1970: 0),
+            evidenceCount: 3,
+            evidenceSpanSeconds: 30,
+            cumulativeForegroundSeconds: 30
+        )
+
+        XCTAssertFalse(
+            model.shouldCollectTargetEvidence(
+                for: target,
+                at: Date(timeIntervalSince1970: 299),
+                session: session
+            )
+        )
+        XCTAssertTrue(
+            model.shouldCollectTargetEvidence(
+                for: target,
+                at: Date(timeIntervalSince1970: 301),
+                session: session
+            )
         )
     }
 

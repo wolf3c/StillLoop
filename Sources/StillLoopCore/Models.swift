@@ -556,19 +556,28 @@ public struct TaskTargetJudgment: Codable, Equatable, Identifiable {
     public var alignment: TaskTargetAlignment
     public var reason: String
     public var judgedAt: Date
+    public var evidenceCount: Int?
+    public var evidenceSpanSeconds: TimeInterval?
+    public var cumulativeForegroundSeconds: TimeInterval?
 
     public init(
         id: UUID = UUID(),
         target: ActiveWorkTarget,
         alignment: TaskTargetAlignment,
         reason: String,
-        judgedAt: Date
+        judgedAt: Date,
+        evidenceCount: Int? = nil,
+        evidenceSpanSeconds: TimeInterval? = nil,
+        cumulativeForegroundSeconds: TimeInterval? = nil
     ) {
         self.id = id
         self.target = target
         self.alignment = alignment
         self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         self.judgedAt = judgedAt
+        self.evidenceCount = evidenceCount
+        self.evidenceSpanSeconds = evidenceSpanSeconds
+        self.cumulativeForegroundSeconds = cumulativeForegroundSeconds
     }
 }
 
@@ -977,12 +986,22 @@ public struct FocusEventDebugDetail: Codable, Equatable {
         judgments
             .sorted { $0.judgedAt > $1.judgedAt }
             .flatMap { judgment in
-                [
+                var lines = [
                     "目标：\(judgment.target.displayText)",
                     "alignment：\(judgment.alignment.rawValue)",
                     "judgedAt：\(formattedDebugTime(judgment.judgedAt))",
                     "原因：\(judgment.reason)"
                 ]
+                if let evidenceCount = judgment.evidenceCount {
+                    lines.append("evidenceCount：\(evidenceCount)")
+                }
+                if let evidenceSpanSeconds = judgment.evidenceSpanSeconds {
+                    lines.append("evidenceSpanSeconds：\(Int(evidenceSpanSeconds.rounded()))")
+                }
+                if let cumulativeForegroundSeconds = judgment.cumulativeForegroundSeconds {
+                    lines.append("cumulativeForegroundSeconds：\(Int(cumulativeForegroundSeconds.rounded()))")
+                }
+                return lines
             }
     }
 
@@ -1252,7 +1271,10 @@ public extension FocusSession {
         alignment: TaskTargetAlignment,
         reason: String,
         judgedAt: Date,
-        foregroundAt: Date
+        foregroundAt: Date,
+        evidenceCount: Int? = nil,
+        evidenceSpanSeconds: TimeInterval? = nil,
+        cumulativeForegroundSeconds: TimeInterval? = nil
     ) {
         let key = target.identityKey
         targetJudgments.removeAll { $0.target.identityKey == key }
@@ -1261,7 +1283,10 @@ public extension FocusSession {
                 target: target,
                 alignment: alignment,
                 reason: reason,
-                judgedAt: judgedAt
+                judgedAt: judgedAt,
+                evidenceCount: evidenceCount,
+                evidenceSpanSeconds: evidenceSpanSeconds,
+                cumulativeForegroundSeconds: cumulativeForegroundSeconds
             ),
             at: 0
         )
