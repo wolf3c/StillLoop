@@ -245,6 +245,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型名称" } }
       }
     },
+    "modelSetup.modelRequirementNote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use a model that supports chat completions, follows structured JSON instructions, and preferably accepts image input for screen and camera context." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议使用支持 chat completions、能按指令输出结构化 JSON，并且最好支持图片输入的模型，用于屏幕和摄像头上下文判断。" } }
+      }
+    },
     "modelSetup.onlineURLPlaceholder" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Service URL, for example https://api.openai.com/v1" } },

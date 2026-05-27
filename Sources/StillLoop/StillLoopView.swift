@@ -441,11 +441,17 @@ private struct ModelSetupView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            TextField(L10n.text("modelSetup.modelNamePlaceholder"), text: $model.llmModelText)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: model.llmModelText) { _ in
-                    model.modelConfigurationChanged()
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(L10n.text("modelSetup.modelNamePlaceholder"), text: $model.llmModelText)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: model.llmModelText) { _ in
+                        model.modelConfigurationChanged()
+                    }
+                Text(L10n.text("modelSetup.modelRequirementNote"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if model.modelSetupSelection.manualService == .online {
                 SecureField("API Key", text: $model.onlineAPIKeyText)
                     .textFieldStyle(.roundedBorder)
