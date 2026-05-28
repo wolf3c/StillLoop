@@ -26,3 +26,5 @@ docs/*.mp4
 .env
 .env.*
 *.local
+.codex/scratch/
+.codex/private/
