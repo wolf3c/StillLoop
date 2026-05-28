@@ -89,6 +89,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let failed = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.failed" })
         XCTAssertEqual(failed["bundledRuntimeKind"] as? String, "llamaCpp")
         XCTAssertEqual(failed["fallbackRuntimeKind"] as? String, "llamaCpp")
+        XCTAssertNil(failed["mlxAPCEnabled"])
         XCTAssertEqual(failed["failureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(failed["taskAlignmentFailureKind"] as? String, "请求超时")
@@ -98,6 +99,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let fallback = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.fallback" })
         XCTAssertEqual(fallback["bundledRuntimeKind"] as? String, "llamaCpp")
         XCTAssertEqual(fallback["fallbackRuntimeKind"] as? String, "llamaCpp")
+        XCTAssertNil(fallback["mlxAPCEnabled"])
         XCTAssertEqual(fallback["fallback"] as? String, "ruleBased")
         XCTAssertEqual(fallback["presenceFailureKind"] as? String, "请求超时")
         XCTAssertEqual(fallback["taskAlignmentFailureKind"] as? String, "请求超时")
@@ -112,6 +114,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         runtime.bundledRuntimeKind = .mlx
+        runtime.mlxAPCEnabled = true
         var engines: [SuccessfulDiagnosticLLMEngine] = []
         let model = AppModel(
             userDefaults: isolatedDefaults,
@@ -158,9 +161,13 @@ final class AppModelDiagnosticLogTests: XCTestCase {
 
         XCTAssertEqual(result.evaluator, "自带模型")
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
+        XCTAssertEqual(started["bundledRuntimeKind"] as? String, "mlx")
+        XCTAssertEqual(started["mlxAPCEnabled"] as? Bool, true)
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
         XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "mlx")
         XCTAssertNil(succeeded["fallbackRuntimeKind"])
+        XCTAssertEqual(succeeded["mlxAPCEnabled"] as? Bool, true)
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
@@ -421,7 +428,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let fields = AppModel.targetJudgmentDiagnosticFields(
             sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
             target: target,
-            result: result
+            result: result,
+            extraFields: [
+                "bundledRuntimeKind": .string("mlx"),
+                "mlxAPCEnabled": .bool(true)
+            ]
         )
 
         XCTAssertEqual(fields["target"], .string("Codex · StillLoop"))
@@ -437,6 +448,36 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(fields["targetLLMDurationMS"], .int(2_345))
         XCTAssertEqual(fields["targetLLMPromptN"], .int(275))
         XCTAssertEqual(fields["targetLLMCachedTokens"], .int(10))
+        XCTAssertEqual(fields["bundledRuntimeKind"], .string("mlx"))
+        XCTAssertEqual(fields["mlxAPCEnabled"], .bool(true))
+    }
+
+    func testTargetJudgmentFailureDiagnosticFieldsIncludeRuntimeCacheFields() throws {
+        let target = ActiveWorkTarget(
+            appName: "Codex",
+            bundleIdentifier: "com.openai.codex",
+            processIdentifier: 100,
+            windowTitle: "StillLoop",
+            browserTitle: nil,
+            browserURL: nil,
+            windowNumber: 1001,
+            spaceIdentifier: nil
+        )
+
+        let fields = AppModel.targetJudgmentFailureDiagnosticFields(
+            sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            target: target,
+            error: URLError(.timedOut),
+            extraFields: [
+                "bundledRuntimeKind": .string("mlx"),
+                "mlxAPCEnabled": .bool(true)
+            ]
+        )
+
+        XCTAssertEqual(fields["target"], .string("Codex · StillLoop"))
+        XCTAssertEqual(fields["failureKind"], .string("请求超时"))
+        XCTAssertEqual(fields["bundledRuntimeKind"], .string("mlx"))
+        XCTAssertEqual(fields["mlxAPCEnabled"], .bool(true))
     }
 
     func testBundledEvaluationKeepsPresenceLatestAlignmentLatestAndProgressScreensEvenlySpaced() async throws {
@@ -723,6 +764,7 @@ private final class FakeDiagnosticBundledRuntime: BundledModelRuntimeManaging, B
     var state: BundledModelRuntime.State = .notStarted
     var bundledRuntimeKind: BundledRuntimeKind? = nil
     var fallbackRuntimeKind: BundledRuntimeKind? = nil
+    var mlxAPCEnabled: Bool? = nil
     private(set) var startCount = 0
     private(set) var stopCount = 0
 

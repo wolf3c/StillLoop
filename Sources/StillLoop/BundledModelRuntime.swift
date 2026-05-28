@@ -19,6 +19,11 @@ enum BundledRuntimeKind: String, Equatable {
 protocol BundledRuntimeDiagnosticsProviding: AnyObject {
     var bundledRuntimeKind: BundledRuntimeKind? { get }
     var fallbackRuntimeKind: BundledRuntimeKind? { get }
+    var mlxAPCEnabled: Bool? { get }
+}
+
+extension BundledRuntimeDiagnosticsProviding {
+    var mlxAPCEnabled: Bool? { nil }
 }
 
 protocol BundledModelProcessManaging: AnyObject {
@@ -29,6 +34,16 @@ protocol BundledModelProcessManaging: AnyObject {
 
 protocol BundledModelProcessLaunching {
     func launch(executableURL: URL, arguments: [String]) throws -> BundledModelProcessManaging
+}
+
+struct MLXRuntimeCacheTuning: Equatable {
+    var apcEnabled: Bool
+
+    static let defaultValue = MLXRuntimeCacheTuning(apcEnabled: true)
+
+    var environmentArguments: [String] {
+        apcEnabled ? ["APC_ENABLED=1"] : []
+    }
 }
 
 struct BundledModelPortOccupant: Equatable {
@@ -99,6 +114,16 @@ final class FallbackBundledModelRuntime: BundledModelRuntimeManaging, BundledRun
         return (primaryRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind
     }
 
+    var mlxAPCEnabled: Bool? {
+        if let activeRuntime {
+            return (activeRuntime as? BundledRuntimeDiagnosticsProviding)?.mlxAPCEnabled
+        }
+        if fallbackRuntimeKind != nil {
+            return (fallbackRuntime as? BundledRuntimeDiagnosticsProviding)?.mlxAPCEnabled
+        }
+        return (primaryRuntime as? BundledRuntimeDiagnosticsProviding)?.mlxAPCEnabled
+    }
+
     func startIfNeeded() async throws {
         if activeRuntime === fallbackRuntime {
             try await startFallback()
@@ -152,12 +177,16 @@ final class MLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeD
         var arguments: [String]
         var baseURL: URL
         var modelID: String
+        var cacheTuning: MLXRuntimeCacheTuning
 
-        static func localDevelopment(port: Int = MLXBundledModelRuntime.availableLocalPort()) -> Configuration {
+        static func localDevelopment(
+            port: Int = MLXBundledModelRuntime.availableLocalPort(),
+            cacheTuning: MLXRuntimeCacheTuning = .defaultValue
+        ) -> Configuration {
             let modelID = "mlx-community/Qwen3.5-0.8B-4bit"
             return Configuration(
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-                arguments: [
+                arguments: cacheTuning.environmentArguments + [
                     "python3",
                     "-m", "mlx_vlm.server",
                     "--host", "127.0.0.1",
@@ -166,13 +195,15 @@ final class MLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeD
                     "--max-tokens", "900"
                 ],
                 baseURL: URL(string: "http://127.0.0.1:\(port)/v1")!,
-                modelID: modelID
+                modelID: modelID,
+                cacheTuning: cacheTuning
             )
         }
     }
 
     let bundledRuntimeKind: BundledRuntimeKind? = .mlx
     let fallbackRuntimeKind: BundledRuntimeKind? = nil
+    var mlxAPCEnabled: Bool? { configuration.cacheTuning.apcEnabled }
     let modelID: String
     private(set) var baseURL: URL
     private(set) var state: BundledModelRuntime.State = .notStarted

@@ -152,6 +152,27 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertNil(diagnostics?.fallbackRuntimeKind)
     }
 
+    func testMLXRuntimeEnablesInMemoryAPCByDefault() {
+        let configuration = MLXBundledModelRuntime.Configuration.localDevelopment(port: 18765)
+        let apcIndex = configuration.arguments.firstIndex(of: "APC_ENABLED=1")
+        let pythonIndex = configuration.arguments.firstIndex(of: "python3")
+
+        XCTAssertNotNil(apcIndex)
+        XCTAssertNotNil(pythonIndex)
+        XCTAssertLessThan(try XCTUnwrap(apcIndex), try XCTUnwrap(pythonIndex))
+        XCTAssertFalse(configuration.arguments.contains { $0.hasPrefix("APC_DISK_PATH=") })
+    }
+
+    func testMLXRuntimeCacheTuningCanDisableAPC() {
+        let configuration = MLXBundledModelRuntime.Configuration.localDevelopment(
+            port: 18765,
+            cacheTuning: MLXRuntimeCacheTuning(apcEnabled: false)
+        )
+
+        XCTAssertFalse(configuration.arguments.contains("APC_ENABLED=1"))
+        XCTAssertFalse(configuration.arguments.contains { $0.hasPrefix("APC_DISK_PATH=") })
+    }
+
     func testFallbackRuntimeUsesPrimaryWhenMLXStarts() async throws {
         let mlx = FakeSelectableBundledRuntime(kind: .mlx)
         let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)

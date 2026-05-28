@@ -818,6 +818,9 @@ final class AppModel: ObservableObject {
         if let fallbackKind = diagnostics.fallbackRuntimeKind {
             fields["fallbackRuntimeKind"] = .string(fallbackKind.rawValue)
         }
+        if let mlxAPCEnabled = diagnostics.mlxAPCEnabled {
+            fields["mlxAPCEnabled"] = .bool(mlxAPCEnabled)
+        }
         return fields
     }
 
@@ -2503,7 +2506,7 @@ final class AppModel: ObservableObject {
             currentSession = session
             diagnosticLogger.record(
                 "target.judgment.completed",
-                fields: Self.targetJudgmentDiagnosticFields(
+                fields: targetJudgmentDiagnosticFields(
                     sessionID: sessionID,
                     target: target,
                     result: result
@@ -2512,11 +2515,11 @@ final class AppModel: ObservableObject {
         } catch {
             diagnosticLogger.record(
                 "target.judgment.failed",
-                fields: [
-                    "sessionID": .string(sessionID.uuidString),
-                    "target": .string(target.displayText),
-                    "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
-                ]
+                fields: targetJudgmentFailureDiagnosticFields(
+                    sessionID: sessionID,
+                    target: target,
+                    error: error
+                )
             )
         }
     }
@@ -3294,10 +3297,39 @@ final class AppModel: ObservableObject {
         }
     }
 
-    static func targetJudgmentDiagnosticFields(
+    private func targetJudgmentDiagnosticFields(
         sessionID: UUID,
         target: ActiveWorkTarget,
         result: TaskRelevantTargetEvaluationResult
+    ) -> [String: DiagnosticLogValue] {
+        let runtimeFields = modelSetupSelection.source == .bundled ? bundledRuntimeDiagnosticFields() : [:]
+        return Self.targetJudgmentDiagnosticFields(
+            sessionID: sessionID,
+            target: target,
+            result: result,
+            extraFields: runtimeFields
+        )
+    }
+
+    private func targetJudgmentFailureDiagnosticFields(
+        sessionID: UUID,
+        target: ActiveWorkTarget,
+        error: Error
+    ) -> [String: DiagnosticLogValue] {
+        let runtimeFields = modelSetupSelection.source == .bundled ? bundledRuntimeDiagnosticFields() : [:]
+        return Self.targetJudgmentFailureDiagnosticFields(
+            sessionID: sessionID,
+            target: target,
+            error: error,
+            extraFields: runtimeFields
+        )
+    }
+
+    static func targetJudgmentDiagnosticFields(
+        sessionID: UUID,
+        target: ActiveWorkTarget,
+        result: TaskRelevantTargetEvaluationResult,
+        extraFields: [String: DiagnosticLogValue] = [:]
     ) -> [String: DiagnosticLogValue] {
         var fields: [String: DiagnosticLogValue] = [
             "sessionID": .string(sessionID.uuidString),
@@ -3321,6 +3353,22 @@ final class AppModel: ObservableObject {
                 includeDeviceFields: false
             )
         ) { current, _ in current }
+        fields.merge(extraFields) { current, _ in current }
+        return fields
+    }
+
+    static func targetJudgmentFailureDiagnosticFields(
+        sessionID: UUID,
+        target: ActiveWorkTarget,
+        error: Error,
+        extraFields: [String: DiagnosticLogValue] = [:]
+    ) -> [String: DiagnosticLogValue] {
+        var fields: [String: DiagnosticLogValue] = [
+            "sessionID": .string(sessionID.uuidString),
+            "target": .string(target.displayText),
+            "failureKind": .string(Self.modelInferenceFailurePresentation(for: error).debugText)
+        ]
+        fields.merge(extraFields) { current, _ in current }
         return fields
     }
 

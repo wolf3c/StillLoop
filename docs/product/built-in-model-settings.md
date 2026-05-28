@@ -67,15 +67,17 @@
 
 开发默认后端是本机 `mlx_vlm.server` 风格的 OpenAI-compatible MLX 服务，使用 `mlx-community/Qwen3.5-0.8B-4bit`。第一版只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包。
 
+MLX 本机实测 runtime 默认开启 in-memory APC（Automatic Prefix Caching），用于观察固定 prompt 前缀在真实 focus session 中的 prefill 收益。该开关是内部代码常量，不暴露给用户设置；默认不配置 `APC_DISK_PATH`，因此不会启用 APC disk cache 或写入 prompt/KV 缓存文件。
+
 本机 MLX 实测前先运行一次：
 
 ```sh
 scripts/setup-mlx-runtime.sh
 ```
 
-该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 的 `/usr/bin/env python3 -m mlx_vlm.server` 会使用项目本地依赖，而不是依赖系统 Python。
+该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 的 `/usr/bin/env APC_ENABLED=1 python3 -m mlx_vlm.server` 会使用项目本地依赖，而不是依赖系统 Python。
 
-MLX 启动、readiness、图片能力探测失败时，应用会停止 MLX 进程并自动回退到 llama.cpp 后端。诊断日志会记录实际使用的 `bundledRuntimeKind`，如果发生自动回退也会记录 `fallbackRuntimeKind`，避免把 llama.cpp 回退结果误判为 MLX 实测结果。
+MLX 启动、readiness、图片能力探测失败时，应用会停止 MLX 进程并自动回退到 llama.cpp 后端。诊断日志会记录实际使用的 `bundledRuntimeKind`，如果发生自动回退也会记录 `fallbackRuntimeKind`；MLX 路径还会记录 `mlxAPCEnabled`，避免把 llama.cpp 回退结果误判为 MLX/APC 实测结果。
 
 llama.cpp 后端使用应用内打包的 `stillloop-llama-server`。开发和 App Store 包会把 runtime 复制到 app bundle 的 `Contents/Helpers/stillloop-llama-server`。
 
