@@ -7,7 +7,7 @@
 当前自有模型由两部分组成：
 
 - GGUF 模型文件。
-- 内部可切换的本地 runtime；当前开发默认优先使用 MLX，失败时自动回退到打包在应用内的 llama.cpp runtime。
+- 内部可切换的本地 runtime；当前默认使用打包在应用内的 llama.cpp runtime，MLX 仅作为内部本机实验后端保留。
 
 ## 页面入口
 
@@ -65,7 +65,9 @@
 
 自有模型 runtime 支持内部 MLX / llama.cpp 两套后端。这个切换不暴露给用户设置；用户可见模型来源仍然只有自带模型、手动模型和基础规则。
 
-开发默认后端是本机 `mlx_vlm.server` 风格的 OpenAI-compatible MLX 服务，使用 `mlx-community/Qwen3.5-0.8B-4bit`。第一版只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包。
+当前默认后端是打包在应用内的 llama.cpp runtime。MLX 路径作为内部本机实测后端保留，可通过代码中的 `BundledRuntimeSelection.defaultKind` 临时切换，不暴露给用户设置。
+
+MLX 后端使用本机 `mlx_vlm.server` 风格的 OpenAI-compatible 服务，模型为 `mlx-community/Qwen3.5-0.8B-4bit`。该路径只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包。
 
 MLX 本机实测 runtime 默认开启 in-memory APC（Automatic Prefix Caching），用于观察固定 prompt 前缀在真实 focus session 中的 prefill 收益。该开关是内部代码常量，不暴露给用户设置；默认不配置 `APC_DISK_PATH`，因此不会启用 APC disk cache 或写入 prompt/KV 缓存文件。
 

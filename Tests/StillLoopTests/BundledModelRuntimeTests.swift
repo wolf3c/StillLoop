@@ -131,14 +131,14 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(tuning.promptCacheEnabled)
     }
 
-    func testBundledRuntimeSelectionDefaultsToMLXWithLlamaFallback() {
+    func testBundledRuntimeSelectionDefaultsToLlamaCppRuntime() {
         let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
 
         let runtime = BundledRuntimeSelection.makeDefaultRuntime(modelURL: modelURL)
         let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
 
-        XCTAssertEqual(BundledRuntimeSelection.defaultKind, .mlx)
-        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .mlx)
+        XCTAssertEqual(BundledRuntimeSelection.defaultKind, .llamaCpp)
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .llamaCpp)
         XCTAssertNil(diagnostics?.fallbackRuntimeKind)
     }
 

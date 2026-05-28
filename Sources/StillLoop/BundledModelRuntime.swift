@@ -53,7 +53,7 @@ struct BundledModelPortOccupant: Equatable {
 }
 
 struct BundledRuntimeSelection {
-    static let defaultKind: BundledRuntimeKind = .mlx
+    static let defaultKind: BundledRuntimeKind = .llamaCpp
 
     static func makeDefaultRuntime(
         modelURL: URL,
