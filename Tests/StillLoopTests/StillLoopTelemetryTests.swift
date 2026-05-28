@@ -167,6 +167,29 @@ final class StillLoopTelemetryTests: XCTestCase {
         XCTAssertTrue(model.canSubmitUserFeedback)
     }
 
+    func testTraceMindManualClientDoesNotCaptureWhileFlushIsInFlight() async {
+        let manualClient = BlockingTraceMindManualClient()
+        let telemetryClient = TraceMindTelemetryClient(
+            startTraceMind: { _ in },
+            manualClientFactory: { _ in manualClient }
+        )
+        telemetryClient.start(projectKey: "test-project")
+
+        telemetryClient.capture(.routeChanged(screen: "focus"))
+        await manualClient.waitForFlushCallCount(1)
+
+        telemetryClient.capture(.routeChanged(screen: "review"))
+
+        XCTAssertEqual(manualClient.capturedPaths, ["focus"])
+
+        manualClient.releaseNextFlush()
+        await manualClient.waitForFlushCallCount(2)
+
+        XCTAssertEqual(manualClient.capturedPaths, ["focus", "review"])
+
+        manualClient.releaseNextFlush()
+    }
+
     private static func makeIsolatedUserDefaults() -> UserDefaults {
         let suiteName = "StillLoopTelemetryTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -196,5 +219,55 @@ private final class SpyStillLoopTelemetry: StillLoopTelemetryRecording {
 
     func submitUserFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {
         feedbackDrafts.append(draft)
+    }
+}
+
+@MainActor
+private final class BlockingTraceMindManualClient: TraceMindManualClienting {
+    private(set) var capturedPaths: [String] = []
+    private var flushCallCount = 0
+    private var flushWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var flushContinuations: [CheckedContinuation<Void, Never>] = []
+
+    func capture(
+        type: String,
+        eventName: String?,
+        path: String,
+        properties: TraceMindFields,
+        context: TraceMindFields
+    ) throws {
+        capturedPaths.append(path)
+    }
+
+    func flush() async throws {
+        flushCallCount += 1
+        resumeSatisfiedFlushWaiters()
+        await withCheckedContinuation { continuation in
+            flushContinuations.append(continuation)
+        }
+    }
+
+    func submitFeedback(
+        message: TraceMindFeedbackMessage,
+        path: String?,
+        title: String?
+    ) async throws {}
+
+    func waitForFlushCallCount(_ expectedCount: Int) async {
+        if flushCallCount >= expectedCount { return }
+        await withCheckedContinuation { continuation in
+            flushWaiters.append((expectedCount, continuation))
+        }
+    }
+
+    func releaseNextFlush() {
+        guard !flushContinuations.isEmpty else { return }
+        flushContinuations.removeFirst().resume()
+    }
+
+    private func resumeSatisfiedFlushWaiters() {
+        let ready = flushWaiters.filter { flushCallCount >= $0.0 }
+        flushWaiters.removeAll { flushCallCount >= $0.0 }
+        ready.forEach { $0.1.resume() }
     }
 }

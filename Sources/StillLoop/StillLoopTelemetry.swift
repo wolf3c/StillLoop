@@ -329,12 +329,84 @@ protocol TraceMindTelemetryClienting {
 }
 
 @MainActor
+protocol TraceMindManualClienting: AnyObject {
+    func capture(
+        type: String,
+        eventName: String?,
+        path: String,
+        properties: TraceMindFields,
+        context: TraceMindFields
+    ) throws
+    func flush() async throws
+    func submitFeedback(
+        message: TraceMindFeedbackMessage,
+        path: String?,
+        title: String?
+    ) async throws
+}
+
+@MainActor
+private final class TraceMindManualClientAdapter: TraceMindManualClienting {
+    private let client: TraceMindClient
+
+    init(configuration: TraceMindConfiguration) {
+        client = TraceMindClient(configuration: configuration)
+    }
+
+    func capture(
+        type: String,
+        eventName: String?,
+        path: String,
+        properties: TraceMindFields,
+        context: TraceMindFields
+    ) throws {
+        try client.capture(
+            type: type,
+            eventName: eventName,
+            path: path,
+            properties: properties,
+            context: context
+        )
+    }
+
+    func flush() async throws {
+        try await client.flush()
+    }
+
+    func submitFeedback(
+        message: TraceMindFeedbackMessage,
+        path: String?,
+        title: String?
+    ) async throws {
+        try await client.submitFeedback(
+            message: message,
+            path: path,
+            title: title
+        )
+    }
+}
+
+@MainActor
 final class TraceMindTelemetryClient: TraceMindTelemetryClienting {
-    private var manualClient: TraceMindClient?
+    private let startTraceMind: (String) -> Void
+    private let manualClientFactory: @MainActor (String) -> TraceMindManualClienting
+    private var manualClient: TraceMindManualClienting?
+    private var isManualClientFlushing = false
+    private var pendingManualClientEvents: [StillLoopTelemetryEvent] = []
+
+    init(
+        startTraceMind: @escaping (String) -> Void = { TraceMind.start(projectKey: $0) },
+        manualClientFactory: @escaping @MainActor (String) -> TraceMindManualClienting = {
+            TraceMindManualClientAdapter(configuration: TraceMindConfiguration(projectKey: $0))
+        }
+    ) {
+        self.startTraceMind = startTraceMind
+        self.manualClientFactory = manualClientFactory
+    }
 
     func start(projectKey: String) {
-        TraceMind.start(projectKey: projectKey)
-        manualClient = TraceMindClient(configuration: TraceMindConfiguration(projectKey: projectKey))
+        startTraceMind(projectKey)
+        manualClient = manualClientFactory(projectKey)
     }
 
     func setScreen(_ screen: String) {
@@ -354,16 +426,13 @@ final class TraceMindTelemetryClient: TraceMindTelemetryClienting {
             return
         }
 
-        try? manualClient.capture(
-            type: event.type,
-            eventName: event.eventName,
-            path: event.path,
-            properties: event.properties.traceMindFields,
-            context: event.context.traceMindFields
-        )
-        Task {
-            try? await manualClient.flush()
+        if isManualClientFlushing {
+            pendingManualClientEvents.append(event)
+            return
         }
+
+        capture(event, with: manualClient)
+        scheduleManualClientFlush()
     }
 
     func submitFeedback(_ draft: StillLoopUserFeedbackDraft) async throws {
@@ -382,6 +451,42 @@ final class TraceMindTelemetryClient: TraceMindTelemetryClienting {
             path: draft.screen,
             title: draft.kind.title
         )
+    }
+
+    private func capture(_ event: StillLoopTelemetryEvent, with manualClient: TraceMindManualClienting) {
+        try? manualClient.capture(
+            type: event.type,
+            eventName: event.eventName,
+            path: event.path,
+            properties: event.properties.traceMindFields,
+            context: event.context.traceMindFields
+        )
+    }
+
+    private func scheduleManualClientFlush() {
+        guard !isManualClientFlushing else { return }
+        isManualClientFlushing = true
+        Task { @MainActor [weak self] in
+            await self?.flushManualClient()
+        }
+    }
+
+    private func flushManualClient() async {
+        while let manualClient {
+            try? await manualClient.flush()
+
+            guard !pendingManualClientEvents.isEmpty else {
+                isManualClientFlushing = false
+                return
+            }
+
+            let events = pendingManualClientEvents
+            pendingManualClientEvents.removeAll(keepingCapacity: true)
+            events.forEach { capture($0, with: manualClient) }
+        }
+
+        pendingManualClientEvents.removeAll(keepingCapacity: true)
+        isManualClientFlushing = false
     }
 }
 
