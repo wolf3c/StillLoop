@@ -68,6 +68,30 @@ final class HomeNavigationTests: XCTestCase {
         )
     }
 
+    func testResolvedBundledRuntimeKindFromEnvironmentDefaultsToLlama() {
+        let resolvedKind = AppModel.resolvedBundledRuntimeKind(
+            environment: [:]
+        )
+
+        XCTAssertEqual(resolvedKind, .llamaCpp)
+    }
+
+    func testResolvedBundledRuntimeKindFromEnvironmentAcceptsRapid() {
+        let resolvedKind = AppModel.resolvedBundledRuntimeKind(
+            environment: ["STILLLOOP_BUNDLED_RUNTIME": "rapidMlx"]
+        )
+
+        XCTAssertEqual(resolvedKind, .rapidMlx)
+    }
+
+    func testResolvedBundledRuntimeKindFromEnvironmentRejectsInvalidValue() {
+        let resolvedKind = AppModel.resolvedBundledRuntimeKind(
+            environment: ["STILLLOOP_BUNDLED_RUNTIME": "bad"]
+        )
+
+        XCTAssertEqual(resolvedKind, .llamaCpp)
+    }
+
     func testWelcomeCopyLeadsWithUserValue() {
         XCTAssertEqual(StillLoopWelcomeCopy.title, "分心时，我会轻轻把你带回当前任务")
         XCTAssertEqual(

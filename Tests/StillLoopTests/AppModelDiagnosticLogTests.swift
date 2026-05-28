@@ -204,6 +204,43 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
+    func testSuccessfulBundledModelWritesRapidMLXKindInDiagnostics() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        runtime.bundledRuntimeKind = .rapidMlx
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
+            bundledLLMEngineFactory: { _, _ in
+                let engine = SuccessfulDiagnosticLLMEngine()
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        _ = await model.evaluateFocus(
+            task: "测试 rapid-mlx 诊断上报",
+            snapshots: makeDiagnosticSnapshots(count: 1),
+            previousEvents: []
+        )
+
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
+        XCTAssertEqual(started["bundledRuntimeKind"] as? String, "rapidMlx")
+        XCTAssertNil(started["mlxAPCEnabled"])
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "rapidMlx")
+        XCTAssertNil(succeeded["fallbackRuntimeKind"])
+        XCTAssertNil(succeeded["mlxAPCEnabled"])
+        XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+    }
+
     func testBundledEvaluationSkipsProgressDiagnosticsWhenTaskIsUnaligned() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()

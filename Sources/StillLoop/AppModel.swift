@@ -685,6 +685,12 @@ final class AppModel: ObservableObject {
         return firstIssue == .permissions ? .permissions : .modelSetup
     }
 
+    nonisolated static func resolvedBundledRuntimeKind(
+        environment: [String: String]
+    ) -> BundledRuntimeKind {
+        BundledRuntimeSelection.runtimeKind(environment: environment)
+    }
+
     init(
         userDefaults: UserDefaults = .standard,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
@@ -786,7 +792,11 @@ final class AppModel: ObservableObject {
             spec: .builtIn,
             localDirectory: modelDirectory
         )
-        self.bundledModelRuntime = bundledModelRuntime ?? BundledRuntimeSelection.makeDefaultRuntime(
+        let bundledRuntimeKind = bundledModelRuntime == nil
+            ? Self.resolvedBundledRuntimeKind(environment: environment)
+            : BundledRuntimeSelection.defaultKind
+        self.bundledModelRuntime = bundledModelRuntime ?? BundledRuntimeSelection.makeRuntime(
+            kind: bundledRuntimeKind,
             modelURL: modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename)
         )
         configureSelectedModelEvaluator()

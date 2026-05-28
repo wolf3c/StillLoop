@@ -13,4 +13,9 @@ echo "Installing mlx-vlm into the project-local runtime"
 
 "$RUNTIME_DIR/bin/python3" -c "import mlx_vlm"
 
+if [[ "${STILLLOOP_INSTALL_RAPID_MLX:-0}" == "1" ]]; then
+  echo "Installing rapid-mlx into the project-local runtime"
+  "$RUNTIME_DIR/bin/python3" -m pip install --upgrade rapid-mlx
+fi
+
 echo "MLX development runtime ready: $RUNTIME_DIR/bin/python3"

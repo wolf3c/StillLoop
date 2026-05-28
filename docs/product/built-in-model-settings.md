@@ -63,27 +63,44 @@
 
 ## runtime 启动
 
-自有模型 runtime 支持内部 MLX / llama.cpp 两套后端。这个切换不暴露给用户设置；用户可见模型来源仍然只有自带模型、手动模型和基础规则。
+自有模型 runtime 支持内部三套后端：`llama.cpp`、`mlx`、`rapid-mlx`。这个切换不暴露给用户设置；用户可见模型来源仍然只有自带模型、手动模型和基础规则。
 
-当前默认后端是打包在应用内的 llama.cpp runtime。MLX 路径作为内部本机实测后端保留，可通过代码中的 `BundledRuntimeSelection.defaultKind` 临时切换，不暴露给用户设置。
+当前默认后端是打包在应用内的 llama.cpp runtime。切换后端用于本机开发比对时可通过 `STILLLOOP_BUNDLED_RUNTIME` 环境变量指定，不改动用户设置页。可取值：
 
-MLX 后端使用本机 `mlx_vlm.server` 风格的 OpenAI-compatible 服务，模型为 `mlx-community/Qwen3.5-0.8B-4bit`。该路径只用于本机实测，不把 Python、MLX 或 mlx-vlm 依赖打进 App Store 包。
+- `llamaCpp`（默认）
+- `mlx`（走 `mlx_vlm.server`）
+- `rapidMlx`（走 `rapid-mlx serve`）
+
+当环境变量未设置或取值非法时回退到默认 `llamaCpp`。
+
+`llama.cpp` 后端使用应用内打包的 `stillloop-llama-server`。开发和 App Store 包会把 runtime 复制到 app bundle 的 `Contents/Helpers/stillloop-llama-server`。
+
+`llama.cpp` 后端使用 Unix domain socket，不依赖 TCP localhost server。因此 Mac App Store 构建不需要 `com.apple.security.network.server` entitlement。MLX/rapid-mlx 路径属于开发测评路径，不作为 App Store 打包路径；`.build/mlx-runtime` 也不会被复制进正式包。
+
+## MLX 与 Rapid-MLX 开发测评后端
+
+MLX 后端使用本机 `mlx_vlm.server` 风格的 OpenAI-compatible 服务，模型为 `mlx-community/Qwen3.5-0.8B-4bit`。该路径只用于本机实测，不把 Python、MLX 或 `mlx-vlm` 依赖打进 App Store 包。
 
 MLX 本机实测 runtime 默认开启 in-memory APC（Automatic Prefix Caching），用于观察固定 prompt 前缀在真实 focus session 中的 prefill 收益。该开关是内部代码常量，不暴露给用户设置；默认不配置 `APC_DISK_PATH`，因此不会启用 APC disk cache 或写入 prompt/KV 缓存文件。
 
-本机 MLX 实测前先运行一次：
+Rapid-MLX 后端使用同模型：`rapid-mlx serve mlx-community/Qwen3.5-0.8B-4bit --mllm --host 127.0.0.1 --port <ephemeral> --max-tokens 900`，同样作为开发可切换路径，不暴露给用户设置。
+
+本机 MLX / Rapid-MLX 实测前先运行一次：
 
 ```sh
 scripts/setup-mlx-runtime.sh
 ```
 
-该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 的 `/usr/bin/env APC_ENABLED=1 python3 -m mlx_vlm.server` 会使用项目本地依赖，而不是依赖系统 Python。
+该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`；若需要可再加 `STILLLOOP_INSTALL_RAPID_MLX=1` 安装 `rapid-mlx`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 启动命令能优先使用项目本地依赖，而不是系统 Python。
 
-MLX 启动、readiness、图片能力探测失败时，应用会停止 MLX 进程并自动回退到 llama.cpp 后端。诊断日志会记录实际使用的 `bundledRuntimeKind`，如果发生自动回退也会记录 `fallbackRuntimeKind`；MLX 路径还会记录 `mlxAPCEnabled`，避免把 llama.cpp 回退结果误判为 MLX/APC 实测结果。
+启动方式示例：
 
-llama.cpp 后端使用应用内打包的 `stillloop-llama-server`。开发和 App Store 包会把 runtime 复制到 app bundle 的 `Contents/Helpers/stillloop-llama-server`。
+```sh
+STILLLOOP_BUNDLED_RUNTIME=mlx STILLLOOP_SKIP_MODEL_DOWNLOAD=1 scripts/run-app.sh
+STILLLOOP_BUNDLED_RUNTIME=rapidMlx STILLLOOP_SKIP_MODEL_DOWNLOAD=1 scripts/run-app.sh
+```
 
-llama.cpp 后端使用 Unix domain socket，不依赖 TCP localhost server。因此 Mac App Store 构建不需要 `com.apple.security.network.server` entitlement。MLX 后端第一版是本机开发实测路径，不作为 App Store 打包路径；`.build/mlx-runtime` 也不会被复制进正式包。
+MLX 或 Rapid-MLX 启动、readiness、图片能力探测失败时，应用会停止该进程并自动回退到 llama.cpp 后端。诊断日志会记录实际使用的 `bundledRuntimeKind`，如果发生自动回退也会记录 `fallbackRuntimeKind`；MLX 路径还会记录 `mlxAPCEnabled`，避免把 llama.cpp 回退结果误判为 MLX 实测结果。
 
 llama.cpp 主要启动参数：
 

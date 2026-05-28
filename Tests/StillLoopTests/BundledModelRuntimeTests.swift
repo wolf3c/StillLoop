@@ -152,6 +152,47 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertNil(diagnostics?.fallbackRuntimeKind)
     }
 
+    func testBundledRuntimeSelectionCanBuildRapidMLXRuntimeDirectly() {
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+
+        let runtime = BundledRuntimeSelection.makeRuntime(kind: .rapidMlx, modelURL: modelURL)
+        let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
+
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .rapidMlx)
+        XCTAssertNil(diagnostics?.fallbackRuntimeKind)
+    }
+
+    func testBundledRuntimeSelectionResolvesUnknownKindToDefault() {
+        let resolvedKind = BundledRuntimeSelection.runtimeKind(
+            environment: ["STILLLOOP_BUNDLED_RUNTIME": "somethingElse"]
+        )
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+        let runtime = BundledRuntimeSelection.makeRuntime(
+            kind: resolvedKind,
+            modelURL: modelURL
+        )
+        let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
+
+        XCTAssertEqual(resolvedKind, .llamaCpp)
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .llamaCpp)
+    }
+
+    func testBundledRuntimeSelectionResolvesExplicitLlamaKindFromEnvironment() {
+        let resolvedKind = BundledRuntimeSelection.runtimeKind(
+            environment: ["STILLLOOP_BUNDLED_RUNTIME": "llamaCpp"]
+        )
+
+        XCTAssertEqual(resolvedKind, .llamaCpp)
+    }
+
+    func testBundledRuntimeSelectionResolvesExplicitRapidKindFromEnvironment() {
+        let resolvedKind = BundledRuntimeSelection.runtimeKind(
+            environment: ["STILLLOOP_BUNDLED_RUNTIME": "rapidMlx"]
+        )
+
+        XCTAssertEqual(resolvedKind, .rapidMlx)
+    }
+
     func testMLXRuntimeEnablesInMemoryAPCByDefault() {
         let configuration = MLXBundledModelRuntime.Configuration.localDevelopment(port: 18765)
         let apcIndex = configuration.arguments.firstIndex(of: "APC_ENABLED=1")
@@ -173,6 +214,20 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(configuration.arguments.contains { $0.hasPrefix("APC_DISK_PATH=") })
     }
 
+    func testRapidMLXRuntimeLaunchArgumentsMatchRapidServe() {
+        let configuration = RapidMLXBundledModelRuntime.Configuration.localDevelopment(port: 18765)
+
+        XCTAssertEqual(configuration.arguments, [
+            "rapid-mlx",
+            "serve",
+            "mlx-community/Qwen3.5-0.8B-4bit",
+            "--mllm",
+            "--host", "127.0.0.1",
+            "--port", "18765",
+            "--max-tokens", "900"
+        ])
+    }
+
     func testFallbackRuntimeUsesPrimaryWhenMLXStarts() async throws {
         let mlx = FakeSelectableBundledRuntime(kind: .mlx)
         let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
@@ -186,6 +241,22 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.modelID, mlx.modelID)
         XCTAssertEqual(runtime.state, .running)
         XCTAssertEqual(runtime.bundledRuntimeKind, .mlx)
+        XCTAssertNil(runtime.fallbackRuntimeKind)
+    }
+
+    func testFallbackRuntimeUsesPrimaryWhenRapidMLXStarts() async throws {
+        let rapidMlx = FakeSelectableBundledRuntime(kind: .rapidMlx)
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: rapidMlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(rapidMlx.startCount, 1)
+        XCTAssertEqual(llama.startCount, 0)
+        XCTAssertEqual(runtime.baseURL, rapidMlx.baseURL)
+        XCTAssertEqual(runtime.modelID, rapidMlx.modelID)
+        XCTAssertEqual(runtime.state, .running)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .rapidMlx)
         XCTAssertNil(runtime.fallbackRuntimeKind)
     }
 
@@ -205,6 +276,58 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state, .running)
         XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
         XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+    }
+
+    func testFallbackRuntimeStartsLlamaWhenRapidMLXReadinessFails() async throws {
+        let rapidMlx = FakeSelectableBundledRuntime(kind: .rapidMlx)
+        rapidMlx.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: rapidMlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(rapidMlx.startCount, 1)
+        XCTAssertEqual(rapidMlx.stopCount, 1)
+        XCTAssertEqual(llama.startCount, 1)
+        XCTAssertEqual(runtime.baseURL, llama.baseURL)
+        XCTAssertEqual(runtime.modelID, llama.modelID)
+        XCTAssertEqual(runtime.state, .running)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+        XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+    }
+
+    func testFallbackRuntimeStartsLlamaWhenRapidMLXImageInputIsUnavailable() async throws {
+        let rapidMlx = FakeSelectableBundledRuntime(kind: .rapidMlx)
+        rapidMlx.startError = BundledModelRuntime.RuntimeError.imageInputUnavailable
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        let runtime = FallbackBundledModelRuntime(primary: rapidMlx, fallback: llama)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(rapidMlx.stopCount, 1)
+        XCTAssertEqual(llama.startCount, 1)
+        XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+        XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+    }
+
+    func testFallbackRuntimeThrowsLlamaFailureWhenRapidMLXAndLlamaBothFail() async throws {
+        let rapidMlx = FakeSelectableBundledRuntime(kind: .rapidMlx)
+        rapidMlx.startError = BundledModelRuntime.RuntimeError.readinessFailed("timeout")
+        let llama = FakeSelectableBundledRuntime(kind: .llamaCpp)
+        llama.startError = BundledModelRuntime.RuntimeError.missingExecutable(URL(fileURLWithPath: "/tmp/missing"))
+        let runtime = FallbackBundledModelRuntime(primary: rapidMlx, fallback: llama)
+
+        do {
+            try await runtime.startIfNeeded()
+            XCTFail("Expected fallback runtime failure")
+        } catch let error as BundledModelRuntime.RuntimeError {
+            XCTAssertEqual(error, .missingExecutable(URL(fileURLWithPath: "/tmp/missing")))
+            XCTAssertEqual(rapidMlx.stopCount, 1)
+            XCTAssertEqual(llama.startCount, 1)
+            XCTAssertEqual(runtime.state, .failed("缺少 stillloop-llama-server"))
+            XCTAssertEqual(runtime.bundledRuntimeKind, .llamaCpp)
+            XCTAssertEqual(runtime.fallbackRuntimeKind, .llamaCpp)
+        }
     }
 
     func testFallbackRuntimeStartsLlamaWhenMLXImageInputIsUnavailable() async throws {

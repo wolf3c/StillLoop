@@ -87,6 +87,7 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_LLM_MODEL=$STILLLOOP_LLM_MODEL\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE\""))
+        XCTAssertTrue(script.contains("--env \"STILLLOOP_BUNDLED_RUNTIME=$STILLLOOP_BUNDLED_RUNTIME\""))
     }
 
     func testRunAppForwardsPathForLocalMLXRuntimeDependencies() throws {
@@ -107,6 +108,8 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("python3 -m venv \"$RUNTIME_DIR\""))
         XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -m pip install --upgrade pip"))
         XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -m pip install --upgrade mlx-vlm"))
+        XCTAssertTrue(script.contains("STILLLOOP_INSTALL_RAPID_MLX"))
+        XCTAssertTrue(script.contains("pip install --upgrade rapid-mlx"))
         XCTAssertTrue(script.contains("\"$RUNTIME_DIR/bin/python3\" -c \"import mlx_vlm\""))
     }
 
