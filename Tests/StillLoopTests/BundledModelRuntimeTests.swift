@@ -36,8 +36,8 @@ final class BundledModelRuntimeTests: XCTestCase {
             "-m", "/tmp/StillLoop Models/model.gguf",
             "--mmproj", "/tmp/StillLoop Models/mmproj.gguf",
             "--host", "/tmp/stillloop-runtime.sock",
-            "--ctx-size", "4096",
-            "--parallel", "1",
+            "--ctx-size", "16384",
+            "--parallel", "4",
             "--n-gpu-layers", "99",
             "--batch-size", "4096",
             "--ubatch-size", "1024",
@@ -101,8 +101,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
         XCTAssertFalse(arguments.contains("--metrics"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "16384")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "4")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--n-gpu-layers")! + 1], "99")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-k")! + 1], "q4_1")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")
@@ -125,8 +125,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--cache-reuse"))
         XCTAssertFalse(arguments.contains("--cache-ram"))
         XCTAssertTrue(arguments.contains("--metrics"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "16384")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "4")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")

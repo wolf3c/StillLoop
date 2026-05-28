@@ -115,8 +115,8 @@ llama.cpp 主要启动参数：
 
 - 模型文件：主 GGUF。
 - 视觉投影文件：mmproj。
-- context size：4096。
-- parallel slots：1。
+- context size：16384，总 context 由 llama-server 分配给 parallel slots。
+- parallel slots：4，用于给不同 prompt family 保留独立 cache slot；App 层 LLM 调用仍由全局 gate 保持 1 并发。
 - GPU layers：99。
 - logical batch size：4096。
 - physical microbatch size：1024。
@@ -127,7 +127,7 @@ llama.cpp 主要启动参数：
 
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
-当前配置是单槽实验配置，用于降低 slot 切分、并发调度和常驻内存压力。代价是单轮 context 余量更低，presence 或 progress 的多图请求更容易触发上下文不足；如果诊断日志出现上下文超限、HTTP 400 或大量 fallback，需要回退到更高 context 或更多 slot 的配置继续对比。
+当前配置是多 slot prompt cache 实验配置，每个 slot 约 4096 context，用于观察 presence、alignment、progress、target judgment 等不同 prompt family 是否能恢复 cache 命中。代价是 KV/context 常驻内存压力高于单槽配置；如果诊断日志仍长期出现 `*CacheN=0`，或内存/长尾明显恶化，需要回退到 `--ctx-size 4096 --parallel 1`。
 
 ## 主页预热
 
