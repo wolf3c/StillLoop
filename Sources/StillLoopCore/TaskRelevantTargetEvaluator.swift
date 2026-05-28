@@ -374,6 +374,7 @@ public struct TaskRelevantTargetEvaluator {
         let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
             .inputTextTokenCount(for: Self.inputText(in: messages))
         let response: String
+        let startedAt = Date()
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
             response = try await structuredEngine.complete(
                 messages: messages,
@@ -382,6 +383,7 @@ public struct TaskRelevantTargetEvaluator {
         } else {
             response = try await engine.complete(messages: messages)
         }
+        let durationSeconds = max(0, Date().timeIntervalSince(startedAt))
         let decoded = try LLMJSONResponseExtractor.decodeFirst(
             Response.self,
             from: response,
@@ -403,6 +405,7 @@ public struct TaskRelevantTargetEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                durationSeconds: durationSeconds,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings

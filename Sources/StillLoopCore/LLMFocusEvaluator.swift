@@ -195,6 +195,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var responseChars: Int
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
+    public var durationSeconds: TimeInterval?
     public var powerStatus: DevicePowerStatus?
     public var visualSampleLimit: Int?
     public var created: Int?
@@ -210,6 +211,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         responseChars: Int,
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
+        durationSeconds: TimeInterval? = nil,
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil,
         created: Int? = nil,
@@ -224,6 +226,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.responseChars = responseChars
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
+        self.durationSeconds = durationSeconds
         self.powerStatus = powerStatus
         self.visualSampleLimit = visualSampleLimit
         self.created = created
@@ -989,6 +992,7 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                durationSeconds: modelRunDurationSeconds,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
@@ -1288,6 +1292,7 @@ public struct LLMFocusEvaluator {
                     previousEventCount: 0,
                     responseChars: 0,
                     inputTextCharacterCount: 0,
+                    durationSeconds: 0,
                     powerStatus: powerStatus,
                     visualSampleLimit: visualSampleLimit
                 ),
@@ -1306,6 +1311,7 @@ public struct LLMFocusEvaluator {
             messages: promptMessages,
             responseFormat: .userPresenceEvaluation
         )
+        let durationSeconds = max(0, Date().timeIntervalSince(startedAt))
         let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
         let evaluation: LLMUserPresenceEvaluation
         do {
@@ -1328,13 +1334,14 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                durationSeconds: durationSeconds,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings
             ),
-            duration: max(0, Date().timeIntervalSince(startedAt))
+            duration: durationSeconds
         )
     }
 
@@ -1367,6 +1374,7 @@ public struct LLMFocusEvaluator {
             messages: promptMessages,
             responseFormat: .taskAlignmentEvaluation
         )
+        let durationSeconds = max(0, Date().timeIntervalSince(startedAt))
         let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
         let evaluation: LLMTaskAlignmentEvaluation
         do {
@@ -1389,13 +1397,14 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                durationSeconds: durationSeconds,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings
             ),
-            duration: max(0, Date().timeIntervalSince(startedAt))
+            duration: durationSeconds
         )
     }
 
@@ -1425,6 +1434,7 @@ public struct LLMFocusEvaluator {
                     previousEventCount: previousEvents.count,
                     responseChars: 0,
                     inputTextCharacterCount: 0,
+                    durationSeconds: 0,
                     powerStatus: powerStatus,
                     visualSampleLimit: visualSampleLimit
                 ),
@@ -1451,6 +1461,7 @@ public struct LLMFocusEvaluator {
             messages: promptMessages,
             responseFormat: .taskProgressEvaluation
         )
+        let durationSeconds = max(0, Date().timeIntervalSince(startedAt))
         let transportMetrics = (engine as? LLMRequestTransportMetricsProviding)?.lastRequestTransportMetrics
         let evaluation: LLMTaskProgressEvaluation
         do {
@@ -1478,13 +1489,14 @@ public struct LLMFocusEvaluator {
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                durationSeconds: durationSeconds,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings
             ),
-            duration: max(0, Date().timeIntervalSince(startedAt))
+            duration: durationSeconds
         )
     }
 
@@ -1586,6 +1598,7 @@ public struct LLMFocusEvaluator {
         taskProgress: LLMRequestDebugMetrics?
     ) -> LLMRequestDebugMetrics {
         let metrics = [presence, taskAlignment, taskProgress].compactMap { $0 }
+        let durationValues = metrics.compactMap(\.durationSeconds)
         return LLMRequestDebugMetrics(
             visualCaptureCount: metrics.map(\.visualCaptureCount).max() ?? presence.visualCaptureCount,
             imageCount: metrics.reduce(0) { $0 + $1.imageCount },
@@ -1595,6 +1608,7 @@ public struct LLMFocusEvaluator {
             responseChars: metrics.reduce(0) { $0 + $1.responseChars },
             inputTextCharacterCount: metrics.reduce(0) { $0 + $1.inputTextCharacterCount },
             inputTextTokenCount: metrics.reduce(nil as Int?) { sum($0, $1.inputTextTokenCount) },
+            durationSeconds: durationValues.isEmpty ? nil : durationValues.reduce(0, +),
             powerStatus: taskProgress?.powerStatus ?? taskAlignment?.powerStatus ?? presence.powerStatus,
             visualSampleLimit: metrics.compactMap(\.visualSampleLimit).max()
         )
@@ -1614,6 +1628,7 @@ public struct LLMFocusEvaluator {
             previousEventCount: previousEventCount,
             responseChars: 0,
             inputTextCharacterCount: 0,
+            durationSeconds: 0,
             powerStatus: powerStatus,
             visualSampleLimit: visualSampleLimit
         )

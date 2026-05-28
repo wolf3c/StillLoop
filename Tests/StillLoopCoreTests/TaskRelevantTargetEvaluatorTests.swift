@@ -39,6 +39,7 @@ final class TaskRelevantTargetEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 88_000)
         XCTAssertEqual(result.requestDebugMetrics?.responseChars, engine.response.count)
         XCTAssertEqual(result.requestDebugMetrics?.inputTextTokenCount, 321)
+        XCTAssertNotNil(result.requestDebugMetrics?.durationSeconds)
         XCTAssertEqual(result.requestDebugMetrics?.created, 1_779_999_000)
         XCTAssertEqual(result.requestDebugMetrics?.usage?.diagnosticInt(at: ["prompt_tokens_details", "cached_tokens"]), 12)
         XCTAssertEqual(result.requestDebugMetrics?.timings?.diagnosticInt(at: ["prompt_n"]), 777)

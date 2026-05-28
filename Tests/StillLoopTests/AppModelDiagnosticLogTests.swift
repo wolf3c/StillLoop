@@ -168,24 +168,28 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["llmPayloadBytes"] as? Int, 904_020)
         XCTAssertEqual(succeeded["llmResponseChars"] as? Int, result.requestDebugMetrics?.responseChars)
         XCTAssertEqual(succeeded["llmInputTextTokenCount"] as? Int, 2_590)
+        XCTAssertNotNil(succeeded["llmDurationMS"] as? Int)
         XCTAssertEqual(succeeded["presenceLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["presenceLLMTextSnapshotCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPreviousEventCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["presenceLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["presenceLLMCacheN"] as? Int, 221)
+        XCTAssertNotNil(succeeded["presenceLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["alignmentLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMPreviousEventCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["alignmentLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["alignmentLLMCacheN"] as? Int, 221)
+        XCTAssertNotNil(succeeded["alignmentLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 0)
         XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["progressLLMPreviousEventCount"] as? Int, 1)
         XCTAssertNil(succeeded["progressLLMPayloadBytes"])
         XCTAssertNil(succeeded["progressLLMInputTextTokenCount"])
         XCTAssertNil(succeeded["progressLLMCacheN"])
+        XCTAssertEqual(succeeded["progressLLMDurationMS"] as? Int, 0)
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
@@ -400,6 +404,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
                 responseChars: 20,
                 inputTextCharacterCount: 300,
                 inputTextTokenCount: 75,
+                durationSeconds: 2.345,
                 created: 1_779_999_001,
                 usage: .object([
                     "prompt_tokens_details": .object([
@@ -429,6 +434,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(fields["targetLLMImageCount"], .int(3))
         XCTAssertEqual(fields["targetLLMPayloadBytes"], .int(900))
         XCTAssertEqual(fields["targetLLMInputTextTokenCount"], .int(75))
+        XCTAssertEqual(fields["targetLLMDurationMS"], .int(2_345))
         XCTAssertEqual(fields["targetLLMPromptN"], .int(275))
         XCTAssertEqual(fields["targetLLMCachedTokens"], .int(10))
     }

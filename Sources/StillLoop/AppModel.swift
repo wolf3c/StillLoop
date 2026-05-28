@@ -2817,6 +2817,9 @@ final class AppModel: ObservableObject {
         if let inputTextTokenCount = metrics.inputTextTokenCount {
             fields["\(prefix)InputTextTokenCount"] = .int(inputTextTokenCount)
         }
+        if let durationSeconds = metrics.durationSeconds {
+            fields["\(prefix)DurationMS"] = .int(durationMilliseconds(for: durationSeconds))
+        }
         if includeDeviceFields {
             fields.merge(
                 devicePowerDiagnosticFields(
@@ -2922,6 +2925,10 @@ final class AppModel: ObservableObject {
 
     private static func durationMilliseconds(since startDate: Date) -> Int {
         max(0, Int(Date().timeIntervalSince(startDate) * 1_000))
+    }
+
+    private static func durationMilliseconds(for durationSeconds: TimeInterval) -> Int {
+        max(0, Int((durationSeconds * 1_000).rounded()))
     }
 
     private static func uniqueActiveAppsText(for snapshots: [ContextSnapshot]) -> String {
