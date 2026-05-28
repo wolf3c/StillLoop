@@ -243,6 +243,9 @@ final class MLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeD
 
     func startIfNeeded() async throws {
         if let process, process.isRunning {
+            if state == .running {
+                return
+            }
             do {
                 _ = try await waitUntilReady()
                 state = .running

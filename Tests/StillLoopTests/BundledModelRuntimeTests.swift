@@ -266,6 +266,36 @@ final class BundledModelRuntimeTests: XCTestCase {
         }
     }
 
+    func testMLXRuntimeDoesNotReprobeRunningServerAfterReadinessSucceeds() async throws {
+        let launcher = FakeBundledModelProcessLauncher()
+        var probeCount = 0
+        let runtime = MLXBundledModelRuntime(
+            configuration: .localDevelopment(port: 18765),
+            processLauncher: launcher,
+            readinessProbe: { _, _ in
+                probeCount += 1
+                if probeCount > 1 {
+                    throw URLError(.cannotConnectToHost)
+                }
+                return .ready
+            },
+            readinessMaxAttempts: 1,
+            readinessRetryDelayNanoseconds: 0,
+            processExitRetryDelayNanoseconds: 0
+        )
+
+        try await runtime.startIfNeeded()
+        let runningProcess = try XCTUnwrap(launcher.launchedProcesses.last)
+
+        try await runtime.startIfNeeded()
+
+        XCTAssertEqual(probeCount, 1)
+        XCTAssertEqual(runningProcess.terminateCount, 0)
+        XCTAssertTrue(runningProcess.isRunning)
+        XCTAssertEqual(launcher.launchCount, 1)
+        XCTAssertEqual(runtime.state, .running)
+    }
+
     func testStartFailsWhenProjectorFileIsMissingWithoutLaunchingProcess() async throws {
         let executableURL = try makeExecutable()
         let modelURL = try makeModelFile()
