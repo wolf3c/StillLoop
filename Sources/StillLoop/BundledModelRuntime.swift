@@ -809,6 +809,9 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
             "--ctx-size", String(spec.recommendedContextSize),
             "--parallel", String(spec.recommendedParallelSlots),
             "--n-gpu-layers", "99",
+            "--batch-size", "4096",
+            "--ubatch-size", "1024",
+            "--flash-attn", "on",
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV,
             "--mlock"

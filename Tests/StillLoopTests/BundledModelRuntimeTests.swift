@@ -39,6 +39,9 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--ctx-size", "4096",
             "--parallel", "1",
             "--n-gpu-layers", "99",
+            "--batch-size", "4096",
+            "--ubatch-size", "1024",
+            "--flash-attn", "on",
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
             "--mlock",
@@ -58,12 +61,14 @@ final class BundledModelRuntimeTests: XCTestCase {
         )
 
         #if DEBUG
-        XCTAssertFalse(arguments.contains("--batch-size"))
-        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
         XCTAssertEqual(arguments.last, "--metrics")
         #else
-        XCTAssertFalse(arguments.contains("--batch-size"))
-        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
         XCTAssertFalse(arguments.contains("--metrics"))
         #endif
     }
@@ -92,8 +97,9 @@ final class BundledModelRuntimeTests: XCTestCase {
             tuning: .production
         )
 
-        XCTAssertFalse(arguments.contains("--batch-size"))
-        XCTAssertFalse(arguments.contains("--ubatch-size"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
         XCTAssertFalse(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
@@ -121,6 +127,9 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertTrue(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
     }
 
     func testDefaultTuningCanDisablePromptCacheFromEnvironmentForRuntimeComparison() {
