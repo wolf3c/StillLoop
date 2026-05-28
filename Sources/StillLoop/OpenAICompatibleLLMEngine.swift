@@ -611,7 +611,9 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             ("temperature", .number("0.7")),
             ("top_p", .number("0.8")),
             ("top_k", .number("20")),
+            ("min_p", .number("0.0")),
             ("presence_penalty", .number("1.5")),
+            ("repeat_penalty", .number("1.0")),
             ("max_tokens", .number("\(maxTokens)")),
             ("stream", .bool(false))
         ]

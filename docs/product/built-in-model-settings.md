@@ -122,6 +122,8 @@ llama.cpp 主要启动参数：
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
 - prompt cache：默认启用。
 
+内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
+
 当前配置是单槽实验配置，用于降低 slot 切分、并发调度和常驻内存压力。代价是单轮 context 余量更低，presence 或 progress 的多图请求更容易触发上下文不足；如果诊断日志出现上下文超限、HTTP 400 或大量 fallback，需要回退到更高 context 或更多 slot 的配置继续对比。
 
 ## 主页预热
