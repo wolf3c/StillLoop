@@ -83,15 +83,24 @@ MLX 后端使用本机 `mlx_vlm.server` 风格的 OpenAI-compatible 服务，模
 
 MLX 本机实测 runtime 默认开启 in-memory APC（Automatic Prefix Caching），用于观察固定 prompt 前缀在真实 focus session 中的 prefill 收益。该开关是内部代码常量，不暴露给用户设置；默认不配置 `APC_DISK_PATH`，因此不会启用 APC disk cache 或写入 prompt/KV 缓存文件。
 
-Rapid-MLX 后端使用同模型：`rapid-mlx serve mlx-community/Qwen3.5-0.8B-4bit --mllm --host 127.0.0.1 --port <ephemeral> --max-tokens 900`，同样作为开发可切换路径，不暴露给用户设置。
+Rapid-MLX 后端优先复用本机已下载的 MLX Hugging Face snapshot（若存在），避免重复下载：
 
-本机 MLX / Rapid-MLX 实测前先运行一次：
+`rapid-mlx serve <模型路径或模型ID> --mllm --host 127.0.0.1 --port <ephemeral> --max-tokens 900`
+
+默认行为：
+
+- 若本机存在 HF 缓存目录 `~/.cache/huggingface/hub/models--mlx-community--Qwen3.5-0.8B-4bit` 且 `refs/main` 指向可用 snapshot，会优先用该 snapshot 路径启动（`models--mlx-community--Qwen3.5-0.8B-4bit/snapshots/<hash>`），避免重复下载。
+- 如果 HF 缓存不存在，再尝试用内置 GGUF 路径 `~/Library/Application Support/StillLoop/Models/Qwen3.5VL-0.8B-ImageExplainer-GGUF/Qwen3.5-0.8B-Base.Q4_K_M.gguf`。
+- 如果两个本地源都不可用，回退到 `mlx-community/Qwen3.5-0.8B-4bit` 远程模型ID。
+- 可通过 `STILLLOOP_RAPID_MLX_MODEL` 强制覆盖为自定义模型路径/ID（例如本地路径）。
+
+本机 MLX / Rapid-MLX 实测前建议先跑一次：
 
 ```sh
 scripts/setup-mlx-runtime.sh
 ```
 
-该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`；若需要可再加 `STILLLOOP_INSTALL_RAPID_MLX=1` 安装 `rapid-mlx`。`scripts/run-app.sh` 检测到 `.build/mlx-runtime/bin/python3` 后会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 启动命令能优先使用项目本地依赖，而不是系统 Python。
+该脚本会创建 `.build/mlx-runtime`，并在其中安装 `mlx-vlm`；若需要可再加 `STILLLOOP_INSTALL_RAPID_MLX=1` 安装 `rapid-mlx`。`scripts/run-app.sh` 在 `STILLLOOP_BUNDLED_RUNTIME=rapidMlx` 时会自动确保 `rapid-mlx` 已安装；当检测到 `.build/mlx-runtime/bin/python3` 时也会把该 venv 的 `bin` 放到转发给 app 的 `PATH` 最前面，因此 runtime 启动命令优先使用项目本地依赖，而不是系统 Python。
 
 启动方式示例：
 

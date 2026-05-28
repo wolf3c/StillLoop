@@ -165,6 +165,18 @@ fi
 
 if [[ -n "${STILLLOOP_BUNDLED_RUNTIME:-}" ]]; then
   OPEN_ARGS+=(--env "STILLLOOP_BUNDLED_RUNTIME=$STILLLOOP_BUNDLED_RUNTIME")
+
+  if [[ "$STILLLOOP_BUNDLED_RUNTIME" == "rapidMlx" ]]; then
+    OPEN_ARGS+=(--env "STILLLOOP_RAPID_MLX_EXECUTABLE=$MLX_RUNTIME_DIR/bin/rapid-mlx")
+    if [[ ! -x "$MLX_RUNTIME_DIR/bin/rapid-mlx" ]] && ! command -v rapid-mlx >/dev/null; then
+      echo "Preparing rapid-mlx runtime under $MLX_RUNTIME_DIR"
+      STILLLOOP_INSTALL_RAPID_MLX=1 "$ROOT_DIR/scripts/setup-mlx-runtime.sh"
+    fi
+  fi
+fi
+
+if [[ -n "${STILLLOOP_RAPID_MLX_MODEL:-}" ]]; then
+  OPEN_ARGS+=(--env "STILLLOOP_RAPID_MLX_MODEL=$STILLLOOP_RAPID_MLX_MODEL")
 fi
 
 /usr/bin/open "${OPEN_ARGS[@]}"

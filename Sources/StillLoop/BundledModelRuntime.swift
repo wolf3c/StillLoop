@@ -55,12 +55,15 @@ struct BundledModelPortOccupant: Equatable {
 
 struct BundledRuntimeSelection {
     static let defaultKind: BundledRuntimeKind = .llamaCpp
+    static let rapidMLXDefaultModelIdentifier = "mlx-community/Qwen3.5-0.8B-4bit"
 
     static func makeDefaultRuntime(
+        kind: BundledRuntimeKind,
         modelURL: URL,
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
+        rapidMLXModelIdentifier: String = rapidMLXDefaultModelIdentifier
     ) -> BundledModelRuntimeManaging {
-        switch defaultKind {
+        switch kind {
         case .mlx:
             return FallbackBundledModelRuntime(
                 primary: makeRuntime(kind: .mlx, modelURL: modelURL, bundle: bundle),
@@ -68,12 +71,24 @@ struct BundledRuntimeSelection {
             )
         case .rapidMlx:
             return FallbackBundledModelRuntime(
-                primary: makeRuntime(kind: .rapidMlx, modelURL: modelURL, bundle: bundle),
+                primary: makeRuntime(
+                    kind: .rapidMlx,
+                    modelURL: modelURL,
+                    bundle: bundle,
+                    rapidMLXModelIdentifier: rapidMLXModelIdentifier
+                ),
                 fallback: makeRuntime(kind: .llamaCpp, modelURL: modelURL, bundle: bundle)
             )
         case .llamaCpp:
             return makeRuntime(kind: .llamaCpp, modelURL: modelURL, bundle: bundle)
         }
+    }
+
+    static func makeDefaultRuntime(
+        modelURL: URL,
+        bundle: Bundle = .main
+    ) -> BundledModelRuntimeManaging {
+        makeDefaultRuntime(kind: defaultKind, modelURL: modelURL, bundle: bundle)
     }
 
     static func runtimeKind(
@@ -88,13 +103,16 @@ struct BundledRuntimeSelection {
     static func makeRuntime(
         kind: BundledRuntimeKind,
         modelURL: URL,
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
+        rapidMLXModelIdentifier: String = rapidMLXDefaultModelIdentifier
     ) -> BundledModelRuntimeManaging {
         switch kind {
         case .mlx:
             return MLXBundledModelRuntime.defaultRuntime()
         case .rapidMlx:
-            return RapidMLXBundledModelRuntime.defaultRuntime()
+            return RapidMLXBundledModelRuntime.defaultRuntime(
+                modelIdentifier: rapidMLXModelIdentifier
+            )
         case .llamaCpp:
             return BundledModelRuntime.defaultRuntime(modelURL: modelURL, bundle: bundle)
         }
@@ -400,23 +418,39 @@ final class RapidMLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRun
         var modelID: String
 
         static func localDevelopment(
-            port: Int = RapidMLXBundledModelRuntime.availableLocalPort()
+            port: Int = RapidMLXBundledModelRuntime.availableLocalPort(),
+            modelIdentifier: String = BundledRuntimeSelection.rapidMLXDefaultModelIdentifier,
+            executableURL: URL = Configuration.defaultExecutableURL()
         ) -> Configuration {
-            let modelID = "mlx-community/Qwen3.5-0.8B-4bit"
+            let modelID = modelIdentifier
+            let isWrapperCommand = executableURL.path == "/usr/bin/env"
+            let commandArguments = [
+                "serve",
+                modelID,
+                "--mllm",
+                "--host", "127.0.0.1",
+                "--port", String(port),
+                "--max-tokens", "900"
+            ]
+            let invocationArguments = isWrapperCommand
+                ? ["rapid-mlx"] + commandArguments
+                : commandArguments
             return Configuration(
-                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-                arguments: [
-                    "rapid-mlx",
-                    "serve",
-                    modelID,
-                    "--mllm",
-                    "--host", "127.0.0.1",
-                    "--port", String(port),
-                    "--max-tokens", "900"
-                ],
+                executableURL: executableURL,
+                arguments: invocationArguments,
                 baseURL: URL(string: "http://127.0.0.1:\(port)/v1")!,
                 modelID: modelID
             )
+        }
+
+        static func defaultExecutableURL() -> URL {
+            if let explicitPath = ProcessInfo.processInfo.environment["STILLLOOP_RAPID_MLX_EXECUTABLE"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !explicitPath.isEmpty,
+               FileManager.default.isExecutableFile(atPath: explicitPath)
+            {
+                return URL(fileURLWithPath: explicitPath)
+            }
+            return URL(fileURLWithPath: "/usr/bin/env")
         }
     }
 
@@ -457,6 +491,12 @@ final class RapidMLXBundledModelRuntime: BundledModelRuntimeManaging, BundledRun
 
     static func defaultRuntime() -> RapidMLXBundledModelRuntime {
         RapidMLXBundledModelRuntime(configuration: .localDevelopment())
+    }
+
+    static func defaultRuntime(
+        modelIdentifier: String
+    ) -> RapidMLXBundledModelRuntime {
+        RapidMLXBundledModelRuntime(configuration: .localDevelopment(modelIdentifier: modelIdentifier))
     }
 
     func startIfNeeded() async throws {

@@ -88,6 +88,8 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_BUNDLED_RUNTIME=$STILLLOOP_BUNDLED_RUNTIME\""))
+        XCTAssertTrue(script.contains("--env \"STILLLOOP_RAPID_MLX_MODEL=$STILLLOOP_RAPID_MLX_MODEL\""))
+        XCTAssertTrue(script.contains("--env \"STILLLOOP_RAPID_MLX_EXECUTABLE=$MLX_RUNTIME_DIR/bin/rapid-mlx\""))
     }
 
     func testRunAppForwardsPathForLocalMLXRuntimeDependencies() throws {
@@ -97,6 +99,15 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("if [[ -x \"$MLX_RUNTIME_DIR/bin/python3\" ]]; then"))
         XCTAssertTrue(script.contains("export PATH=\"$MLX_RUNTIME_DIR/bin:$PATH\""))
         XCTAssertTrue(script.contains("--env \"PATH=$PATH\""))
+    }
+
+    func testRunAppAutoInstallsRapidMLXWhenRuntimeSetToRapidMlx() throws {
+        let script = try String(contentsOfFile: "scripts/run-app.sh", encoding: .utf8)
+
+        XCTAssertTrue(script.contains("if [[ \"$STILLLOOP_BUNDLED_RUNTIME\" == \"rapidMlx\" ]]; then"))
+        XCTAssertTrue(script.contains("if [[ ! -x \"$MLX_RUNTIME_DIR/bin/rapid-mlx\" ]]"))
+        XCTAssertTrue(script.contains("command -v rapid-mlx >/dev/null"))
+        XCTAssertTrue(script.contains("STILLLOOP_INSTALL_RAPID_MLX=1 \"$ROOT_DIR/scripts/setup-mlx-runtime.sh\""))
     }
 
     func testSetupMLXRuntimeInstallsProjectLocalMLXVLMEnvironment() throws {

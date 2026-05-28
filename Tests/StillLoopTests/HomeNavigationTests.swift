@@ -56,6 +56,23 @@ final class HomeNavigationTests: XCTestCase {
         )
     }
 
+    private func temporaryDirectory() -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StillLoopHomeTests-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(directory)
+        return directory
+    }
+
+    private func makeModelDirectory() -> URL {
+        let supportDirectory = temporaryDirectory()
+        let modelDirectory = supportDirectory.appendingPathComponent(
+            "Models/\(ModelDownloadSpec.builtIn.localSubdirectory)",
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+        return modelDirectory
+    }
+
     private func makeEvaluationContextSnapshot(offset: TimeInterval, appName: String, latest: Date) -> ContextSnapshot {
         ContextSnapshot(
             timestamp: latest.addingTimeInterval(offset),
@@ -90,6 +107,72 @@ final class HomeNavigationTests: XCTestCase {
         )
 
         XCTAssertEqual(resolvedKind, .llamaCpp)
+    }
+
+    func testResolvedRapidMLXModelUsesEnvOverride() {
+        let modelDirectory = makeModelDirectory()
+        let override = "/tmp/rapid-model.gguf"
+
+        let resolvedModel = AppModel.resolvedRapidMLXModelIdentifier(
+            environment: ["STILLLOOP_RAPID_MLX_MODEL": override],
+            modelDirectory: modelDirectory
+        )
+
+        XCTAssertEqual(resolvedModel, override)
+    }
+
+    func testResolvedRapidMLXModelFallsBackToLocalBuiltInModelFile() {
+        let modelDirectory = makeModelDirectory()
+        let localModelPath = modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename).path
+        FileManager.default.createFile(atPath: localModelPath, contents: Data("model".utf8))
+        let emptyHFModelCacheDirectory = temporaryDirectory()
+
+        let resolvedModel = AppModel.resolvedRapidMLXModelIdentifier(
+            environment: [:],
+            modelDirectory: modelDirectory,
+            mlxCommunityModelDirectory: emptyHFModelCacheDirectory
+        )
+
+        XCTAssertEqual(resolvedModel, localModelPath)
+    }
+
+    func testResolvedRapidMLXModelPrefersHuggingFaceCacheSnapshotPath() throws {
+        let modelDirectory = makeModelDirectory()
+        let hfCacheDirectory = temporaryDirectory()
+            .appendingPathComponent("huggingface/hub/models--mlx-community--Qwen3.5-0.8B-4bit", isDirectory: true)
+        let refsDirectory = hfCacheDirectory.appendingPathComponent("refs", isDirectory: true)
+        let snapshotsDirectory = hfCacheDirectory
+            .appendingPathComponent("snapshots", isDirectory: true)
+        let snapshotID = "abc123"
+        let snapshotDirectory = snapshotsDirectory.appendingPathComponent(snapshotID, isDirectory: true)
+        try FileManager.default.createDirectory(at: snapshotDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: refsDirectory, withIntermediateDirectories: true)
+        try "\(snapshotID)".write(
+            to: refsDirectory.appendingPathComponent("main"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let resolvedModel = AppModel.resolvedRapidMLXModelIdentifier(
+            environment: [:],
+            modelDirectory: modelDirectory,
+            mlxCommunityModelDirectory: hfCacheDirectory
+        )
+
+        XCTAssertEqual(resolvedModel, snapshotDirectory.path)
+    }
+
+    func testResolvedRapidMLXModelFallsBackToRemoteModelWhenLocalMissing() {
+        let modelDirectory = makeModelDirectory()
+        let emptyHFModelCacheDirectory = temporaryDirectory()
+
+        let resolvedModel = AppModel.resolvedRapidMLXModelIdentifier(
+            environment: [:],
+            modelDirectory: modelDirectory,
+            mlxCommunityModelDirectory: emptyHFModelCacheDirectory
+        )
+
+        XCTAssertEqual(resolvedModel, BundledRuntimeSelection.rapidMLXDefaultModelIdentifier)
     }
 
     func testWelcomeCopyLeadsWithUserValue() {

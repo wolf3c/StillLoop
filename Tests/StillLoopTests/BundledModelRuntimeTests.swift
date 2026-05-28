@@ -152,6 +152,20 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertNil(diagnostics?.fallbackRuntimeKind)
     }
 
+    func testBundledRuntimeSelectionCanBuildRapidMLXRuntimeWithLlamaFallback() {
+        let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
+
+        let runtime = BundledRuntimeSelection.makeDefaultRuntime(
+            kind: .rapidMlx,
+            modelURL: modelURL
+        )
+        let diagnostics = runtime as? BundledRuntimeDiagnosticsProviding
+
+        XCTAssertTrue(runtime is FallbackBundledModelRuntime)
+        XCTAssertEqual(diagnostics?.bundledRuntimeKind, .rapidMlx)
+        XCTAssertNil(diagnostics?.fallbackRuntimeKind)
+    }
+
     func testBundledRuntimeSelectionCanBuildRapidMLXRuntimeDirectly() {
         let modelURL = URL(fileURLWithPath: "/tmp/model.gguf")
 
@@ -226,6 +240,35 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--port", "18765",
             "--max-tokens", "900"
         ])
+    }
+
+    func testRapidMLXRuntimeUsesExplicitExecutablePath() {
+        let explicitPath = URL(fileURLWithPath: "/tmp/rapid-mlx-explicit")
+        let configuration = RapidMLXBundledModelRuntime.Configuration.localDevelopment(
+            port: 18765,
+            executableURL: explicitPath
+        )
+
+        XCTAssertEqual(configuration.executableURL, explicitPath)
+        XCTAssertEqual(configuration.arguments, [
+            "serve",
+            "mlx-community/Qwen3.5-0.8B-4bit",
+            "--mllm",
+            "--host", "127.0.0.1",
+            "--port", "18765",
+            "--max-tokens", "900"
+        ])
+    }
+
+    func testRapidMLXRuntimeLaunchArgumentsAcceptsLocalModelPathOverride() {
+        let modelPath = "/tmp/Models/Qwen3.5-0.8B-Base.Q4_K_M.gguf"
+        let configuration = RapidMLXBundledModelRuntime.Configuration.localDevelopment(
+            port: 18765,
+            modelIdentifier: modelPath
+        )
+
+        XCTAssertEqual(configuration.arguments[2], modelPath)
+        XCTAssertEqual(configuration.modelID, modelPath)
     }
 
     func testFallbackRuntimeUsesPrimaryWhenMLXStarts() async throws {

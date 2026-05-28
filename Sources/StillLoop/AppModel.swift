@@ -691,6 +691,60 @@ final class AppModel: ObservableObject {
         BundledRuntimeSelection.runtimeKind(environment: environment)
     }
 
+    nonisolated static func resolvedRapidMLXModelIdentifier(
+        environment: [String: String],
+        modelDirectory: URL,
+        mlxCommunityModelDirectory: URL? = nil
+    ) -> String {
+        if let override = environment["STILLLOOP_RAPID_MLX_MODEL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !override.isEmpty
+        {
+            return override
+        }
+
+        if let cachedModelDirectory = Self.resolvedRapidMLXHFModelDirectory(
+            modelCacheDirectory: mlxCommunityModelDirectory
+        ) {
+            return cachedModelDirectory
+        }
+
+        let builtInModelURL = modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename)
+        if FileManager.default.fileExists(atPath: builtInModelURL.path) {
+            return builtInModelURL.path
+        }
+
+        return BundledRuntimeSelection.rapidMLXDefaultModelIdentifier
+    }
+
+    private nonisolated static func resolvedRapidMLXHFModelDirectory(
+        modelCacheDirectory: URL?
+    ) -> String? {
+        let baseDirectory = modelCacheDirectory ?? Self.defaultRapidMLXCommunityCacheDirectory()
+        let refsMainFile = baseDirectory.appendingPathComponent("refs/main")
+        guard FileManager.default.fileExists(atPath: refsMainFile.path),
+              let snapshot = try? String(contentsOf: refsMainFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              !snapshot.isEmpty
+        else {
+            return nil
+        }
+
+        let snapshotDirectory = baseDirectory
+            .appendingPathComponent("snapshots")
+            .appendingPathComponent(snapshot)
+        if FileManager.default.fileExists(atPath: snapshotDirectory.path) {
+            return snapshotDirectory.path
+        }
+        return nil
+    }
+
+    private nonisolated static func defaultRapidMLXCommunityCacheDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache")
+            .appendingPathComponent("huggingface")
+            .appendingPathComponent("hub")
+            .appendingPathComponent("models--mlx-community--Qwen3.5-0.8B-4bit")
+    }
+
     init(
         userDefaults: UserDefaults = .standard,
         bundledModelRuntime: BundledModelRuntimeManaging? = nil,
@@ -792,12 +846,17 @@ final class AppModel: ObservableObject {
             spec: .builtIn,
             localDirectory: modelDirectory
         )
+        let rapidMLXModelIdentifier = Self.resolvedRapidMLXModelIdentifier(
+            environment: environment,
+            modelDirectory: modelDirectory
+        )
         let bundledRuntimeKind = bundledModelRuntime == nil
             ? Self.resolvedBundledRuntimeKind(environment: environment)
             : BundledRuntimeSelection.defaultKind
-        self.bundledModelRuntime = bundledModelRuntime ?? BundledRuntimeSelection.makeRuntime(
+        self.bundledModelRuntime = bundledModelRuntime ?? BundledRuntimeSelection.makeDefaultRuntime(
             kind: bundledRuntimeKind,
-            modelURL: modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename)
+            modelURL: modelDirectory.appendingPathComponent(ModelDownloadSpec.builtIn.filename),
+            rapidMLXModelIdentifier: rapidMLXModelIdentifier
         )
         configureSelectedModelEvaluator()
         summaries = (try? store.loadSummaries()) ?? []
