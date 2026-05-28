@@ -723,6 +723,25 @@ final class HomeNavigationTests: XCTestCase {
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
     }
 
+    func testBundledPromptCachePrewarmUsesSharedLLMGate() async {
+        let runtime = FakeBundledRuntime()
+        let tracker = LLMConcurrencyTracker()
+        let model = makeModel(
+            bundledModelRuntime: runtime,
+            withBundledModelFiles: true,
+            bundledLLMEngineFactory: { _, _ in
+                SerialPrewarmingLLMEngine(tracker: tracker)
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        let isPrepared = await model.prepareBundledModelForEvaluation()
+
+        XCTAssertTrue(isPrepared)
+        let maxConcurrent = await tracker.maxConcurrentValue()
+        XCTAssertEqual(maxConcurrent, 1)
+    }
+
     func testBundledModelRuntimeWarmupFailureDoesNotBlockPreparation() async {
         let runtime = FakeBundledRuntime()
         var engines: [PrewarmingLLMEngine] = []
@@ -1423,6 +1442,60 @@ private final class PrewarmingLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrew
         if let prewarmError {
             throw prewarmError
         }
+    }
+}
+
+private actor LLMConcurrencyTracker {
+    private var activeCount = 0
+    private var storedMaxConcurrent = 0
+
+    func maxConcurrentValue() -> Int {
+        storedMaxConcurrent
+    }
+
+    func start() {
+        activeCount += 1
+        storedMaxConcurrent = max(storedMaxConcurrent, activeCount)
+    }
+
+    func finish() {
+        activeCount -= 1
+    }
+}
+
+private final class SerialPrewarmingLLMEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming {
+    private let tracker: LLMConcurrencyTracker
+
+    init(tracker: LLMConcurrencyTracker) {
+        self.tracker = tracker
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        """
+        {
+          "analysis": {
+            "userEngaged": true,
+            "taskAligned": true,
+            "userEngagement": "用户在场。",
+            "screenContent": "内容相关。",
+            "observedActivity": "持续推进。",
+            "taskAlignment": "匹配任务。",
+            "decisionRationale": "当前内容支持任务。"
+          },
+          "state":"focused",
+          "reason":"Focused",
+          "nudge":null
+        }
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        await tracker.start()
+        try await Task.sleep(for: .milliseconds(100))
+        await tracker.finish()
     }
 }
 

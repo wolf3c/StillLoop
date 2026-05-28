@@ -428,6 +428,7 @@ final class AppModel: ObservableObject {
     private let promptCacheProbeEnabled: Bool
     private let activeWorkTargetProvider: ActiveWorkTargetProviding
     private let activeWorkTargetEventSource: ActiveWorkTargetEventSourcing
+    private let llmCallSerializer = LLMCallSerializer()
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var shouldValidateBundledRuntimeForActiveRun = false
@@ -1834,9 +1835,15 @@ final class AppModel: ObservableObject {
             persistManualModelConfiguration()
             return
         }
-        let presenceEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-        let taskAlignmentEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-        let taskProgressEngine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        let presenceEngine = serializedLLMEngine(
+            OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        )
+        let taskAlignmentEngine = serializedLLMEngine(
+            OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        )
+        let taskProgressEngine = serializedLLMEngine(
+            OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
+        )
         llmEngine = taskProgressEngine
         llmEvaluator = LLMFocusEvaluator(
             userPresenceEngine: presenceEngine,
@@ -1996,7 +2003,9 @@ final class AppModel: ObservableObject {
 
         do {
             let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-            let result = try await engine.checkModelReadiness()
+            let result = try await llmCallSerializer.run {
+                try await engine.checkModelReadiness()
+            }
             isModelConnectionUsable = result.modelFound && result.chatCompletionWorks
             useLocalLLM = true
             userDefaults.set(true, forKey: DefaultsKey.useLocalLLM)
@@ -2124,9 +2133,15 @@ final class AppModel: ObservableObject {
                 bundledModelRuntime.stop()
                 return false
             }
-            let presenceEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
-            let taskAlignmentEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
-            let taskProgressEngine = bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            let presenceEngine = serializedLLMEngine(
+                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            )
+            let taskAlignmentEngine = serializedLLMEngine(
+                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            )
+            let taskProgressEngine = serializedLLMEngine(
+                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+            )
             let evaluator = LLMFocusEvaluator(
                 userPresenceEngine: presenceEngine,
                 taskAlignmentEngine: taskAlignmentEngine,
@@ -2174,6 +2189,10 @@ final class AppModel: ObservableObject {
                 ]
             )
         }
+    }
+
+    private func serializedLLMEngine(_ engine: LocalLLMEngine) -> LocalLLMEngine {
+        SerializedLLMEngineFactory.wrap(engine, serializer: llmCallSerializer)
     }
 
     private func runBundledPromptCacheProbeIfEnabled(evaluator: LLMFocusEvaluator, engine: LocalLLMEngine) async {
