@@ -811,7 +811,6 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
             "--n-gpu-layers", "99",
             "--batch-size", "4096",
             "--ubatch-size", "1024",
-            "--flash-attn", "on",
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV,
             "--mlock"

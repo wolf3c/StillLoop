@@ -120,7 +120,7 @@ llama.cpp 主要启动参数：
 - GPU layers：99。
 - logical batch size：4096。
 - physical microbatch size：1024。
-- flash attention：启用 `--flash-attn on`，作为 llama.cpp prefill 加速实验配置；如果本机 Metal 后端不支持或带来内存长尾，需要回退到默认 `auto`。
+- flash attention：不显式设置 `--flash-attn`，使用 llama.cpp 默认策略。此前 `--flash-attn on` 会作为 prefill 加速实验配置；当前回到默认策略，用于验证 prompt cache 是否恢复。
 - KV cache：`q4_1`。
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
 - prompt cache：默认启用。
