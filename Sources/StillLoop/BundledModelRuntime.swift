@@ -678,9 +678,38 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
     struct LaunchTuning: Equatable {
         var metricsEnabled: Bool
         var promptCacheEnabled: Bool
+        var contextSize: Int?
+        var parallelSlots: Int?
+        var batchSize: Int?
+        var microbatchSize: Int?
+        var flashAttention: String?
+        var promptCacheReuse: Int?
+        var promptCacheRAMMiB: Int?
 
         static let development = LaunchTuning(metricsEnabled: true, promptCacheEnabled: false)
         static let production = LaunchTuning(metricsEnabled: false, promptCacheEnabled: false)
+
+        init(
+            metricsEnabled: Bool,
+            promptCacheEnabled: Bool,
+            contextSize: Int? = nil,
+            parallelSlots: Int? = nil,
+            batchSize: Int? = nil,
+            microbatchSize: Int? = nil,
+            flashAttention: String? = nil,
+            promptCacheReuse: Int? = nil,
+            promptCacheRAMMiB: Int? = nil
+        ) {
+            self.metricsEnabled = metricsEnabled
+            self.promptCacheEnabled = promptCacheEnabled
+            self.contextSize = contextSize
+            self.parallelSlots = parallelSlots
+            self.batchSize = batchSize
+            self.microbatchSize = microbatchSize
+            self.flashAttention = flashAttention
+            self.promptCacheReuse = promptCacheReuse
+            self.promptCacheRAMMiB = promptCacheRAMMiB
+        }
 
         static var `default`: LaunchTuning {
             resolvedDefault(environment: ProcessInfo.processInfo.environment)
@@ -693,10 +722,54 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
             #else
             tuning = .production
             #endif
+            tuning.contextSize = positiveInt("STILLLOOP_LLAMA_CTX_SIZE", environment: environment)
+            tuning.parallelSlots = positiveInt("STILLLOOP_LLAMA_PARALLEL", environment: environment)
+            tuning.batchSize = positiveInt("STILLLOOP_LLAMA_BATCH_SIZE", environment: environment)
+            tuning.microbatchSize = positiveInt("STILLLOOP_LLAMA_UBATCH_SIZE", environment: environment)
+            tuning.flashAttention = flashAttentionValue(environment["STILLLOOP_LLAMA_FLASH_ATTN"])
+            if let promptCacheEnabled = boolValue(environment["STILLLOOP_LLAMA_PROMPT_CACHE"]) {
+                tuning.promptCacheEnabled = promptCacheEnabled
+            }
             if environment["STILLLOOP_DISABLE_PROMPT_CACHE"] == "1" {
                 tuning.promptCacheEnabled = false
             }
+            tuning.promptCacheReuse = positiveInt("STILLLOOP_LLAMA_CACHE_REUSE", environment: environment)
+            tuning.promptCacheRAMMiB = positiveInt("STILLLOOP_LLAMA_CACHE_RAM", environment: environment)
             return tuning
+        }
+
+        private static func positiveInt(_ key: String, environment: [String: String]) -> Int? {
+            guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let intValue = Int(value),
+                  intValue > 0
+            else {
+                return nil
+            }
+            return intValue
+        }
+
+        private static func boolValue(_ rawValue: String?) -> Bool? {
+            switch rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "1", "true", "on", "yes":
+                return true
+            case "0", "false", "off", "no":
+                return false
+            default:
+                return nil
+            }
+        }
+
+        private static func flashAttentionValue(_ rawValue: String?) -> String? {
+            switch rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "1", "true", "on", "yes":
+                return "on"
+            case "0", "false", "off", "no":
+                return "off"
+            case "auto":
+                return "auto"
+            default:
+                return nil
+            }
         }
     }
 
@@ -806,20 +879,23 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
         var arguments = [
             "-m", modelURL.path,
             "--host", selectedSocketURL.path,
-            "--ctx-size", String(spec.recommendedContextSize),
-            "--parallel", String(spec.recommendedParallelSlots),
+            "--ctx-size", String(tuning.contextSize ?? spec.recommendedContextSize),
+            "--parallel", String(tuning.parallelSlots ?? spec.recommendedParallelSlots),
             "--n-gpu-layers", "99",
-            "--batch-size", "4096",
-            "--ubatch-size", "4096",
+            "--batch-size", String(tuning.batchSize ?? 4096),
+            "--ubatch-size", String(tuning.microbatchSize ?? 4096),
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV,
             "--mlock"
         ]
+        if let flashAttention = tuning.flashAttention {
+            arguments.append(contentsOf: ["--flash-attn", flashAttention])
+        }
         if tuning.promptCacheEnabled {
             arguments.append(contentsOf: [
                 "--cache-prompt",
-                "--cache-reuse", String(spec.recommendedPromptCacheReuse),
-                "--cache-ram", String(spec.recommendedPromptCacheRAMMiB)
+                "--cache-reuse", String(tuning.promptCacheReuse ?? spec.recommendedPromptCacheReuse),
+                "--cache-ram", String(tuning.promptCacheRAMMiB ?? spec.recommendedPromptCacheRAMMiB)
             ])
         } else {
             arguments.append("--no-cache-prompt")

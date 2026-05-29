@@ -134,6 +134,68 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--flash-attn"))
     }
 
+    func testLaunchArgumentsCanUseEnvironmentLlamaServerOverrides() {
+        let tuning = BundledModelRuntime.LaunchTuning.resolvedDefault(
+            environment: [
+                "STILLLOOP_LLAMA_CTX_SIZE": "8192",
+                "STILLLOOP_LLAMA_PARALLEL": "2",
+                "STILLLOOP_LLAMA_BATCH_SIZE": "2048",
+                "STILLLOOP_LLAMA_UBATCH_SIZE": "1024",
+                "STILLLOOP_LLAMA_FLASH_ATTN": "on",
+                "STILLLOOP_LLAMA_PROMPT_CACHE": "1",
+                "STILLLOOP_LLAMA_CACHE_REUSE": "512",
+                "STILLLOOP_LLAMA_CACHE_RAM": "1024"
+            ]
+        )
+        let arguments = BundledModelRuntime.launchArguments(
+            modelURL: URL(fileURLWithPath: "/tmp/model.gguf"),
+            spec: .builtIn,
+            socketURL: URL(fileURLWithPath: "/tmp/stillloop-runtime.sock"),
+            tuning: tuning
+        )
+
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "8192")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "2")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "2048")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--flash-attn")! + 1], "on")
+        XCTAssertTrue(arguments.contains("--cache-prompt"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "512")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "1024")
+        XCTAssertFalse(arguments.contains("--no-cache-prompt"))
+    }
+
+    func testLaunchArgumentsIgnoreInvalidEnvironmentLlamaServerOverrides() {
+        let tuning = BundledModelRuntime.LaunchTuning.resolvedDefault(
+            environment: [
+                "STILLLOOP_LLAMA_CTX_SIZE": "0",
+                "STILLLOOP_LLAMA_PARALLEL": "-1",
+                "STILLLOOP_LLAMA_BATCH_SIZE": "bad",
+                "STILLLOOP_LLAMA_UBATCH_SIZE": "",
+                "STILLLOOP_LLAMA_FLASH_ATTN": "maybe",
+                "STILLLOOP_LLAMA_PROMPT_CACHE": "yes please",
+                "STILLLOOP_LLAMA_CACHE_REUSE": "0",
+                "STILLLOOP_LLAMA_CACHE_RAM": "-512"
+            ]
+        )
+        let arguments = BundledModelRuntime.launchArguments(
+            modelURL: URL(fileURLWithPath: "/tmp/model.gguf"),
+            spec: .builtIn,
+            socketURL: URL(fileURLWithPath: "/tmp/stillloop-runtime.sock"),
+            tuning: tuning
+        )
+
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "4096")
+        XCTAssertFalse(arguments.contains("--flash-attn"))
+        XCTAssertFalse(arguments.contains("--cache-prompt"))
+        XCTAssertFalse(arguments.contains("--cache-reuse"))
+        XCTAssertFalse(arguments.contains("--cache-ram"))
+        XCTAssertTrue(arguments.contains("--no-cache-prompt"))
+    }
+
     func testDefaultTuningKeepsPromptCacheDisabledForRuntimeComparison() {
         let tuning = BundledModelRuntime.LaunchTuning.resolvedDefault(
             environment: [:]

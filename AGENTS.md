@@ -153,6 +153,20 @@ scripts/run-app.sh
 
 For prompt-cache A/B performance testing only, add `STILLLOOP_DISABLE_PROMPT_CACHE=1` to the same launch command. Do not use it as the default development path unless the task is specifically testing llama.cpp prompt-cache behavior.
 
+For llama.cpp runtime performance experiments, pass startup overrides through environment variables instead of editing code:
+
+```sh
+STILLLOOP_SKIP_MODEL_DOWNLOAD=1 \
+STILLLOOP_LLAMA_CTX_SIZE=4096 \
+STILLLOOP_LLAMA_PARALLEL=1 \
+STILLLOOP_LLAMA_BATCH_SIZE=4096 \
+STILLLOOP_LLAMA_UBATCH_SIZE=1024 \
+STILLLOOP_LLAMA_FLASH_ATTN=on \
+scripts/run-app.sh
+```
+
+Supported overrides are `STILLLOOP_LLAMA_CTX_SIZE`, `STILLLOOP_LLAMA_PARALLEL`, `STILLLOOP_LLAMA_BATCH_SIZE`, `STILLLOOP_LLAMA_UBATCH_SIZE`, `STILLLOOP_LLAMA_FLASH_ATTN`, `STILLLOOP_LLAMA_PROMPT_CACHE`, `STILLLOOP_LLAMA_CACHE_REUSE`, and `STILLLOOP_LLAMA_CACHE_RAM`. Keep these as development/test inputs only; do not expose them in Settings or UserDefaults.
+
 For local MLX backend testing, bootstrap the project-local Python runtime once before launching:
 
 ```sh

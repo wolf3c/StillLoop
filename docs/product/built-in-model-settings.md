@@ -125,6 +125,19 @@ llama.cpp 主要启动参数：
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
 - prompt cache：暂不启用；默认显式传 `--no-cache-prompt`，不传 `--cache-prompt`、`--cache-reuse`、`--cache-ram`，请求体也不传 llama.cpp 私有的 `id_slot` / `cache_prompt`。
 
+本机性能实验可以通过环境变量覆盖 llama.cpp 启动参数，避免每次修改代码。默认值保持上面的配置；只有显式传入以下变量时才覆盖，且不写入 Settings 或 UserDefaults：
+
+- `STILLLOOP_LLAMA_CTX_SIZE` -> `--ctx-size`
+- `STILLLOOP_LLAMA_PARALLEL` -> `--parallel`
+- `STILLLOOP_LLAMA_BATCH_SIZE` -> `--batch-size`
+- `STILLLOOP_LLAMA_UBATCH_SIZE` -> `--ubatch-size`
+- `STILLLOOP_LLAMA_FLASH_ATTN=on|off|auto` -> `--flash-attn`
+- `STILLLOOP_LLAMA_PROMPT_CACHE=1` -> `--cache-prompt`；`0` 明确关闭。
+- `STILLLOOP_LLAMA_CACHE_REUSE` -> `--cache-reuse`，仅在 prompt cache 启用时传入。
+- `STILLLOOP_LLAMA_CACHE_RAM` -> `--cache-ram`，仅在 prompt cache 启用时传入。
+
+无效值、空值或非正整数会被忽略并回落到默认值。`STILLLOOP_DISABLE_PROMPT_CACHE=1` 仍保留为兼容开关，并优先关闭 prompt cache。
+
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
 当前配置暂停 prompt cache 实验，回到单 slot runtime，并优先测试更大的 prefill batch / microbatch 是否能稳定降低真实任务耗时。诊断应优先看拆分后的队列、请求和后端字段：

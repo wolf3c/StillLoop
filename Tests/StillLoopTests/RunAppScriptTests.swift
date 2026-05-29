@@ -88,6 +88,19 @@ final class RunAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RUN_PROMPT_CACHE_PROBE=$STILLLOOP_RUN_PROMPT_CACHE_PROBE\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_DISABLE_PROMPT_CACHE=$STILLLOOP_DISABLE_PROMPT_CACHE\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_BUNDLED_RUNTIME=$STILLLOOP_BUNDLED_RUNTIME\""))
+        for variable in [
+            "STILLLOOP_LLAMA_CTX_SIZE",
+            "STILLLOOP_LLAMA_PARALLEL",
+            "STILLLOOP_LLAMA_BATCH_SIZE",
+            "STILLLOOP_LLAMA_UBATCH_SIZE",
+            "STILLLOOP_LLAMA_FLASH_ATTN",
+            "STILLLOOP_LLAMA_PROMPT_CACHE",
+            "STILLLOOP_LLAMA_CACHE_REUSE",
+            "STILLLOOP_LLAMA_CACHE_RAM"
+        ] {
+            XCTAssertTrue(script.contains(variable))
+        }
+        XCTAssertTrue(script.contains("OPEN_ARGS+=(--env \"$VAR_NAME=${!VAR_NAME}\")"))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RAPID_MLX_MODEL=$STILLLOOP_RAPID_MLX_MODEL\""))
         XCTAssertTrue(script.contains("--env \"STILLLOOP_RAPID_MLX_EXECUTABLE=$MLX_RUNTIME_DIR/bin/rapid-mlx\""))
     }
