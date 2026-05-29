@@ -1512,7 +1512,7 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertEqual(metrics.previousEventCount, 1)
         XCTAssertEqual(metrics.payloadBytes, 12_345)
         XCTAssertEqual(metrics.responseChars, response.count)
-        XCTAssertEqual(metrics.inputTextTokenCount, 678)
+        XCTAssertEqual(metrics.inputTextTokenCount, 21)
         XCTAssertEqual(
             metrics.usage?.compactJSONString,
             #"{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#
@@ -1558,10 +1558,11 @@ final class LLMFocusEvaluatorTests: XCTestCase {
         XCTAssertTrue(engine.flattenedPrompt.contains(#""focusTargetID" must be a current targetID when state is focused; otherwise null."#))
     }
 
-    func testInputTextTokenCountingDoesNotInflateModelRunDuration() async throws {
-        let evaluator = LLMFocusEvaluator(engine: SlowTokenCountingEngine(response: """
+    func testEvaluationDoesNotSynchronouslyTokenizeInputTextOnMainPath() async throws {
+        let engine = SlowTokenCountingEngine(response: """
         {"state":"uncertain","reason":"Ambiguous context","nudge":null}
-        """))
+        """)
+        let evaluator = LLMFocusEvaluator(engine: engine)
         let startedAt = Date()
 
         let result = try await evaluator.evaluate(
@@ -1580,9 +1581,10 @@ final class LLMFocusEvaluatorTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(result.requestDebugMetrics?.inputTextTokenCount, 42)
-        XCTAssertGreaterThan(Date().timeIntervalSince(startedAt), 0.18)
+        XCTAssertNil(result.requestDebugMetrics?.inputTextTokenCount)
+        XCTAssertEqual(engine.tokenCountCallCount, 0)
         XCTAssertLessThan(try XCTUnwrap(result.modelRunDurationSeconds), 0.10)
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.10)
     }
 
     func testParsesStructuredModelJudgement() async throws {
@@ -2700,12 +2702,14 @@ private final class InstrumentedStubEngine: LocalLLMEngine, LLMRequestTransportM
 
 private final class SlowTokenCountingEngine: LocalLLMEngine, LLMInputTextTokenCounting {
     let response: String
+    private(set) var tokenCountCallCount = 0
 
     init(response: String) {
         self.response = response
     }
 
     func inputTextTokenCount(for text: String) async -> Int? {
+        tokenCountCallCount += 1
         try? await Task.sleep(for: .milliseconds(200))
         return 42
     }

@@ -1,44 +1,137 @@
 import Foundation
 import StillLoopCore
 
-actor LLMCallSerializer {
-    private struct Waiter {
-        var id: UUID
-        var continuation: CheckedContinuation<Void, Error>
+enum LLMWorkKind: String, Equatable {
+    case focusEvaluation
+    case targetJudgment
+    case reviewComment
+    case readiness
+    case prewarm
+    case probe
+    case request
+}
+
+struct LLMWorkContext: Equatable {
+    var kind: LLMWorkKind
+    var sequence: Int
+    var enqueuedAt: Date
+    var startedAt: Date
+    var queueWaitSeconds: TimeInterval
+
+    func executionSeconds(at date: Date = Date()) -> TimeInterval {
+        max(0, date.timeIntervalSince(startedAt))
     }
+}
+
+struct LLMWorkMetrics: Equatable {
+    var kind: LLMWorkKind
+    var sequence: Int
+    var queueWaitSeconds: TimeInterval
+    var executionSeconds: TimeInterval
+}
+
+struct LLMWorkResult<Value> {
+    var value: Value
+    var metrics: LLMWorkMetrics
+}
+
+actor LLMWorkScheduler {
+    private struct Ticket {
+        var id: UUID
+        var kind: LLMWorkKind
+        var sequence: Int
+        var enqueuedAt: Date
+    }
+
+    private struct Waiter {
+        var ticket: Ticket
+        var continuation: CheckedContinuation<Ticket, Error>
+    }
+
+    @TaskLocal static var currentContext: LLMWorkContext?
 
     private var isRunning = false
     private var waiters: [Waiter] = []
+    private var nextSequence = 1
 
-    func run<T>(_ operation: () async throws -> T) async throws -> T {
-        try await acquire()
+    func run<T>(
+        kind: LLMWorkKind,
+        operation: (LLMWorkContext) async throws -> T
+    ) async throws -> LLMWorkResult<T> {
+        if let currentContext = Self.currentContext {
+            let startedAt = Date()
+            let value = try await operation(currentContext)
+            return LLMWorkResult(
+                value: value,
+                metrics: LLMWorkMetrics(
+                    kind: currentContext.kind,
+                    sequence: currentContext.sequence,
+                    queueWaitSeconds: currentContext.queueWaitSeconds,
+                    executionSeconds: max(0, Date().timeIntervalSince(startedAt))
+                )
+            )
+        }
+
+        let ticket = try await acquire(kind: kind)
+        let startedAt = Date()
+        let context = LLMWorkContext(
+            kind: ticket.kind,
+            sequence: ticket.sequence,
+            enqueuedAt: ticket.enqueuedAt,
+            startedAt: startedAt,
+            queueWaitSeconds: max(0, startedAt.timeIntervalSince(ticket.enqueuedAt))
+        )
         do {
-            let value = try await operation()
+            let value = try await Self.$currentContext.withValue(context) {
+                try await operation(context)
+            }
+            let metrics = LLMWorkMetrics(
+                kind: context.kind,
+                sequence: context.sequence,
+                queueWaitSeconds: context.queueWaitSeconds,
+                executionSeconds: context.executionSeconds()
+            )
             release()
-            return value
+            return LLMWorkResult(value: value, metrics: metrics)
         } catch {
             release()
             throw error
         }
     }
 
-    private func acquire() async throws {
+    func runRequest<T>(_ operation: () async throws -> T) async throws -> T {
+        if Self.currentContext != nil {
+            return try await operation()
+        }
+        return try await run(kind: .request) { _ in
+            try await operation()
+        }.value
+    }
+
+    private func acquire(kind: LLMWorkKind) async throws -> Ticket {
+        let ticket = Ticket(
+            id: UUID(),
+            kind: kind,
+            sequence: nextSequence,
+            enqueuedAt: Date()
+        )
+        nextSequence += 1
         if !isRunning {
             isRunning = true
-            return
+            return ticket
         }
 
-        let id = UUID()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try Task.checkCancellation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Ticket, Error>) in
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
                 } else {
-                    waiters.append(Waiter(id: id, continuation: continuation))
+                    waiters.append(Waiter(ticket: ticket, continuation: continuation))
                 }
             }
         } onCancel: {
-            Task { await self.cancelWaiter(id: id) }
+            Task { await self.cancelWaiter(id: ticket.id) }
         }
     }
 
@@ -48,11 +141,11 @@ actor LLMCallSerializer {
             return
         }
         let waiter = waiters.removeFirst()
-        waiter.continuation.resume()
+        waiter.continuation.resume(returning: waiter.ticket)
     }
 
     private func cancelWaiter(id: UUID) {
-        guard let index = waiters.firstIndex(where: { $0.id == id }) else {
+        guard let index = waiters.firstIndex(where: { $0.ticket.id == id }) else {
             return
         }
         let waiter = waiters.remove(at: index)
@@ -66,11 +159,11 @@ class SerializedLLMEngine: StructuredLocalLLMEngine,
     LLMInputTextTokenCounting
 {
     let base: LocalLLMEngine
-    let serializer: LLMCallSerializer
+    let scheduler: LLMWorkScheduler
 
-    init(base: LocalLLMEngine, serializer: LLMCallSerializer) {
+    init(base: LocalLLMEngine, scheduler: LLMWorkScheduler) {
         self.base = base
-        self.serializer = serializer
+        self.scheduler = scheduler
     }
 
     var lastRequestTransportMetrics: LLMRequestTransportMetrics? {
@@ -78,13 +171,13 @@ class SerializedLLMEngine: StructuredLocalLLMEngine,
     }
 
     func complete(messages: [LLMMessage]) async throws -> String {
-        try await serializer.run {
+        try await scheduler.runRequest {
             try await base.complete(messages: messages)
         }
     }
 
     func complete(messages: [LLMMessage], responseFormat: LLMResponseFormat?) async throws -> String {
-        try await serializer.run {
+        try await scheduler.runRequest {
             if let structuredBase = base as? StructuredLocalLLMEngine {
                 return try await structuredBase.complete(messages: messages, responseFormat: responseFormat)
             }
@@ -99,7 +192,7 @@ class SerializedLLMEngine: StructuredLocalLLMEngine,
         guard let prewarmingBase = base as? LLMFocusPromptCachePrewarming else {
             return
         }
-        try await serializer.run {
+        _ = try await scheduler.run(kind: .prewarm) { _ in
             try await prewarmingBase.prewarmFocusEvaluationPrompt(
                 messages: messages,
                 responseFormat: responseFormat
@@ -111,7 +204,7 @@ class SerializedLLMEngine: StructuredLocalLLMEngine,
         guard let tokenCountingBase = base as? LLMInputTextTokenCounting else {
             return nil
         }
-        return try? await serializer.run {
+        return try? await scheduler.runRequest {
             await tokenCountingBase.inputTextTokenCount(for: text)
         }
     }
@@ -125,20 +218,20 @@ final class SerializedPromptCacheProbingLLMEngine: SerializedLLMEngine, LLMFocus
         guard let probingBase = base as? LLMFocusPromptCacheProbing else {
             throw URLError(.unsupportedURL)
         }
-        return try await serializer.run {
+        return try await scheduler.run(kind: .probe) { _ in
             try await probingBase.runFocusPromptCacheProbe(
                 messages: messages,
                 responseFormat: responseFormat
             )
-        }
+        }.value
     }
 }
 
 enum SerializedLLMEngineFactory {
-    static func wrap(_ engine: LocalLLMEngine, serializer: LLMCallSerializer) -> LocalLLMEngine {
+    static func wrap(_ engine: LocalLLMEngine, scheduler: LLMWorkScheduler) -> LocalLLMEngine {
         if engine is LLMFocusPromptCacheProbing {
-            return SerializedPromptCacheProbingLLMEngine(base: engine, serializer: serializer)
+            return SerializedPromptCacheProbingLLMEngine(base: engine, scheduler: scheduler)
         }
-        return SerializedLLMEngine(base: engine, serializer: serializer)
+        return SerializedLLMEngine(base: engine, scheduler: scheduler)
     }
 }

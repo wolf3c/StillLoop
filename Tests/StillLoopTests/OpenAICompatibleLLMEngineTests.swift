@@ -569,6 +569,8 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
 
         let metrics = try XCTUnwrap(engine.lastRequestTransportMetrics)
         XCTAssertEqual(metrics.created, 1_779_341_711)
+        XCTAssertEqual(metrics.inputTextTokenCount, 21)
+        XCTAssertNotNil(metrics.requestDurationSeconds)
         XCTAssertEqual(
             metrics.usage?.compactJSONString,
             #"{"completion_tokens":8,"prompt_tokens":21,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":29}"#

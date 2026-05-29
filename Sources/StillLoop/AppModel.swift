@@ -429,7 +429,7 @@ final class AppModel: ObservableObject {
     private let promptCacheProbeEnabled: Bool
     private let activeWorkTargetProvider: ActiveWorkTargetProviding
     private let activeWorkTargetEventSource: ActiveWorkTargetEventSourcing
-    private let llmCallSerializer = LLMCallSerializer()
+    private let llmWorkScheduler = LLMWorkScheduler()
     private var provider: ContextProvider?
     private var llmEngine: LocalLLMEngine?
     private var shouldValidateBundledRuntimeForActiveRun = false
@@ -437,7 +437,7 @@ final class AppModel: ObservableObject {
     private var captureTask: Task<Void, Never>?
     private var evaluationTask: Task<Void, Never>?
     private var targetMonitorTask: Task<Void, Never>?
-    private var targetJudgmentTask: Task<Void, Never>?
+    private var targetJudgmentTasks: [String: Task<Void, Never>] = [:]
     private var reviewCommentTask: Task<Void, Never>?
     private var modelConnectionCheckTask: Task<Void, Never>?
     private var modelDownloadTask: Task<Void, Never>?
@@ -451,7 +451,7 @@ final class AppModel: ObservableObject {
     private var targetMonitorState = TaskRelevantTargetMonitorState()
     private var targetEvidenceBuffers = TaskRelevantTargetEvidenceBufferStore()
     private var targetDwellState = TaskRelevantTargetDwellState(dwellDuration: 5)
-    private var targetJudgmentInFlightTarget: ActiveWorkTarget?
+    private var targetJudgmentInFlightTargets: [String: ActiveWorkTarget] = [:]
     var startPermissionDecisionOverride: StartPermissionDecision?
 
     private enum DefaultsKey {
@@ -1609,7 +1609,9 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let comment = try await generator.generateComment(for: session)
+            let comment = try await llmWorkScheduler.run(kind: .reviewComment) { _ in
+                try await generator.generateComment(for: session)
+            }.value
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !Task.isCancelled else { return }
             guard !comment.isEmpty else { return }
@@ -2063,9 +2065,9 @@ final class AppModel: ObservableObject {
 
         do {
             let engine = OpenAICompatibleLLMEngine(baseURL: baseURL, model: trimmedModelText, apiKey: onlineAPIKeyText)
-            let result = try await llmCallSerializer.run {
+            let result = try await llmWorkScheduler.run(kind: .readiness) { _ in
                 try await engine.checkModelReadiness()
-            }
+            }.value
             isModelConnectionUsable = result.modelFound && result.chatCompletionWorks
             useLocalLLM = true
             userDefaults.set(true, forKey: DefaultsKey.useLocalLLM)
@@ -2272,7 +2274,7 @@ final class AppModel: ObservableObject {
     }
 
     private func serializedLLMEngine(_ engine: LocalLLMEngine) -> LocalLLMEngine {
-        SerializedLLMEngineFactory.wrap(engine, serializer: llmCallSerializer)
+        SerializedLLMEngineFactory.wrap(engine, scheduler: llmWorkScheduler)
     }
 
     private func runBundledPromptCacheProbeIfEnabled(evaluator: LLMFocusEvaluator, engine: LocalLLMEngine) async {
@@ -2409,12 +2411,12 @@ final class AppModel: ObservableObject {
         evaluationTask = nil
         targetMonitorTask?.cancel()
         targetMonitorTask = nil
-        targetJudgmentTask?.cancel()
-        targetJudgmentTask = nil
-        if let targetJudgmentInFlightTarget {
-            targetMonitorState.markJudgmentFinished(for: targetJudgmentInFlightTarget)
+        targetJudgmentTasks.values.forEach { $0.cancel() }
+        targetJudgmentTasks.removeAll()
+        for target in targetJudgmentInFlightTargets.values {
+            targetMonitorState.markJudgmentFinished(for: target)
         }
-        targetJudgmentInFlightTarget = nil
+        targetJudgmentInFlightTargets.removeAll()
         targetEvidenceBuffers.reset()
         targetDwellState.pause()
     }
@@ -2616,13 +2618,11 @@ final class AppModel: ObservableObject {
         foregroundAt: Date,
         sessionID: UUID
     ) {
-        if let targetJudgmentInFlightTarget {
-            targetMonitorState.markJudgmentFinished(for: targetJudgmentInFlightTarget)
-        }
-        targetJudgmentTask?.cancel()
+        let targetKey = target.identityKey
+        guard targetJudgmentTasks[targetKey] == nil else { return }
         targetMonitorState.markJudgmentStarted(for: target)
-        targetJudgmentInFlightTarget = target
-        targetJudgmentTask = Task { [weak self] in
+        targetJudgmentInFlightTargets[targetKey] = target
+        targetJudgmentTasks[targetKey] = Task { [weak self] in
             await self?.runTaskRelevantTargetJudgment(
                 target: target,
                 readyEvidence: readyEvidence,
@@ -2638,25 +2638,48 @@ final class AppModel: ObservableObject {
         foregroundAt: Date,
         sessionID: UUID
     ) async {
+        let targetKey = target.identityKey
         defer {
             targetMonitorState.markJudgmentFinished(for: target)
             targetEvidenceBuffers.clearBuffer(for: target)
-            if targetJudgmentInFlightTarget?.identityKey == target.identityKey {
-                targetJudgmentInFlightTarget = nil
-                targetJudgmentTask = nil
-            }
+            targetJudgmentInFlightTargets[targetKey] = nil
+            targetJudgmentTasks[targetKey] = nil
         }
-        guard status == .running,
-              currentSession?.id == sessionID,
-              let engine = await taskRelevantTargetEngine()
-        else { return }
+        var workContext: LLMWorkContext?
         do {
-            let result = try await TaskRelevantTargetEvaluator(engine: engine).evaluate(
-                task: currentSession?.task ?? "",
-                target: target,
-                evidence: readyEvidence.evidence,
-                cumulativeForegroundSeconds: readyEvidence.cumulativeForegroundSeconds
-            )
+            let scheduled = try await llmWorkScheduler.run(kind: .targetJudgment) { context -> TaskRelevantTargetEvaluationResult? in
+                workContext = context
+                guard status == .running,
+                      currentSession?.id == sessionID,
+                      let session = currentSession,
+                      shouldCollectTargetEvidence(for: target, at: Date(), session: session)
+                else { return nil }
+                guard let engine = await taskRelevantTargetEngine(),
+                      status == .running,
+                      currentSession?.id == sessionID,
+                      let refreshedSession = currentSession,
+                      shouldCollectTargetEvidence(for: target, at: Date(), session: refreshedSession)
+                else { return nil }
+                return try await TaskRelevantTargetEvaluator(engine: engine).evaluate(
+                    task: refreshedSession.task,
+                    target: target,
+                    evidence: readyEvidence.evidence,
+                    cumulativeForegroundSeconds: readyEvidence.cumulativeForegroundSeconds
+                )
+            }
+            guard let result = scheduled.value else {
+                diagnosticLogger.record(
+                    "target.judgment.skipped",
+                    fields: [
+                        "sessionID": .string(sessionID.uuidString),
+                        "target": .string(target.displayText),
+                        "reason": .string("stale")
+                    ]
+                        .merging(modelSetupSelection.source == .bundled ? bundledRuntimeDiagnosticFields() : [:]) { current, _ in current }
+                        .merging(Self.llmWorkDiagnosticFields(from: scheduled.metrics)) { current, _ in current }
+                )
+                return
+            }
             guard !Task.isCancelled,
                   status == .running,
                   currentSession?.id == sessionID,
@@ -2675,19 +2698,31 @@ final class AppModel: ObservableObject {
             currentSession = session
             diagnosticLogger.record(
                 "target.judgment.completed",
-                fields: targetJudgmentDiagnosticFields(
+                fields: Self.targetJudgmentDiagnosticFields(
                     sessionID: sessionID,
                     target: target,
-                    result: result
+                    result: result,
+                    extraFields: (modelSetupSelection.source == .bundled ? bundledRuntimeDiagnosticFields() : [:])
+                        .merging(Self.llmWorkDiagnosticFields(from: scheduled.metrics)) { current, _ in current }
                 )
             )
         } catch {
+            if error is CancellationError {
+                return
+            }
             diagnosticLogger.record(
                 "target.judgment.failed",
-                fields: targetJudgmentFailureDiagnosticFields(
+                fields: Self.targetJudgmentFailureDiagnosticFields(
                     sessionID: sessionID,
                     target: target,
-                    error: error
+                    error: error,
+                    extraFields: (modelSetupSelection.source == .bundled ? bundledRuntimeDiagnosticFields() : [:])
+                        .merging(
+                            Self.llmWorkDiagnosticFields(
+                                from: workContext,
+                                includeExecution: true
+                            )
+                        ) { current, _ in current }
                 )
             )
         }
@@ -2992,6 +3027,9 @@ final class AppModel: ObservableObject {
         if let durationSeconds = metrics.durationSeconds {
             fields["\(prefix)DurationMS"] = .int(durationMilliseconds(for: durationSeconds))
         }
+        if let requestDurationSeconds = metrics.requestDurationSeconds {
+            fields["\(prefix)RequestMS"] = .int(durationMilliseconds(for: requestDurationSeconds))
+        }
         if let llamaServerSlotID = metrics.llamaServerSlotID {
             fields["\(prefix)SlotID"] = .int(llamaServerSlotID)
         }
@@ -3005,6 +3043,15 @@ final class AppModel: ObservableObject {
         }
         if let created = metrics.created {
             fields["\(prefix)Created"] = .int(created)
+        }
+        if let promptTokens = metrics.usage?.diagnosticInt(at: ["prompt_tokens"]) {
+            fields["\(prefix)PromptTokens"] = .int(promptTokens)
+        }
+        if let completionTokens = metrics.usage?.diagnosticInt(at: ["completion_tokens"]) {
+            fields["\(prefix)CompletionTokens"] = .int(completionTokens)
+        }
+        if let totalTokens = metrics.usage?.diagnosticInt(at: ["total_tokens"]) {
+            fields["\(prefix)TotalTokens"] = .int(totalTokens)
         }
         if let cachedTokens = metrics.usage?.diagnosticInt(at: ["prompt_tokens_details", "cached_tokens"]) {
             fields["\(prefix)CachedTokens"] = .int(cachedTokens)
@@ -3041,6 +3088,33 @@ final class AppModel: ObservableObject {
         return fields
     }
 
+    private static func llmWorkDiagnosticFields(
+        from context: LLMWorkContext?,
+        includeExecution: Bool = false,
+        at date: Date = Date()
+    ) -> [String: DiagnosticLogValue] {
+        guard let context else { return [:] }
+        var fields: [String: DiagnosticLogValue] = [
+            "llmWorkKind": .string(context.kind.rawValue),
+            "llmWorkSequence": .int(context.sequence),
+            "llmQueueWaitMS": .int(durationMilliseconds(for: context.queueWaitSeconds))
+        ]
+        if includeExecution {
+            fields["llmExecutionMS"] = .int(durationMilliseconds(for: context.executionSeconds(at: date)))
+        }
+        return fields
+    }
+
+    private static func llmWorkDiagnosticFields(from metrics: LLMWorkMetrics?) -> [String: DiagnosticLogValue] {
+        guard let metrics else { return [:] }
+        return [
+            "llmWorkKind": .string(metrics.kind.rawValue),
+            "llmWorkSequence": .int(metrics.sequence),
+            "llmQueueWaitMS": .int(durationMilliseconds(for: metrics.queueWaitSeconds)),
+            "llmExecutionMS": .int(durationMilliseconds(for: metrics.executionSeconds))
+        ]
+    }
+
     private static func devicePowerDiagnosticFields(
         powerStatus: DevicePowerStatus?,
         visualSampleLimit: Int?
@@ -3070,6 +3144,7 @@ final class AppModel: ObservableObject {
             responseChars: transportMetrics.responseChars ?? 0,
             inputTextCharacterCount: llmInputTextCharacterCount(in: request.messages),
             inputTextTokenCount: transportMetrics.inputTextTokenCount,
+            requestDurationSeconds: transportMetrics.requestDurationSeconds,
             llamaServerSlotID: transportMetrics.llamaServerSlotID,
             created: transportMetrics.created,
             usage: transportMetrics.usage,
@@ -3147,6 +3222,38 @@ final class AppModel: ObservableObject {
         evaluationWindowEnd: Date? = nil,
         targetJudgments: [TaskTargetJudgment] = []
     ) async -> LLMEvaluationResult {
+        let shouldScheduleLLMWork = LLMWorkScheduler.currentContext == nil
+            && (
+                modelSetupSelection.source == .bundled && !isCurrentSessionUsingRuleBasedModelFallback
+                    || modelSetupSelection.source == .manual && useLocalLLM && llmEvaluator != nil
+            )
+        if shouldScheduleLLMWork {
+            do {
+                return try await llmWorkScheduler.run(kind: .focusEvaluation) { _ in
+                    await self.evaluateFocus(
+                        task: task,
+                        snapshots: snapshots,
+                        visualSnapshots: visualSnapshots,
+                        taskVisualSnapshots: taskVisualSnapshots,
+                        powerStatus: powerStatus,
+                        visualSampleLimit: visualSampleLimit,
+                        previousEvents: previousEvents,
+                        appUsageIntervals: appUsageIntervals,
+                        evaluationWindowEnd: evaluationWindowEnd,
+                        targetJudgments: targetJudgments
+                    )
+                }.value
+            } catch {
+                return ruleBasedEvaluation(
+                    task: task,
+                    snapshots: snapshots,
+                    previousEvents: previousEvents,
+                    evaluatorName: "基础规则（模型调度取消）"
+                )
+            }
+        }
+
+        let llmWorkContext = LLMWorkScheduler.currentContext
         let resolvedPowerStatus = powerStatus ?? devicePowerStatusProvider.currentDevicePowerStatus()
         let resolvedVisualSampleLimit = visualSampleLimit
             ?? resolvedPowerStatus.visualSampleLimit(defaultLimit: SnapshotSampler.defaultLimit)
@@ -3170,6 +3277,7 @@ final class AppModel: ObservableObject {
             "progressVisualSampleCount": .int(taskProgressVisualSampleLimit)
         ]
         startedFields.merge(powerFields) { current, _ in current }
+        startedFields.merge(Self.llmWorkDiagnosticFields(from: llmWorkContext)) { current, _ in current }
         if modelSetupSelection.source == .bundled {
             startedFields.merge(bundledRuntimeDiagnosticFields()) { current, _ in current }
         }
@@ -3214,11 +3322,16 @@ final class AppModel: ObservableObject {
                     let failure = Self.modelInferenceFailurePresentation(for: error)
                     let splitFailureFields = Self.splitModelFailureDiagnosticFields(for: error)
                     let runtimeFields = bundledRuntimeDiagnosticFields()
+                    let workFields = Self.llmWorkDiagnosticFields(
+                        from: llmWorkContext,
+                        includeExecution: true
+                    )
                     let failureFields: [String: DiagnosticLogValue] = [
                         "modelSource": .string("bundled"),
                         "failureKind": .string(failure.debugText)
                     ]
                         .merging(runtimeFields) { current, _ in current }
+                        .merging(workFields) { current, _ in current }
                         .merging(splitFailureFields) { current, _ in current }
                     let fallbackFields: [String: DiagnosticLogValue] = [
                         "modelSource": .string("bundled"),
@@ -3226,6 +3339,7 @@ final class AppModel: ObservableObject {
                         "failureKind": .string(failure.debugText)
                     ]
                         .merging(runtimeFields) { current, _ in current }
+                        .merging(workFields) { current, _ in current }
                         .merging(splitFailureFields) { current, _ in current }
                     diagnosticLogger.record(
                         "model.evaluation.failed",
@@ -3270,7 +3384,14 @@ final class AppModel: ObservableObject {
                             "modelSource": .string("bundled"),
                             "fallback": .string("ruleBased"),
                             "failureKind": .string(reason)
-                        ].merging(bundledRuntimeDiagnosticFields()) { current, _ in current }
+                        ]
+                            .merging(bundledRuntimeDiagnosticFields()) { current, _ in current }
+                            .merging(
+                                Self.llmWorkDiagnosticFields(
+                                    from: llmWorkContext,
+                                    includeExecution: true
+                                )
+                            ) { current, _ in current }
                     )
                 )
                 return ruleBasedEvaluation(
@@ -3298,6 +3419,47 @@ final class AppModel: ObservableObject {
                     targetJudgments: targetJudgments
                 )
                 result.evaluator = "手动模型"
+                var llmDiagnosticFields = Self.llmDiagnosticFields(from: result.requestDebugMetrics)
+                llmDiagnosticFields.merge(
+                    Self.llmDiagnosticFields(
+                        from: result.presenceRequestDebugMetrics,
+                        prefix: "presenceLLM",
+                        includeDeviceFields: false
+                    )
+                ) { current, _ in current }
+                llmDiagnosticFields.merge(
+                    Self.llmDiagnosticFields(
+                        from: result.taskAlignmentRequestDebugMetrics,
+                        prefix: "alignmentLLM",
+                        includeDeviceFields: false
+                    )
+                ) { current, _ in current }
+                llmDiagnosticFields.merge(
+                    Self.llmDiagnosticFields(
+                        from: result.taskProgressRequestDebugMetrics,
+                        prefix: "progressLLM",
+                        includeDeviceFields: false
+                    )
+                ) { current, _ in current }
+                diagnosticLogger.record(
+                    "model.evaluation.succeeded",
+                    fields: diagnosticFields(
+                        snapshots: visualSnapshots,
+                        extra: [
+                            "modelSource": .string("manual"),
+                            "state": .string(result.state.rawValue),
+                            "alignmentVisualSampleCount": .int(taskAlignmentVisualSampleLimit),
+                            "progressVisualSampleCount": .int(taskProgressVisualSampleLimit)
+                        ]
+                            .merging(
+                                Self.llmWorkDiagnosticFields(
+                                    from: llmWorkContext,
+                                    includeExecution: true
+                                )
+                            ) { current, _ in current }
+                            .merging(llmDiagnosticFields) { current, _ in current }
+                    )
+                )
                 localLLMStatus = L10n.text("localLLM.manualConnected")
                 analysisModelStatus = .manualReady
                 return result
@@ -3312,7 +3474,14 @@ final class AppModel: ObservableObject {
                             "modelSource": .string("manual"),
                             "fallback": .string("ruleBased"),
                             "failureKind": .string(failure.debugText)
-                        ].merging(splitFailureFields) { current, _ in current }
+                        ]
+                            .merging(
+                                Self.llmWorkDiagnosticFields(
+                                    from: llmWorkContext,
+                                    includeExecution: true
+                                )
+                            ) { current, _ in current }
+                            .merging(splitFailureFields) { current, _ in current }
                     )
                 )
                 localLLMStatus = L10n.text("localLLM.ruleBasedManualFailure", failure.statusText)
@@ -3343,6 +3512,12 @@ final class AppModel: ObservableObject {
                     "fallback": .string("ruleBased"),
                     "failureKind": .string("modelUnavailable")
                 ]
+                    .merging(
+                        Self.llmWorkDiagnosticFields(
+                            from: llmWorkContext,
+                            includeExecution: true
+                        )
+                    ) { current, _ in current }
             )
         )
         return ruleBasedEvaluation(task: task, snapshots: snapshots, previousEvents: previousEvents)
@@ -3422,6 +3597,12 @@ final class AppModel: ObservableObject {
                     "progressVisualSampleCount": .int(progressVisualSampleCount)
                 ]
                     .merging(bundledRuntimeDiagnosticFields()) { current, _ in current }
+                    .merging(
+                        Self.llmWorkDiagnosticFields(
+                            from: LLMWorkScheduler.currentContext,
+                            includeExecution: true
+                        )
+                    ) { current, _ in current }
                     .merging(llmDiagnosticFields) { current, _ in current }
             )
         )
@@ -3616,36 +3797,4 @@ final class AppModel: ObservableObject {
         )
     }
 
-}
-
-private extension LLMUsageValue {
-    func diagnosticInt(at path: [String]) -> Int? {
-        switch diagnosticValue(at: path) {
-        case .int(let value):
-            return value
-        case .double(let value) where value.isFinite:
-            return Int(value)
-        default:
-            return nil
-        }
-    }
-
-    func diagnosticDouble(at path: [String]) -> Double? {
-        switch diagnosticValue(at: path) {
-        case .int(let value):
-            return Double(value)
-        case .double(let value):
-            return value
-        default:
-            return nil
-        }
-    }
-
-    private func diagnosticValue(at path: [String]) -> LLMUsageValue? {
-        guard let first = path.first else { return self }
-        guard case .object(let object) = self,
-              let next = object[first]
-        else { return nil }
-        return next.diagnosticValue(at: Array(path.dropFirst()))
-    }
 }

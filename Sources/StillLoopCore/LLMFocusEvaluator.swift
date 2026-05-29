@@ -89,12 +89,43 @@ public enum LLMUsageValue: Codable, Equatable {
         guard let data = try? encoder.encode(self) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    public func diagnosticInt(at path: [String]) -> Int? {
+        switch diagnosticValue(at: path) {
+        case .int(let value):
+            return value
+        case .double(let value) where value.isFinite:
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+
+    public func diagnosticDouble(at path: [String]) -> Double? {
+        switch diagnosticValue(at: path) {
+        case .int(let value):
+            return Double(value)
+        case .double(let value):
+            return value
+        default:
+            return nil
+        }
+    }
+
+    private func diagnosticValue(at path: [String]) -> LLMUsageValue? {
+        guard let first = path.first else { return self }
+        guard case .object(let object) = self,
+              let next = object[first]
+        else { return nil }
+        return next.diagnosticValue(at: Array(path.dropFirst()))
+    }
 }
 
 public struct LLMRequestTransportMetrics: Equatable {
     public var payloadBytes: Int?
     public var responseChars: Int?
     public var inputTextTokenCount: Int?
+    public var requestDurationSeconds: TimeInterval?
     public var llamaServerSlotID: Int?
     public var created: Int?
     public var usage: LLMUsageValue?
@@ -104,6 +135,7 @@ public struct LLMRequestTransportMetrics: Equatable {
         payloadBytes: Int? = nil,
         responseChars: Int? = nil,
         inputTextTokenCount: Int? = nil,
+        requestDurationSeconds: TimeInterval? = nil,
         llamaServerSlotID: Int? = nil,
         created: Int? = nil,
         usage: LLMUsageValue? = nil,
@@ -112,6 +144,7 @@ public struct LLMRequestTransportMetrics: Equatable {
         self.payloadBytes = payloadBytes
         self.responseChars = responseChars
         self.inputTextTokenCount = inputTextTokenCount
+        self.requestDurationSeconds = requestDurationSeconds
         self.llamaServerSlotID = llamaServerSlotID
         self.created = created
         self.usage = usage
@@ -199,6 +232,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
     public var durationSeconds: TimeInterval?
+    public var requestDurationSeconds: TimeInterval?
     public var llamaServerSlotID: Int?
     public var powerStatus: DevicePowerStatus?
     public var visualSampleLimit: Int?
@@ -216,6 +250,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
         durationSeconds: TimeInterval? = nil,
+        requestDurationSeconds: TimeInterval? = nil,
         llamaServerSlotID: Int? = nil,
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil,
@@ -232,6 +267,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
         self.durationSeconds = durationSeconds
+        self.requestDurationSeconds = requestDurationSeconds
         self.llamaServerSlotID = llamaServerSlotID
         self.powerStatus = powerStatus
         self.visualSampleLimit = visualSampleLimit
@@ -964,8 +1000,6 @@ public struct LLMFocusEvaluator {
         )
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
         let imageCount = imageCount(in: promptMessages)
-        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
-            .inputTextTokenCount(for: inputText(in: promptMessages))
         let response: String
         let modelStartedAt = Date()
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
@@ -997,8 +1031,9 @@ public struct LLMFocusEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                inputTextTokenCount: Self.inputTextTokenCount(from: transportMetrics),
                 durationSeconds: modelRunDurationSeconds,
+                requestDurationSeconds: transportMetrics?.requestDurationSeconds,
                 llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
@@ -1310,8 +1345,6 @@ public struct LLMFocusEvaluator {
         let promptMessages = userPresenceMessages(visualSnapshots: cameraSnapshots)
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
         let imageCount = imageCount(in: promptMessages)
-        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
-            .inputTextTokenCount(for: inputText(in: promptMessages))
         let startedAt = Date()
         let response = try await complete(
             engine: engine,
@@ -1340,8 +1373,9 @@ public struct LLMFocusEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                inputTextTokenCount: Self.inputTextTokenCount(from: transportMetrics),
                 durationSeconds: durationSeconds,
+                requestDurationSeconds: transportMetrics?.requestDurationSeconds,
                 llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
@@ -1374,8 +1408,6 @@ public struct LLMFocusEvaluator {
         )
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
         let imageCount = imageCount(in: promptMessages)
-        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
-            .inputTextTokenCount(for: inputText(in: promptMessages))
         let startedAt = Date()
         let response = try await complete(
             engine: engine,
@@ -1404,8 +1436,9 @@ public struct LLMFocusEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                inputTextTokenCount: Self.inputTextTokenCount(from: transportMetrics),
                 durationSeconds: durationSeconds,
+                requestDurationSeconds: transportMetrics?.requestDurationSeconds,
                 llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
@@ -1462,8 +1495,6 @@ public struct LLMFocusEvaluator {
         )
         let inputTextCharacterCount = inputTextCharacterCount(in: promptMessages)
         let imageCount = imageCount(in: promptMessages)
-        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
-            .inputTextTokenCount(for: inputText(in: promptMessages))
         let startedAt = Date()
         let response = try await complete(
             engine: engine,
@@ -1497,8 +1528,9 @@ public struct LLMFocusEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                inputTextTokenCount: Self.inputTextTokenCount(from: transportMetrics),
                 durationSeconds: durationSeconds,
+                requestDurationSeconds: transportMetrics?.requestDurationSeconds,
                 llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
@@ -1609,6 +1641,7 @@ public struct LLMFocusEvaluator {
     ) -> LLMRequestDebugMetrics {
         let metrics = [presence, taskAlignment, taskProgress].compactMap { $0 }
         let durationValues = metrics.compactMap(\.durationSeconds)
+        let requestDurationValues = metrics.compactMap(\.requestDurationSeconds)
         return LLMRequestDebugMetrics(
             visualCaptureCount: metrics.map(\.visualCaptureCount).max() ?? presence.visualCaptureCount,
             imageCount: metrics.reduce(0) { $0 + $1.imageCount },
@@ -1619,6 +1652,7 @@ public struct LLMFocusEvaluator {
             inputTextCharacterCount: metrics.reduce(0) { $0 + $1.inputTextCharacterCount },
             inputTextTokenCount: metrics.reduce(nil as Int?) { sum($0, $1.inputTextTokenCount) },
             durationSeconds: durationValues.isEmpty ? nil : durationValues.reduce(0, +),
+            requestDurationSeconds: requestDurationValues.isEmpty ? nil : requestDurationValues.reduce(0, +),
             powerStatus: taskProgress?.powerStatus ?? taskAlignment?.powerStatus ?? presence.powerStatus,
             visualSampleLimit: metrics.compactMap(\.visualSampleLimit).max()
         )
@@ -1653,6 +1687,11 @@ public struct LLMFocusEvaluator {
         case (.none, .none):
             return nil
         }
+    }
+
+    private static func inputTextTokenCount(from transportMetrics: LLMRequestTransportMetrics?) -> Int? {
+        transportMetrics?.inputTextTokenCount
+            ?? transportMetrics?.usage?.diagnosticInt(at: ["prompt_tokens"])
     }
 
     private func sum(_ lhs: Int?, _ rhs: Int) -> Int? {

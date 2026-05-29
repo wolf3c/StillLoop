@@ -127,7 +127,15 @@ llama.cpp 主要启动参数：
 
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
-当前配置暂停 prompt cache 实验，回到单 slot runtime，并优先测试更大的 prefill batch / microbatch 是否能稳定降低真实任务耗时。诊断仍继续用 `*PromptMS`、`*DurationMS`、input token 和 response 指标判断收益；`*CacheN`、`*CachedTokens` 预期为 0 或缺省。
+当前配置暂停 prompt cache 实验，回到单 slot runtime，并优先测试更大的 prefill batch / microbatch 是否能稳定降低真实任务耗时。诊断应优先看拆分后的队列、请求和后端字段：
+
+- `llmQueueWaitMS` / `llmExecutionMS`：高层 LLM work 在 App 调度层的等待和执行耗时。
+- `presenceLLMRequestMS` / `alignmentLLMRequestMS` / `progressLLMRequestMS` / `targetLLMRequestMS`：各子请求实际交给 LLM engine 后的 wall time。
+- `*PromptMS` / `*PredictedMS`：llama.cpp 后端 prefill/output 耗时。
+- `*PromptTokens` / `*CompletionTokens` / `*TotalTokens`：优先来自 completion response `usage`。
+- `*CacheN` / `*CachedTokens`：当前禁用 prompt cache 时预期为 0 或缺省。
+
+主链路不再为了记录 input token 数同步调用 `/tokenize`；这避免把额外统计请求混入真实评估耗时。
 
 ## 主页预热
 

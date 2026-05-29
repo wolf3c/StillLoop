@@ -559,7 +559,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         return LLMRequestTransportMetrics(
             payloadBytes: result.payloadBytes,
             responseChars: content.count,
-            inputTextTokenCount: nil,
+            inputTextTokenCount: body.usage?.diagnosticInt(at: ["prompt_tokens"]),
+            requestDurationSeconds: result.requestDurationSeconds,
             llamaServerSlotID: llamaServerRequestOptions?.slotID,
             created: body.created,
             usage: body.usage,
@@ -581,7 +582,8 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         lastRequestTransportMetrics = LLMRequestTransportMetrics(
             payloadBytes: result.payloadBytes,
             responseChars: content.count,
-            inputTextTokenCount: nil,
+            inputTextTokenCount: body.usage?.diagnosticInt(at: ["prompt_tokens"]),
+            requestDurationSeconds: result.requestDurationSeconds,
             llamaServerSlotID: llamaServerRequestOptions?.slotID,
             created: body.created,
             usage: body.usage,
@@ -594,7 +596,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         messages: [LLMMessage],
         responseFormat: LLMResponseFormat?,
         maxTokens: Int
-    ) async throws -> (data: Data, payloadBytes: Int) {
+    ) async throws -> (data: Data, payloadBytes: Int, requestDurationSeconds: TimeInterval) {
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -608,11 +610,13 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         )
         request.httpBody = payload
 
+        let startedAt = Date()
         let (data, response) = try await transport.data(for: request)
+        let requestDurationSeconds = max(0, Date().timeIntervalSince(startedAt))
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw HTTPStatusError(statusCode: http.statusCode, responseByteCount: data.count)
         }
-        return (data, payload.count)
+        return (data, payload.count, requestDurationSeconds)
     }
 
     private func chatCompletionPayload(

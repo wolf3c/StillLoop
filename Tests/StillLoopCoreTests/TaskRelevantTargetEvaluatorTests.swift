@@ -38,11 +38,12 @@ final class TaskRelevantTargetEvaluatorTests: XCTestCase {
         XCTAssertEqual(result.requestDebugMetrics?.previousEventCount, 0)
         XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 88_000)
         XCTAssertEqual(result.requestDebugMetrics?.responseChars, engine.response.count)
-        XCTAssertEqual(result.requestDebugMetrics?.inputTextTokenCount, 321)
+        XCTAssertEqual(result.requestDebugMetrics?.inputTextTokenCount, 123)
         XCTAssertNotNil(result.requestDebugMetrics?.durationSeconds)
         XCTAssertEqual(result.requestDebugMetrics?.created, 1_779_999_000)
         XCTAssertEqual(result.requestDebugMetrics?.usage?.diagnosticInt(at: ["prompt_tokens_details", "cached_tokens"]), 12)
         XCTAssertEqual(result.requestDebugMetrics?.timings?.diagnosticInt(at: ["prompt_n"]), 777)
+        XCTAssertEqual(engine.tokenCountCallCount, 0)
         XCTAssertEqual(engine.lastResponseFormat, .taskRelevantTargetEvaluation)
         let promptText = engine.messages.flatMap(\.content).compactMap { content -> String? in
             if case .text(let text) = content {
@@ -127,6 +128,7 @@ private final class RecordingStructuredEngine: StructuredLocalLLMEngine, LLMRequ
     private(set) var messages: [LLMMessage] = []
     private(set) var lastResponseFormat: LLMResponseFormat?
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
+    private(set) var tokenCountCallCount = 0
 
     init(response: String) {
         self.response = response
@@ -169,7 +171,8 @@ private final class RecordingStructuredEngine: StructuredLocalLLMEngine, LLMRequ
     }
 
     func inputTextTokenCount(for text: String) async -> Int? {
-        321
+        tokenCountCallCount += 1
+        return 321
     }
 }
 
@@ -181,23 +184,5 @@ private extension LLMMessage {
             }
             return nil
         }.joined(separator: "\n")
-    }
-}
-
-private extension LLMUsageValue {
-    func diagnosticInt(at path: [String]) -> Int? {
-        guard !path.isEmpty else {
-            if case .int(let value) = self {
-                return value
-            }
-            return nil
-        }
-        guard case .object(let object) = self,
-              let key = path.first,
-              let value = object[key]
-        else {
-            return nil
-        }
-        return value.diagnosticInt(at: Array(path.dropFirst()))
     }
 }

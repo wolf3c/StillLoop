@@ -4,10 +4,10 @@ import XCTest
 
 final class LLMSerializationGateTests: XCTestCase {
     func testConcurrentPlainCallsAreSerializedInRequestOrder() async throws {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let engine = SerializedLLMEngineFactory.wrap(
             RecordingGateEngine(delay: .milliseconds(120), response: "ok"),
-            serializer: serializer
+            scheduler: scheduler
         )
 
         async let first = engine.complete(messages: [.init(role: .user, content: [.text("first")])])
@@ -26,9 +26,9 @@ final class LLMSerializationGateTests: XCTestCase {
     }
 
     func testStructuredAndPlainCallsShareGate() async throws {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let base = RecordingGateEngine(delay: .milliseconds(120), response: "ok")
-        let engine = SerializedLLMEngineFactory.wrap(base, serializer: serializer)
+        let engine = SerializedLLMEngineFactory.wrap(base, scheduler: scheduler)
         let structuredEngine = try XCTUnwrap(engine as? StructuredLocalLLMEngine)
 
         async let plain = engine.complete(messages: [.init(role: .user, content: [.text("plain")])])
@@ -50,10 +50,10 @@ final class LLMSerializationGateTests: XCTestCase {
     }
 
     func testGateReleasesAfterError() async throws {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let base = RecordingGateEngine(delay: .milliseconds(10), response: "ok")
         base.nextError = URLError(.cannotConnectToHost)
-        let engine = SerializedLLMEngineFactory.wrap(base, serializer: serializer)
+        let engine = SerializedLLMEngineFactory.wrap(base, scheduler: scheduler)
 
         do {
             _ = try await engine.complete(messages: [.init(role: .user, content: [.text("fails")])])
@@ -75,9 +75,9 @@ final class LLMSerializationGateTests: XCTestCase {
     }
 
     func testQueuedCancellationDoesNotRunCancelledCallOrBlockNextCall() async throws {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let base = RecordingGateEngine(delay: .milliseconds(120), response: "ok")
-        let engine = SerializedLLMEngineFactory.wrap(base, serializer: serializer)
+        let engine = SerializedLLMEngineFactory.wrap(base, scheduler: scheduler)
 
         let first = Task {
             try await engine.complete(messages: [.init(role: .user, content: [.text("first")])])
@@ -111,9 +111,9 @@ final class LLMSerializationGateTests: XCTestCase {
     }
 
     func testTokenCountingPrewarmAndProbeShareGate() async throws {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let base = RecordingGateEngine(delay: .milliseconds(120), response: "ok")
-        let engine = SerializedLLMEngineFactory.wrap(base, serializer: serializer)
+        let engine = SerializedLLMEngineFactory.wrap(base, scheduler: scheduler)
         let tokenCountingEngine = try XCTUnwrap(engine as? LLMInputTextTokenCounting)
         let prewarmingEngine = try XCTUnwrap(engine as? LLMFocusPromptCachePrewarming)
         let probingEngine = try XCTUnwrap(engine as? LLMFocusPromptCacheProbing)
@@ -146,10 +146,10 @@ final class LLMSerializationGateTests: XCTestCase {
     }
 
     func testUnsupportedProbeEngineDoesNotExposeProbeProtocol() {
-        let serializer = LLMCallSerializer()
+        let scheduler = LLMWorkScheduler()
         let engine = SerializedLLMEngineFactory.wrap(
             PlainOnlyGateEngine(),
-            serializer: serializer
+            scheduler: scheduler
         )
 
         XCTAssertNil(engine as? LLMFocusPromptCacheProbing)

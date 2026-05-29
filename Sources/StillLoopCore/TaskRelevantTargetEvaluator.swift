@@ -371,8 +371,6 @@ public struct TaskRelevantTargetEvaluator {
         )
         let inputTextCharacterCount = Self.inputTextCharacterCount(in: messages)
         let imageCount = Self.imageCount(in: messages)
-        let inputTextTokenCount = await (engine as? LLMInputTextTokenCounting)?
-            .inputTextTokenCount(for: Self.inputText(in: messages))
         let response: String
         let startedAt = Date()
         if let structuredEngine = engine as? StructuredLocalLLMEngine {
@@ -404,8 +402,10 @@ public struct TaskRelevantTargetEvaluator {
                 payloadBytes: transportMetrics?.payloadBytes,
                 responseChars: response.count,
                 inputTextCharacterCount: inputTextCharacterCount,
-                inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
+                inputTextTokenCount: transportMetrics?.inputTextTokenCount
+                    ?? transportMetrics?.usage?.diagnosticInt(at: ["prompt_tokens"]),
                 durationSeconds: durationSeconds,
+                requestDurationSeconds: transportMetrics?.requestDurationSeconds,
                 llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,

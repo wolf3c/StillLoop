@@ -164,10 +164,18 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let started = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.started" })
         XCTAssertEqual(started["bundledRuntimeKind"] as? String, "mlx")
         XCTAssertEqual(started["mlxAPCEnabled"] as? Bool, true)
+        XCTAssertEqual(started["llmWorkKind"] as? String, "focusEvaluation")
+        let workSequence = try XCTUnwrap(started["llmWorkSequence"] as? Int)
+        XCTAssertGreaterThan(workSequence, 0)
+        XCTAssertNotNil(started["llmQueueWaitMS"] as? Int)
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
         XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "mlx")
         XCTAssertNil(succeeded["fallbackRuntimeKind"])
         XCTAssertEqual(succeeded["mlxAPCEnabled"] as? Bool, true)
+        XCTAssertEqual(succeeded["llmWorkKind"] as? String, "focusEvaluation")
+        XCTAssertEqual(succeeded["llmWorkSequence"] as? Int, workSequence)
+        XCTAssertNotNil(succeeded["llmQueueWaitMS"] as? Int)
+        XCTAssertNotNil(succeeded["llmExecutionMS"] as? Int)
         XCTAssertEqual(succeeded["llmVisualCaptureCount"] as? Int, 1)
         XCTAssertEqual(succeeded["llmImageCount"] as? Int, 2)
         XCTAssertEqual(succeeded["llmTextSnapshotCount"] as? Int, 1)
@@ -181,16 +189,24 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["presenceLLMPreviousEventCount"] as? Int, 0)
         XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["presenceLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["presenceLLMPromptTokens"] as? Int, 3_699)
+        XCTAssertEqual(succeeded["presenceLLMCompletionTokens"] as? Int, 336)
+        XCTAssertEqual(succeeded["presenceLLMTotalTokens"] as? Int, 4_035)
         XCTAssertEqual(succeeded["presenceLLMCacheN"] as? Int, 221)
         XCTAssertNil(succeeded["presenceLLMSlotID"])
+        XCTAssertEqual(succeeded["presenceLLMRequestMS"] as? Int, 1_250)
         XCTAssertNotNil(succeeded["presenceLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["alignmentLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMTextSnapshotCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMPreviousEventCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["alignmentLLMInputTextTokenCount"] as? Int, 1_295)
+        XCTAssertEqual(succeeded["alignmentLLMPromptTokens"] as? Int, 3_699)
+        XCTAssertEqual(succeeded["alignmentLLMCompletionTokens"] as? Int, 336)
+        XCTAssertEqual(succeeded["alignmentLLMTotalTokens"] as? Int, 4_035)
         XCTAssertEqual(succeeded["alignmentLLMCacheN"] as? Int, 221)
         XCTAssertNil(succeeded["alignmentLLMSlotID"])
+        XCTAssertEqual(succeeded["alignmentLLMRequestMS"] as? Int, 1_250)
         XCTAssertNotNil(succeeded["alignmentLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 0)
         XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 1)
@@ -494,12 +510,16 @@ final class AppModelDiagnosticLogTests: XCTestCase {
                 inputTextCharacterCount: 300,
                 inputTextTokenCount: 75,
                 durationSeconds: 2.345,
+                requestDurationSeconds: 2.111,
                 llamaServerSlotID: 3,
                 created: 1_779_999_001,
                 usage: .object([
+                    "completion_tokens": .int(12),
+                    "prompt_tokens": .int(88),
                     "prompt_tokens_details": .object([
                         "cached_tokens": .int(10)
-                    ])
+                    ]),
+                    "total_tokens": .int(100)
                 ]),
                 timings: .object([
                     "prompt_n": .int(275),
@@ -518,22 +538,26 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(fields["target"], .string("Codex · StillLoop"))
-        XCTAssertEqual(fields["alignment"], .string("aligned"))
-        XCTAssertEqual(fields["reason"], .string("目标匹配当前任务。"))
-        XCTAssertEqual(fields["targetEvidenceCount"], .int(3))
-        XCTAssertEqual(fields["targetEvidenceSpanSeconds"], .int(35))
-        XCTAssertEqual(fields["targetCumulativeForegroundSeconds"], .int(30))
-        XCTAssertEqual(fields["targetLLMVisualCaptureCount"], .int(3))
-        XCTAssertEqual(fields["targetLLMImageCount"], .int(3))
-        XCTAssertEqual(fields["targetLLMPayloadBytes"], .int(900))
-        XCTAssertEqual(fields["targetLLMInputTextTokenCount"], .int(75))
-        XCTAssertEqual(fields["targetLLMDurationMS"], .int(2_345))
-        XCTAssertEqual(fields["targetLLMSlotID"], .int(3))
-        XCTAssertEqual(fields["targetLLMPromptN"], .int(275))
-        XCTAssertEqual(fields["targetLLMCachedTokens"], .int(10))
-        XCTAssertEqual(fields["bundledRuntimeKind"], .string("mlx"))
-        XCTAssertEqual(fields["mlxAPCEnabled"], .bool(true))
+        XCTAssertEqual(fields["target"], DiagnosticLogValue.string("Codex · StillLoop"))
+        XCTAssertEqual(fields["alignment"], DiagnosticLogValue.string("aligned"))
+        XCTAssertEqual(fields["reason"], DiagnosticLogValue.string("目标匹配当前任务。"))
+        XCTAssertEqual(fields["targetEvidenceCount"], DiagnosticLogValue.int(3))
+        XCTAssertEqual(fields["targetEvidenceSpanSeconds"], DiagnosticLogValue.int(35))
+        XCTAssertEqual(fields["targetCumulativeForegroundSeconds"], DiagnosticLogValue.int(30))
+        XCTAssertEqual(fields["targetLLMVisualCaptureCount"], DiagnosticLogValue.int(3))
+        XCTAssertEqual(fields["targetLLMImageCount"], DiagnosticLogValue.int(3))
+        XCTAssertEqual(fields["targetLLMPayloadBytes"], DiagnosticLogValue.int(900))
+        XCTAssertEqual(fields["targetLLMInputTextTokenCount"], DiagnosticLogValue.int(75))
+        XCTAssertEqual(fields["targetLLMDurationMS"], DiagnosticLogValue.int(2_345))
+        XCTAssertEqual(fields["targetLLMRequestMS"], DiagnosticLogValue.int(2_111))
+        XCTAssertEqual(fields["targetLLMPromptTokens"], DiagnosticLogValue.int(88))
+        XCTAssertEqual(fields["targetLLMCompletionTokens"], DiagnosticLogValue.int(12))
+        XCTAssertEqual(fields["targetLLMTotalTokens"], DiagnosticLogValue.int(100))
+        XCTAssertEqual(fields["targetLLMSlotID"], DiagnosticLogValue.int(3))
+        XCTAssertEqual(fields["targetLLMPromptN"], DiagnosticLogValue.int(275))
+        XCTAssertEqual(fields["targetLLMCachedTokens"], DiagnosticLogValue.int(10))
+        XCTAssertEqual(fields["bundledRuntimeKind"], DiagnosticLogValue.string("mlx"))
+        XCTAssertEqual(fields["mlxAPCEnabled"], DiagnosticLogValue.bool(true))
     }
 
     func testTargetJudgmentFailureDiagnosticFieldsIncludeRuntimeCacheFields() throws {
@@ -923,6 +947,7 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             payloadBytes: 452_010,
             responseChars: response.count,
             inputTextTokenCount: 1_295,
+            requestDurationSeconds: 1.25,
             llamaServerSlotID: slotID,
             created: 1_779_348_997,
             usage: .object([
@@ -977,6 +1002,7 @@ private final class UnalignedDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMR
             payloadBytes: 452_010,
             responseChars: response.count,
             inputTextTokenCount: 1_295,
+            requestDurationSeconds: 1.25,
             created: 1_779_348_997,
             usage: .object([
                 "prompt_tokens": .int(3_699),
@@ -1025,6 +1051,7 @@ private final class AwayDiagnosticLLMEngine: StructuredLocalLLMEngine, LLMReques
             payloadBytes: 452_010,
             responseChars: response.count,
             inputTextTokenCount: 1_295,
+            requestDurationSeconds: 1.25,
             created: 1_779_348_997,
             usage: .object([
                 "prompt_tokens": .int(3_699),
@@ -1111,6 +1138,7 @@ private final class PromptCacheProbeDiagnosticLLMEngine: LocalLLMEngine, LLMFocu
             payloadBytes: 40_000 + probeCallCount,
             responseChars: 1,
             inputTextTokenCount: 900 + probeCallCount,
+            requestDurationSeconds: 0.25,
             created: 1_779_349_000 + probeCallCount,
             usage: .object([
                 "prompt_tokens_details": .object([
