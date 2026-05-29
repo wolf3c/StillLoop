@@ -45,8 +45,8 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--cache-type-v", "q4_1",
             "--mlock",
             "--cache-prompt",
-            "--cache-reuse", "512",
-            "--cache-ram", "128",
+            "--cache-reuse", "64",
+            "--cache-ram", "512",
             "--metrics"
         ])
         XCTAssertFalse(arguments.contains("--port"))
@@ -107,8 +107,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")
         XCTAssertTrue(arguments.contains("--mlock"))
         XCTAssertTrue(arguments.contains("--cache-prompt"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "512")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "128")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "64")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "512")
         XCTAssertFalse(arguments.contains("--no-cache-prompt"))
     }
 

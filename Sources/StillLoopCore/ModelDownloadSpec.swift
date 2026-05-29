@@ -73,8 +73,8 @@ public struct ModelDownloadSpec: Equatable {
         recommendedParallelSlots: 4,
         recommendedCacheTypeK: "q4_1",
         recommendedCacheTypeV: "q4_1",
-        recommendedPromptCacheReuse: 512,
-        recommendedPromptCacheRAMMiB: 128,
+        recommendedPromptCacheReuse: 64,
+        recommendedPromptCacheRAMMiB: 512,
         downloadByteCounts: [
             "Qwen3.5-0.8B-Base.Q4_K_M.gguf": 529_296_960,
             "Qwen3.5-0.8B-Base.BF16-mmproj.gguf": 207_346_048
