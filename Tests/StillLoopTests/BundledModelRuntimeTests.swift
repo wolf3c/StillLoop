@@ -39,13 +39,13 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--ctx-size", "16384",
             "--parallel", "4",
             "--n-gpu-layers", "99",
-            "--batch-size", "4096",
-            "--ubatch-size", "1024",
+            "--batch-size", "2048",
+            "--ubatch-size", "2048",
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
             "--mlock",
             "--cache-prompt",
-            "--cache-reuse", "64",
+            "--cache-reuse", "512",
             "--cache-ram", "128",
             "--metrics"
         ])
@@ -60,13 +60,13 @@ final class BundledModelRuntimeTests: XCTestCase {
         )
 
         #if DEBUG
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "2048")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "2048")
         XCTAssertFalse(arguments.contains("--flash-attn"))
         XCTAssertEqual(arguments.last, "--metrics")
         #else
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "2048")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "2048")
         XCTAssertFalse(arguments.contains("--flash-attn"))
         XCTAssertFalse(arguments.contains("--metrics"))
         #endif
@@ -96,8 +96,8 @@ final class BundledModelRuntimeTests: XCTestCase {
             tuning: .production
         )
 
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "2048")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "2048")
         XCTAssertFalse(arguments.contains("--flash-attn"))
         XCTAssertFalse(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "16384")
@@ -107,7 +107,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-type-v")! + 1], "q4_1")
         XCTAssertTrue(arguments.contains("--mlock"))
         XCTAssertTrue(arguments.contains("--cache-prompt"))
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "64")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-reuse")! + 1], "512")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--cache-ram")! + 1], "128")
         XCTAssertFalse(arguments.contains("--no-cache-prompt"))
     }
@@ -126,8 +126,8 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertTrue(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "16384")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "4")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
-        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "1024")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "2048")
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "2048")
         XCTAssertFalse(arguments.contains("--flash-attn"))
     }
 

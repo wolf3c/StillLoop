@@ -34,7 +34,7 @@ final class ModelDownloadSpecTests: XCTestCase {
         XCTAssertEqual(spec.recommendedParallelSlots, 4)
         XCTAssertEqual(spec.recommendedCacheTypeK, "q4_1")
         XCTAssertEqual(spec.recommendedCacheTypeV, "q4_1")
-        XCTAssertEqual(spec.recommendedPromptCacheReuse, 64)
+        XCTAssertEqual(spec.recommendedPromptCacheReuse, 512)
         XCTAssertEqual(spec.recommendedPromptCacheRAMMiB, 128)
     }
 
