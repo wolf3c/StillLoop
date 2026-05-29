@@ -406,6 +406,7 @@ public struct TaskRelevantTargetEvaluator {
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
                 durationSeconds: durationSeconds,
+                llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 created: transportMetrics?.created,
                 usage: transportMetrics?.usage,
                 timings: transportMetrics?.timings

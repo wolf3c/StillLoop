@@ -359,6 +359,16 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         var visualCapability: VisualCapability
     }
 
+    struct LlamaServerRequestOptions: Equatable {
+        var slotID: Int
+        var cachePrompt: Bool
+
+        init(slotID: Int, cachePrompt: Bool = true) {
+            self.slotID = slotID
+            self.cachePrompt = cachePrompt
+        }
+    }
+
     struct ResponseBody: Decodable {
         struct Choice: Decodable {
             struct Message: Decodable {
@@ -400,6 +410,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
     private let transport: OpenAICompatibleHTTPTransport
     private let disablesReasoning: Bool
     private let usesResponseFormat: Bool
+    private let llamaServerRequestOptions: LlamaServerRequestOptions?
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
 
     init(
@@ -408,6 +419,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         apiKey: String? = nil,
         disablesReasoning: Bool = false,
         usesResponseFormat: Bool = false,
+        llamaServerRequestOptions: LlamaServerRequestOptions? = nil,
         session: URLSession = .shared,
         transport: OpenAICompatibleHTTPTransport? = nil
     ) {
@@ -423,6 +435,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         }
         self.disablesReasoning = disablesReasoning
         self.usesResponseFormat = usesResponseFormat
+        self.llamaServerRequestOptions = llamaServerRequestOptions
     }
 
     static func unixSocketBaseURL(socketURL: URL) -> URL {
@@ -547,6 +560,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             payloadBytes: result.payloadBytes,
             responseChars: content.count,
             inputTextTokenCount: nil,
+            llamaServerSlotID: llamaServerRequestOptions?.slotID,
             created: body.created,
             usage: body.usage,
             timings: body.timings
@@ -568,6 +582,7 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
             payloadBytes: result.payloadBytes,
             responseChars: content.count,
             inputTextTokenCount: nil,
+            llamaServerSlotID: llamaServerRequestOptions?.slotID,
             created: body.created,
             usage: body.usage,
             timings: body.timings
@@ -624,6 +639,10 @@ final class OpenAICompatibleLLMEngine: StructuredLocalLLMEngine, LLMRequestTrans
         }
         if usesResponseFormat, let responseFormat {
             fields.append(("response_format", Self.responseFormatJSON(for: responseFormat)))
+        }
+        if let llamaServerRequestOptions {
+            fields.append(("id_slot", .number("\(llamaServerRequestOptions.slotID)")))
+            fields.append(("cache_prompt", .bool(llamaServerRequestOptions.cachePrompt)))
         }
         return try OrderedJSONValue.object(fields).encodedData()
     }

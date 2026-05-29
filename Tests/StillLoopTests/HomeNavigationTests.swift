@@ -713,11 +713,12 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
         XCTAssertEqual(engines.map(\.lastResponseFormat), [
             .userPresenceEvaluation,
             .taskAlignmentEvaluation,
-            .taskProgressEvaluation
+            .taskProgressEvaluation,
+            nil
         ])
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 0)
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
@@ -744,14 +745,17 @@ final class HomeNavigationTests: XCTestCase {
 
     func testBundledModelRuntimeWarmupFailureDoesNotBlockPreparation() async {
         let runtime = FakeBundledRuntime()
-        var engines: [PrewarmingLLMEngine] = []
+        let presenceEngine = PrewarmingLLMEngine()
+        let alignmentEngine = PrewarmingLLMEngine()
+        let progressEngine = PrewarmingLLMEngine(prewarmError: URLError(.timedOut))
+        let auxiliaryEngine = PrewarmingLLMEngine()
+        var remainingEngines = [presenceEngine, alignmentEngine, progressEngine, auxiliaryEngine]
+        let engines = remainingEngines
         let model = makeModel(
             bundledModelRuntime: runtime,
             withBundledModelFiles: true,
             bundledLLMEngineFactory: { _, _ in
-                let engine = PrewarmingLLMEngine(prewarmError: URLError(.timedOut))
-                engines.append(engine)
-                return engine
+                remainingEngines.removeFirst()
             }
         )
         model.selectModelSource(.bundled)
@@ -760,7 +764,7 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }

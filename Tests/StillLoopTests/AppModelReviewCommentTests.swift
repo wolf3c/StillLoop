@@ -27,6 +27,22 @@ final class AppModelReviewCommentTests: XCTestCase {
         return directory
     }
 
+    private func makeSupportDirectoryWithBundledModelFiles() -> URL {
+        let supportDirectory = makeSupportDirectory()
+        let modelDirectory = supportDirectory.appendingPathComponent(
+            "Models/\(ModelDownloadSpec.builtIn.localSubdirectory)",
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+        for filename in ModelDownloadSpec.builtIn.requiredFilenames {
+            FileManager.default.createFile(
+                atPath: modelDirectory.appendingPathComponent(filename).path,
+                contents: Data("model".utf8)
+            )
+        }
+        return supportDirectory
+    }
+
     func testEndSessionStoresGeneratedReviewComment() async throws {
         let supportDirectory = makeSupportDirectory()
         let generator = StubSessionReviewCommentGenerator(result: .success("你刚才稳定推进了产品方案。下次继续开一段专注，可以从复盘里的下一步开始。"))
@@ -108,6 +124,44 @@ final class AppModelReviewCommentTests: XCTestCase {
         XCTAssertNotNil(sessions.first?.endedAt)
         XCTAssertEqual(sessions.first?.events.first?.id, eventID)
         XCTAssertEqual(sessions.first?.events.first?.debugDetail?.reason, "No visible progress")
+    }
+
+    func testBundledReviewCommentUsesAuxiliarySlotEngine() async throws {
+        let supportDirectory = makeSupportDirectoryWithBundledModelFiles()
+        let runtime = ReviewCommentBundledRuntime()
+        runtime.bundledRuntimeKind = .llamaCpp
+        var engines: [SlotReviewCommentEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            bundledLLMEngineFactoryWithOptions: { _, _, options in
+                let engine = SlotReviewCommentEngine(slotID: options?.slotID)
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+        let sessionID = UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!
+        model.status = .running
+        model.currentSession = FocusSession(
+            id: sessionID,
+            task: "写产品方案",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            events: [
+                FocusEvent(timestamp: Date(timeIntervalSince1970: 60), state: .focused, context: "Codex", nudge: nil)
+            ],
+            feedback: nil
+        )
+
+        model.endSession()
+        let comment = try await waitForReviewComment(in: model, sessionID: sessionID)
+
+        XCTAssertEqual(comment, "你刚才稳定推进了产品方案。下次继续开一段专注，可以从复盘里的下一步开始。")
+        XCTAssertEqual(engines.map(\.slotID), [0, 1, 2, 3])
+        XCTAssertEqual(engines.map(\.completeCallCount), [0, 0, 0, 1])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
     }
 
     func testReviewCommentFailureIsHiddenAndKeepsSavedSummary() async throws {
@@ -308,5 +362,46 @@ private final class BlockingSessionReviewCommentGenerator: SessionReviewCommentG
     func complete(with comment: String) {
         continuation?.resume(returning: comment)
         continuation = nil
+    }
+}
+
+private final class ReviewCommentBundledRuntime: BundledModelRuntimeManaging, BundledRuntimeDiagnosticsProviding {
+    var baseURL = ModelDownloadSpec.builtIn.localServerBaseURL
+    var modelID = ModelDownloadSpec.builtIn.localServerModelID
+    var state: BundledModelRuntime.State = .notStarted
+    var bundledRuntimeKind: BundledRuntimeKind?
+    var fallbackRuntimeKind: BundledRuntimeKind?
+    var mlxAPCEnabled: Bool?
+
+    func startIfNeeded() async throws {
+        state = .running
+    }
+
+    func stop() {
+        state = .stopped
+    }
+}
+
+private final class SlotReviewCommentEngine: LocalLLMEngine, LLMFocusPromptCachePrewarming {
+    let slotID: Int?
+    private(set) var completeCallCount = 0
+    private(set) var prewarmCallCount = 0
+
+    init(slotID: Int?) {
+        self.slotID = slotID
+    }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        completeCallCount += 1
+        return """
+        {"comment":"你刚才稳定推进了产品方案。下次继续开一段专注，可以从复盘里的下一步开始。"}
+        """
+    }
+
+    func prewarmFocusEvaluationPrompt(
+        messages: [LLMMessage],
+        responseFormat: LLMResponseFormat?
+    ) async throws {
+        prewarmCallCount += 1
     }
 }

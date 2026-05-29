@@ -95,6 +95,7 @@ public struct LLMRequestTransportMetrics: Equatable {
     public var payloadBytes: Int?
     public var responseChars: Int?
     public var inputTextTokenCount: Int?
+    public var llamaServerSlotID: Int?
     public var created: Int?
     public var usage: LLMUsageValue?
     public var timings: LLMUsageValue?
@@ -103,6 +104,7 @@ public struct LLMRequestTransportMetrics: Equatable {
         payloadBytes: Int? = nil,
         responseChars: Int? = nil,
         inputTextTokenCount: Int? = nil,
+        llamaServerSlotID: Int? = nil,
         created: Int? = nil,
         usage: LLMUsageValue? = nil,
         timings: LLMUsageValue? = nil
@@ -110,6 +112,7 @@ public struct LLMRequestTransportMetrics: Equatable {
         self.payloadBytes = payloadBytes
         self.responseChars = responseChars
         self.inputTextTokenCount = inputTextTokenCount
+        self.llamaServerSlotID = llamaServerSlotID
         self.created = created
         self.usage = usage
         self.timings = timings
@@ -196,6 +199,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
     public var inputTextCharacterCount: Int
     public var inputTextTokenCount: Int?
     public var durationSeconds: TimeInterval?
+    public var llamaServerSlotID: Int?
     public var powerStatus: DevicePowerStatus?
     public var visualSampleLimit: Int?
     public var created: Int?
@@ -212,6 +216,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         inputTextCharacterCount: Int,
         inputTextTokenCount: Int? = nil,
         durationSeconds: TimeInterval? = nil,
+        llamaServerSlotID: Int? = nil,
         powerStatus: DevicePowerStatus? = nil,
         visualSampleLimit: Int? = nil,
         created: Int? = nil,
@@ -227,6 +232,7 @@ public struct LLMRequestDebugMetrics: Codable, Equatable {
         self.inputTextCharacterCount = inputTextCharacterCount
         self.inputTextTokenCount = inputTextTokenCount
         self.durationSeconds = durationSeconds
+        self.llamaServerSlotID = llamaServerSlotID
         self.powerStatus = powerStatus
         self.visualSampleLimit = visualSampleLimit
         self.created = created
@@ -993,6 +999,7 @@ public struct LLMFocusEvaluator {
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
                 durationSeconds: modelRunDurationSeconds,
+                llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
@@ -1335,6 +1342,7 @@ public struct LLMFocusEvaluator {
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
                 durationSeconds: durationSeconds,
+                llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
@@ -1398,6 +1406,7 @@ public struct LLMFocusEvaluator {
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
                 durationSeconds: durationSeconds,
+                llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,
@@ -1490,6 +1499,7 @@ public struct LLMFocusEvaluator {
                 inputTextCharacterCount: inputTextCharacterCount,
                 inputTextTokenCount: inputTextTokenCount ?? transportMetrics?.inputTextTokenCount,
                 durationSeconds: durationSeconds,
+                llamaServerSlotID: transportMetrics?.llamaServerSlotID,
                 powerStatus: powerStatus,
                 visualSampleLimit: visualSampleLimit,
                 created: transportMetrics?.created,

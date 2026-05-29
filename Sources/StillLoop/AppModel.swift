@@ -416,7 +416,7 @@ final class AppModel: ObservableObject {
     private let store: FileSessionStore
     private let modelDownloader: ModelDownloadManager
     private let bundledModelRuntime: BundledModelRuntimeManaging
-    private let bundledLLMEngineFactory: (URL, String) -> LocalLLMEngine
+    private let bundledLLMEngineFactory: (URL, String, OpenAICompatibleLLMEngine.LlamaServerRequestOptions?) -> LocalLLMEngine
     private let launchAtLoginManager: LaunchAtLoginManaging
     private let devicePowerStatusProvider: DevicePowerStatusProviding
     private let nudgeOverlayPresenter: NudgeOverlayPresenter
@@ -756,6 +756,7 @@ final class AppModel: ObservableObject {
         launchAtLoginManager: LaunchAtLoginManaging? = nil,
         devicePowerStatusProvider: DevicePowerStatusProviding? = nil,
         bundledLLMEngineFactory: ((URL, String) -> LocalLLMEngine)? = nil,
+        bundledLLMEngineFactoryWithOptions: ((URL, String, OpenAICompatibleLLMEngine.LlamaServerRequestOptions?) -> LocalLLMEngine)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         returnTargetOpener: FocusReturnTargetOpening? = nil,
         activeWorkTargetProvider: ActiveWorkTargetProviding? = nil,
@@ -764,13 +765,22 @@ final class AppModel: ObservableObject {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
         self.promptCacheProbeEnabled = environment["STILLLOOP_RUN_PROMPT_CACHE_PROBE"] == "1"
-        self.bundledLLMEngineFactory = bundledLLMEngineFactory ?? { baseURL, modelID in
-            OpenAICompatibleLLMEngine(
-                baseURL: baseURL,
-                model: modelID,
-                disablesReasoning: true,
-                usesResponseFormat: true
-            )
+        if let bundledLLMEngineFactoryWithOptions {
+            self.bundledLLMEngineFactory = bundledLLMEngineFactoryWithOptions
+        } else if let bundledLLMEngineFactory {
+            self.bundledLLMEngineFactory = { baseURL, modelID, _ in
+                bundledLLMEngineFactory(baseURL, modelID)
+            }
+        } else {
+            self.bundledLLMEngineFactory = { baseURL, modelID, llamaServerRequestOptions in
+                OpenAICompatibleLLMEngine(
+                    baseURL: baseURL,
+                    model: modelID,
+                    disablesReasoning: true,
+                    usesResponseFormat: true,
+                    llamaServerRequestOptions: llamaServerRequestOptions
+                )
+            }
         }
         let resolvedLaunchAtLoginManager = launchAtLoginManager ?? LaunchAtLoginManagerFactory.defaultManager()
         self.launchAtLoginManager = resolvedLaunchAtLoginManager
@@ -892,6 +902,47 @@ final class AppModel: ObservableObject {
             fields["mlxAPCEnabled"] = .bool(mlxAPCEnabled)
         }
         return fields
+    }
+
+    private enum BundledLLMEnginePurpose {
+        case presence
+        case alignment
+        case progress
+        case auxiliary
+
+        var llamaServerSlotID: Int {
+            switch self {
+            case .presence:
+                return 0
+            case .alignment:
+                return 1
+            case .progress:
+                return 2
+            case .auxiliary:
+                return 3
+            }
+        }
+    }
+
+    private func makeBundledLLMEngine(
+        baseURL: URL,
+        modelID: String,
+        purpose: BundledLLMEnginePurpose
+    ) -> LocalLLMEngine {
+        bundledLLMEngineFactory(
+            baseURL,
+            modelID,
+            bundledLlamaServerRequestOptions(for: purpose)
+        )
+    }
+
+    private func bundledLlamaServerRequestOptions(
+        for purpose: BundledLLMEnginePurpose
+    ) -> OpenAICompatibleLLMEngine.LlamaServerRequestOptions? {
+        guard (bundledModelRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind == .llamaCpp else {
+            return nil
+        }
+        return OpenAICompatibleLLMEngine.LlamaServerRequestOptions(slotID: purpose.llamaServerSlotID)
     }
 
     func openHome() {
@@ -2134,20 +2185,39 @@ final class AppModel: ObservableObject {
                 return false
             }
             let presenceEngine = serializedLLMEngine(
-                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+                makeBundledLLMEngine(
+                    baseURL: bundledModelRuntime.baseURL,
+                    modelID: bundledModelRuntime.modelID,
+                    purpose: .presence
+                )
             )
             let taskAlignmentEngine = serializedLLMEngine(
-                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+                makeBundledLLMEngine(
+                    baseURL: bundledModelRuntime.baseURL,
+                    modelID: bundledModelRuntime.modelID,
+                    purpose: .alignment
+                )
             )
             let taskProgressEngine = serializedLLMEngine(
-                bundledLLMEngineFactory(bundledModelRuntime.baseURL, bundledModelRuntime.modelID)
+                makeBundledLLMEngine(
+                    baseURL: bundledModelRuntime.baseURL,
+                    modelID: bundledModelRuntime.modelID,
+                    purpose: .progress
+                )
+            )
+            let auxiliaryEngine = serializedLLMEngine(
+                makeBundledLLMEngine(
+                    baseURL: bundledModelRuntime.baseURL,
+                    modelID: bundledModelRuntime.modelID,
+                    purpose: .auxiliary
+                )
             )
             let evaluator = LLMFocusEvaluator(
                 userPresenceEngine: presenceEngine,
                 taskAlignmentEngine: taskAlignmentEngine,
                 taskProgressEngine: taskProgressEngine
             )
-            llmEngine = taskProgressEngine
+            llmEngine = auxiliaryEngine
             llmEvaluator = evaluator
             await prewarmBundledPromptCacheIfSupported(evaluator)
             await runBundledPromptCacheProbeIfEnabled(evaluator: evaluator, engine: taskProgressEngine)
@@ -2911,6 +2981,9 @@ final class AppModel: ObservableObject {
         if let durationSeconds = metrics.durationSeconds {
             fields["\(prefix)DurationMS"] = .int(durationMilliseconds(for: durationSeconds))
         }
+        if let llamaServerSlotID = metrics.llamaServerSlotID {
+            fields["\(prefix)SlotID"] = .int(llamaServerSlotID)
+        }
         if includeDeviceFields {
             fields.merge(
                 devicePowerDiagnosticFields(
@@ -2986,6 +3059,7 @@ final class AppModel: ObservableObject {
             responseChars: transportMetrics.responseChars ?? 0,
             inputTextCharacterCount: llmInputTextCharacterCount(in: request.messages),
             inputTextTokenCount: transportMetrics.inputTextTokenCount,
+            llamaServerSlotID: transportMetrics.llamaServerSlotID,
             created: transportMetrics.created,
             usage: transportMetrics.usage,
             timings: transportMetrics.timings

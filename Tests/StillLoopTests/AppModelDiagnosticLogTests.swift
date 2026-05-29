@@ -182,6 +182,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["presenceLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["presenceLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["presenceLLMCacheN"] as? Int, 221)
+        XCTAssertNil(succeeded["presenceLLMSlotID"])
         XCTAssertNotNil(succeeded["presenceLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["alignmentLLMImageCount"] as? Int, 1)
         XCTAssertEqual(succeeded["alignmentLLMTextSnapshotCount"] as? Int, 1)
@@ -189,6 +190,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["alignmentLLMPayloadBytes"] as? Int, 452_010)
         XCTAssertEqual(succeeded["alignmentLLMInputTextTokenCount"] as? Int, 1_295)
         XCTAssertEqual(succeeded["alignmentLLMCacheN"] as? Int, 221)
+        XCTAssertNil(succeeded["alignmentLLMSlotID"])
         XCTAssertNotNil(succeeded["alignmentLLMDurationMS"] as? Int)
         XCTAssertEqual(succeeded["progressLLMImageCount"] as? Int, 0)
         XCTAssertEqual(succeeded["progressLLMTextSnapshotCount"] as? Int, 1)
@@ -196,12 +198,51 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertNil(succeeded["progressLLMPayloadBytes"])
         XCTAssertNil(succeeded["progressLLMInputTextTokenCount"])
         XCTAssertNil(succeeded["progressLLMCacheN"])
+        XCTAssertNil(succeeded["progressLLMSlotID"])
         XCTAssertEqual(succeeded["progressLLMDurationMS"] as? Int, 0)
         XCTAssertEqual(succeeded["powerSource"] as? String, "acPower")
         XCTAssertEqual(succeeded["lowPowerMode"] as? Bool, false)
         XCTAssertEqual(succeeded["thermalState"] as? String, "nominal")
         XCTAssertEqual(succeeded["visualSampleLimit"] as? Int, 1)
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
+    }
+
+    func testBundledLlamaRuntimeWritesFixedSlotDiagnostics() async throws {
+        let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
+        let runtime = FakeDiagnosticBundledRuntime()
+        runtime.bundledRuntimeKind = .llamaCpp
+        var capturedSlotIDs: [Int?] = []
+        var engines: [SuccessfulDiagnosticLLMEngine] = []
+        let model = AppModel(
+            userDefaults: isolatedDefaults,
+            bundledModelRuntime: runtime,
+            supportDirectory: supportDirectory,
+            devicePowerStatusProvider: StubDevicePowerStatusProvider(
+                status: DevicePowerStatus(powerSource: .acPower, lowPowerMode: false, thermalState: .nominal)
+            ),
+            bundledLLMEngineFactoryWithOptions: { _, _, options in
+                capturedSlotIDs.append(options?.slotID)
+                let engine = SuccessfulDiagnosticLLMEngine(slotID: options?.slotID)
+                engines.append(engine)
+                return engine
+            }
+        )
+        model.selectModelSource(.bundled)
+
+        _ = await model.evaluateFocus(
+            task: "测试 llama slot cache",
+            snapshots: makeDiagnosticSnapshots(count: 4),
+            previousEvents: []
+        )
+
+        XCTAssertEqual(capturedSlotIDs, [0, 1, 2, 3])
+        XCTAssertEqual(engines.count, 4)
+        let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
+        let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
+        XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "llamaCpp")
+        XCTAssertEqual(succeeded["presenceLLMSlotID"] as? Int, 0)
+        XCTAssertEqual(succeeded["alignmentLLMSlotID"] as? Int, 1)
+        XCTAssertEqual(succeeded["progressLLMSlotID"] as? Int, 2)
     }
 
     func testSuccessfulBundledModelWritesRapidMLXKindInDiagnostics() async throws {
@@ -238,6 +279,9 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "rapidMlx")
         XCTAssertNil(succeeded["fallbackRuntimeKind"])
         XCTAssertNil(succeeded["mlxAPCEnabled"])
+        XCTAssertNil(succeeded["presenceLLMSlotID"])
+        XCTAssertNil(succeeded["alignmentLLMSlotID"])
+        XCTAssertNil(succeeded["progressLLMSlotID"])
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
@@ -315,7 +359,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertNil(result.taskAlignmentRequestDebugMetrics)
         XCTAssertNil(result.taskProgressRequestDebugMetrics)
         XCTAssertEqual(result.requestDebugMetrics?.payloadBytes, 452_010)
-        XCTAssertEqual(engines.map(\.callCount), [1, 0, 0])
+        XCTAssertEqual(engines.map(\.callCount), [1, 0, 0, 0])
 
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
@@ -393,7 +437,8 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let presenceEngine = SuccessfulDiagnosticLLMEngine()
         let alignmentEngine = SuccessfulDiagnosticLLMEngine()
         let progressEngine = ThrowingDiagnosticLLMEngine(error: StubHTTPStatusDiagnosticError(statusCode: 503, responseByteCount: 128))
-        var engines: [LocalLLMEngine] = [presenceEngine, alignmentEngine, progressEngine]
+        let auxiliaryEngine = SuccessfulDiagnosticLLMEngine()
+        var engines: [LocalLLMEngine] = [presenceEngine, alignmentEngine, progressEngine, auxiliaryEngine]
         let model = AppModel(
             userDefaults: isolatedDefaults,
             bundledModelRuntime: runtime,
@@ -449,6 +494,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
                 inputTextCharacterCount: 300,
                 inputTextTokenCount: 75,
                 durationSeconds: 2.345,
+                llamaServerSlotID: 3,
                 created: 1_779_999_001,
                 usage: .object([
                     "prompt_tokens_details": .object([
@@ -483,6 +529,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(fields["targetLLMPayloadBytes"], .int(900))
         XCTAssertEqual(fields["targetLLMInputTextTokenCount"], .int(75))
         XCTAssertEqual(fields["targetLLMDurationMS"], .int(2_345))
+        XCTAssertEqual(fields["targetLLMSlotID"], .int(3))
         XCTAssertEqual(fields["targetLLMPromptN"], .int(275))
         XCTAssertEqual(fields["targetLLMCachedTokens"], .int(10))
         XCTAssertEqual(fields["bundledRuntimeKind"], .string("mlx"))
@@ -559,7 +606,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualSampleLimit, 3)
         let presenceEngine = try XCTUnwrap(engines.first)
         let alignmentEngine = try XCTUnwrap(engines.dropFirst().first)
-        let progressEngine = try XCTUnwrap(engines.last)
+        let progressEngine = try XCTUnwrap(engines.dropFirst(2).first)
         XCTAssertFalse(presenceEngine.flattenedPrompt.contains("camera sample[1]"))
         XCTAssertFalse(presenceEngine.flattenedPrompt.contains("Current task:"))
         XCTAssertTrue(alignmentEngine.flattenedPrompt.contains("visual sample[1]"))
@@ -854,6 +901,12 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
     private(set) var lastRequestTransportMetrics: LLMRequestTransportMetrics?
     private(set) var lastMessages: [LLMMessage] = []
     private(set) var callCount = 0
+    private let slotID: Int?
+
+    init(slotID: Int? = nil) {
+        self.slotID = slotID
+    }
+
     var flattenedPrompt: String {
         lastMessages
             .flatMap(\.content)
@@ -887,6 +940,7 @@ private final class SuccessfulDiagnosticLLMEngine: StructuredLocalLLMEngine, LLM
             payloadBytes: 452_010,
             responseChars: response.count,
             inputTextTokenCount: 1_295,
+            llamaServerSlotID: slotID,
             created: 1_779_348_997,
             usage: .object([
                 "completion_tokens": .int(336),

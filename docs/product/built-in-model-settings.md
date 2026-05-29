@@ -127,7 +127,7 @@ llama.cpp 主要启动参数：
 
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
-当前配置是多 slot prompt cache 实验配置，每个 slot 约 4096 context，用于观察 presence、alignment、progress、target judgment 等不同 prompt family 是否能恢复 cache 命中。代价是 KV/context 常驻内存压力高于单槽配置；如果诊断日志仍长期出现 `*CacheN=0`，或内存/长尾明显恶化，需要回退到 `--ctx-size 4096 --parallel 1`。
+当前配置是多 slot prompt cache 实验配置，每个 slot 约 4096 context。内置 llama.cpp 请求会显式绑定 slot：presence=0、alignment=1、progress=2、target judgment 和 session review comment 共用 auxiliary=3，并在请求体发送 `id_slot` 与 `cache_prompt=true`。诊断日志会输出 `*LLMSlotID`，并继续用 `*CacheN`、`*CachedTokens`、`*PromptMS`、`*DurationMS` 判断真实收益。代价是 KV/context 常驻内存压力高于单槽配置；如果 cache 仍长期为 0，或内存/长尾明显恶化，需要回退到 `--ctx-size 4096 --parallel 1`。
 
 ## 主页预热
 

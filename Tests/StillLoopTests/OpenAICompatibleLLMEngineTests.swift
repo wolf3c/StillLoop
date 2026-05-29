@@ -97,8 +97,47 @@ final class OpenAICompatibleLLMEngineTests: XCTestCase {
         XCTAssertEqual(requestBody?["repeat_penalty"] as? Double, 1.0)
         XCTAssertEqual(requestBody?["max_tokens"] as? Int, 900)
         XCTAssertEqual(requestBody?["stream"] as? Bool, false)
+        XCTAssertNil(requestBody?["id_slot"])
+        XCTAssertNil(requestBody?["cache_prompt"])
         XCTAssertNil(requestBody?["chat_template_kwargs"])
         XCTAssertEqual(requestTimeout, 180)
+    }
+
+    func testCompletionRequestCanPinBundledLlamaServerSlot() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        var requestBody: [String: Any]?
+
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/v1/chat/completions" {
+                let data = try XCTUnwrap(request.bodyData)
+                requestBody = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("""
+                {"choices":[{"message":{"content":"{}"}}]}
+                """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let engine = OpenAICompatibleLLMEngine(
+            baseURL: URL(string: "http://127.0.0.1:17631/v1")!,
+            model: "Qwen3.5-0.8B-Base.Q4_K_M.gguf",
+            usesResponseFormat: true,
+            llamaServerRequestOptions: .init(slotID: 2),
+            session: session
+        )
+
+        _ = try await engine.complete(
+            messages: [
+                LLMMessage(role: .user, content: [.text("status")])
+            ],
+            responseFormat: .taskProgressEvaluation
+        )
+
+        XCTAssertEqual(requestBody?["id_slot"] as? Int, 2)
+        XCTAssertEqual(requestBody?["cache_prompt"] as? Bool, true)
+        XCTAssertEqual(engine.lastRequestTransportMetrics?.llamaServerSlotID, 2)
     }
 
     func testCompletionHTTPErrorExposesStatusAndResponseByteCountWithoutBody() async throws {
