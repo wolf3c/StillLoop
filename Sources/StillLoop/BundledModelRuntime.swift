@@ -821,6 +821,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
                 "--cache-reuse", String(spec.recommendedPromptCacheReuse),
                 "--cache-ram", String(spec.recommendedPromptCacheRAMMiB)
             ])
+        } else {
+            arguments.append("--no-cache-prompt")
         }
         if let mmprojURL {
             arguments.insert(contentsOf: ["--mmproj", mmprojURL.path], at: 2)

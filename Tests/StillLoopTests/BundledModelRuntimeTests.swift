@@ -44,6 +44,7 @@ final class BundledModelRuntimeTests: XCTestCase {
             "--cache-type-k", "q4_1",
             "--cache-type-v", "q4_1",
             "--mlock",
+            "--no-cache-prompt",
             "--metrics"
         ])
         XCTAssertFalse(arguments.contains("--port"))
@@ -61,12 +62,14 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "4096")
         XCTAssertFalse(arguments.contains("--flash-attn"))
         XCTAssertFalse(arguments.contains("--cache-prompt"))
+        XCTAssertTrue(arguments.contains("--no-cache-prompt"))
         XCTAssertEqual(arguments.last, "--metrics")
         #else
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--batch-size")! + 1], "4096")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ubatch-size")! + 1], "4096")
         XCTAssertFalse(arguments.contains("--flash-attn"))
         XCTAssertFalse(arguments.contains("--cache-prompt"))
+        XCTAssertTrue(arguments.contains("--no-cache-prompt"))
         XCTAssertFalse(arguments.contains("--metrics"))
         #endif
     }
@@ -108,7 +111,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--cache-prompt"))
         XCTAssertFalse(arguments.contains("--cache-reuse"))
         XCTAssertFalse(arguments.contains("--cache-ram"))
-        XCTAssertFalse(arguments.contains("--no-cache-prompt"))
+        XCTAssertTrue(arguments.contains("--no-cache-prompt"))
     }
 
     func testLaunchArgumentsCanDisablePromptCacheForRuntimeComparison() {
@@ -122,6 +125,7 @@ final class BundledModelRuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--cache-prompt"))
         XCTAssertFalse(arguments.contains("--cache-reuse"))
         XCTAssertFalse(arguments.contains("--cache-ram"))
+        XCTAssertTrue(arguments.contains("--no-cache-prompt"))
         XCTAssertTrue(arguments.contains("--metrics"))
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--ctx-size")! + 1], "4096")
         XCTAssertEqual(arguments[arguments.firstIndex(of: "--parallel")! + 1], "1")

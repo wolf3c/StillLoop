@@ -123,7 +123,7 @@ llama.cpp 主要启动参数：
 - flash attention：不显式设置 `--flash-attn`，使用 llama.cpp 默认策略。
 - KV cache：`q4_1`。
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
-- prompt cache：暂不启用；默认不传 `--cache-prompt`、`--cache-reuse`、`--cache-ram`，请求体也不传 llama.cpp 私有的 `id_slot` / `cache_prompt`。
+- prompt cache：暂不启用；默认显式传 `--no-cache-prompt`，不传 `--cache-prompt`、`--cache-reuse`、`--cache-ram`，请求体也不传 llama.cpp 私有的 `id_slot` / `cache_prompt`。
 
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
