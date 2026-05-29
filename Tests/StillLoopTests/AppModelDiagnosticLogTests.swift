@@ -207,7 +207,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 2)
     }
 
-    func testBundledLlamaRuntimeWritesFixedSlotDiagnostics() async throws {
+    func testBundledLlamaRuntimeDoesNotUseSlotDiagnosticsWhenPromptCacheIsDisabled() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         runtime.bundledRuntimeKind = .llamaCpp
@@ -235,14 +235,14 @@ final class AppModelDiagnosticLogTests: XCTestCase {
             previousEvents: []
         )
 
-        XCTAssertEqual(capturedSlotIDs, [0, 1, 2, 3])
+        XCTAssertEqual(capturedSlotIDs, [nil, nil, nil, nil])
         XCTAssertEqual(engines.count, 4)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let succeeded = try XCTUnwrap(events.last { $0["event"] as? String == "model.evaluation.succeeded" })
         XCTAssertEqual(succeeded["bundledRuntimeKind"] as? String, "llamaCpp")
-        XCTAssertEqual(succeeded["presenceLLMSlotID"] as? Int, 0)
-        XCTAssertEqual(succeeded["alignmentLLMSlotID"] as? Int, 1)
-        XCTAssertEqual(succeeded["progressLLMSlotID"] as? Int, 2)
+        XCTAssertNil(succeeded["presenceLLMSlotID"])
+        XCTAssertNil(succeeded["alignmentLLMSlotID"])
+        XCTAssertNil(succeeded["progressLLMSlotID"])
     }
 
     func testSuccessfulBundledModelWritesRapidMLXKindInDiagnostics() async throws {
@@ -726,7 +726,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         XCTAssertEqual(result.taskProgressRequestDebugMetrics?.visualSampleLimit, 3)
     }
 
-    func testBundledPromptCacheProbeWritesScalarDiagnosticsWhenEnabled() async throws {
+    func testBundledPromptCacheProbeDoesNotRunWhenRuntimePromptCacheIsDisabledEvenWhenRequested() async throws {
         let supportDirectory = makeSupportDirectory(withBundledModelFiles: true)
         let runtime = FakeDiagnosticBundledRuntime()
         let engine = PromptCacheProbeDiagnosticLLMEngine()
@@ -742,28 +742,11 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 3)
-        XCTAssertEqual(engine.probeCallCount, 4)
+        XCTAssertEqual(engine.prewarmCallCount, 0)
+        XCTAssertEqual(engine.probeCallCount, 0)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         let probes = events.filter { $0["event"] as? String == "model.promptCacheProbe.completed" }
-        XCTAssertEqual(probes.map { $0["probeCase"] as? String }, [
-            "warmupA",
-            "warmupB",
-            "userChangedNoImage",
-            "focusShapeNoImage"
-        ])
-        XCTAssertTrue(probes.allSatisfy { $0["modelSource"] as? String == "bundled" })
-        XCTAssertEqual(probes[0]["llmCacheN"] as? Int, 101)
-        XCTAssertEqual(probes[1]["llmCacheN"] as? Int, 202)
-        XCTAssertEqual(probes[2]["llmCachedTokens"] as? Int, 303)
-        XCTAssertEqual(probes[3]["llmPayloadBytes"] as? Int, 40_004)
-        XCTAssertEqual(probes[3]["llmCreated"] as? Int, 1_779_349_004)
-        XCTAssertEqual(probes[3]["llmPromptN"] as? Int, 504)
-        XCTAssertEqual(try XCTUnwrap(probes[3]["llmPromptMS"] as? Double), 4.25, accuracy: 0.001)
-        XCTAssertEqual(probes[3]["llmPredictedN"] as? Int, 1)
-        XCTAssertEqual(try XCTUnwrap(probes[3]["llmPredictedMS"] as? Double), 0.75, accuracy: 0.001)
-        XCTAssertEqual(probes[3]["llmResponseChars"] as? Int, 1)
-        XCTAssertGreaterThan(try XCTUnwrap(probes[3]["llmInputTextCharacterCount"] as? Int), 0)
+        XCTAssertTrue(probes.isEmpty)
     }
 
     func testBundledPromptCacheProbeDoesNotRunWhenDisabled() async throws {
@@ -782,7 +765,7 @@ final class AppModelDiagnosticLogTests: XCTestCase {
         let isPrepared = await model.prepareBundledModelForEvaluation()
 
         XCTAssertTrue(isPrepared)
-        XCTAssertEqual(engine.prewarmCallCount, 3)
+        XCTAssertEqual(engine.prewarmCallCount, 0)
         XCTAssertEqual(engine.probeCallCount, 0)
         let events = try diagnosticEvents(at: URL(fileURLWithPath: model.diagnosticLogPath))
         XCTAssertFalse(events.contains { $0["event"] as? String == "model.promptCacheProbe.completed" })

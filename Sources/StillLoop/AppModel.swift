@@ -425,6 +425,7 @@ final class AppModel: ObservableObject {
     private let reviewCommentGeneratorOverride: SessionReviewCommentGenerating?
     private let telemetry: StillLoopTelemetryRecording
     private let diagnosticLogger: DiagnosticLogging
+    private let bundledPromptCacheEnabled: Bool
     private let promptCacheProbeEnabled: Bool
     private let activeWorkTargetProvider: ActiveWorkTargetProviding
     private let activeWorkTargetEventSource: ActiveWorkTargetEventSourcing
@@ -764,6 +765,9 @@ final class AppModel: ObservableObject {
     ) {
         self.userDefaults = userDefaults
         self.telemetry = telemetry ?? NoopStillLoopTelemetry()
+        self.bundledPromptCacheEnabled = BundledModelRuntime.LaunchTuning
+            .resolvedDefault(environment: environment)
+            .promptCacheEnabled
         self.promptCacheProbeEnabled = environment["STILLLOOP_RUN_PROMPT_CACHE_PROBE"] == "1"
         if let bundledLLMEngineFactoryWithOptions {
             self.bundledLLMEngineFactory = bundledLLMEngineFactoryWithOptions
@@ -939,6 +943,11 @@ final class AppModel: ObservableObject {
     private func bundledLlamaServerRequestOptions(
         for purpose: BundledLLMEnginePurpose
     ) -> OpenAICompatibleLLMEngine.LlamaServerRequestOptions? {
+        guard bundledPromptCacheEnabled,
+              ModelDownloadSpec.builtIn.recommendedParallelSlots > 1
+        else {
+            return nil
+        }
         guard (bundledModelRuntime as? BundledRuntimeDiagnosticsProviding)?.bundledRuntimeKind == .llamaCpp else {
             return nil
         }
@@ -2247,6 +2256,7 @@ final class AppModel: ObservableObject {
     }
 
     private func prewarmBundledPromptCacheIfSupported(_ evaluator: LLMFocusEvaluator) async {
+        guard bundledPromptCacheEnabled else { return }
         do {
             try await evaluator.prewarmPromptCache()
         } catch {
@@ -2266,7 +2276,8 @@ final class AppModel: ObservableObject {
     }
 
     private func runBundledPromptCacheProbeIfEnabled(evaluator: LLMFocusEvaluator, engine: LocalLLMEngine) async {
-        guard promptCacheProbeEnabled,
+        guard bundledPromptCacheEnabled,
+              promptCacheProbeEnabled,
               let probeEngine = engine as? LLMFocusPromptCacheProbing
         else { return }
 

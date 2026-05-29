@@ -126,7 +126,7 @@ final class AppModelReviewCommentTests: XCTestCase {
         XCTAssertEqual(sessions.first?.events.first?.debugDetail?.reason, "No visible progress")
     }
 
-    func testBundledReviewCommentUsesAuxiliarySlotEngine() async throws {
+    func testBundledReviewCommentUsesAuxiliaryEngineWithoutSlotRoutingWhenPromptCacheIsDisabled() async throws {
         let supportDirectory = makeSupportDirectoryWithBundledModelFiles()
         let runtime = ReviewCommentBundledRuntime()
         runtime.bundledRuntimeKind = .llamaCpp
@@ -159,9 +159,9 @@ final class AppModelReviewCommentTests: XCTestCase {
         let comment = try await waitForReviewComment(in: model, sessionID: sessionID)
 
         XCTAssertEqual(comment, "你刚才稳定推进了产品方案。下次继续开一段专注，可以从复盘里的下一步开始。")
-        XCTAssertEqual(engines.map(\.slotID), [0, 1, 2, 3])
+        XCTAssertEqual(engines.map(\.slotID), [nil, nil, nil, nil])
         XCTAssertEqual(engines.map(\.completeCallCount), [0, 0, 0, 1])
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [0, 0, 0, 0])
     }
 
     func testReviewCommentFailureIsHiddenAndKeepsSavedSummary() async throws {

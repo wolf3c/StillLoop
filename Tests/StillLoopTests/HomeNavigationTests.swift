@@ -695,7 +695,7 @@ final class HomeNavigationTests: XCTestCase {
         model.pauseSession()
     }
 
-    func testBundledModelRuntimePrewarmsPromptCacheAfterPreparation() async {
+    func testBundledModelRuntimeDoesNotPrewarmPromptCacheAfterPreparationWhenDisabled() async {
         let runtime = FakeBundledRuntime()
         var engines: [PrewarmingLLMEngine] = []
         let model = makeModel(
@@ -713,18 +713,18 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [0, 0, 0, 0])
         XCTAssertEqual(engines.map(\.lastResponseFormat), [
-            .userPresenceEvaluation,
-            .taskAlignmentEvaluation,
-            .taskProgressEvaluation,
+            nil,
+            nil,
+            nil,
             nil
         ])
         XCTAssertEqual(engines.map(\.callCount).reduce(0, +), 0)
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
     }
 
-    func testBundledPromptCachePrewarmUsesSharedLLMGate() async {
+    func testBundledPromptCachePrewarmDoesNotRunWhenPromptCacheIsDisabled() async {
         let runtime = FakeBundledRuntime()
         let tracker = LLMConcurrencyTracker()
         let model = makeModel(
@@ -740,7 +740,7 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         let maxConcurrent = await tracker.maxConcurrentValue()
-        XCTAssertEqual(maxConcurrent, 1)
+        XCTAssertEqual(maxConcurrent, 0)
     }
 
     func testBundledModelRuntimeWarmupFailureDoesNotBlockPreparation() async {
@@ -764,7 +764,7 @@ final class HomeNavigationTests: XCTestCase {
 
         XCTAssertTrue(isPrepared)
         XCTAssertEqual(runtime.startCount, 1)
-        XCTAssertEqual(engines.map(\.prewarmCallCount), [1, 1, 1, 0])
+        XCTAssertEqual(engines.map(\.prewarmCallCount), [0, 0, 0, 0])
         XCTAssertEqual(model.bundledModelRuntimeStatus, "自带模型：已启动")
         XCTAssertTrue(model.localLLMStatus.contains("自带模型"))
     }

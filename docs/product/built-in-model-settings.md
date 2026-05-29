@@ -115,19 +115,19 @@ llama.cpp 主要启动参数：
 
 - 模型文件：主 GGUF。
 - 视觉投影文件：mmproj。
-- context size：16384，总 context 由 llama-server 分配给 parallel slots。
-- parallel slots：4，用于给不同 prompt family 保留独立 cache slot；App 层 LLM 调用仍由全局 gate 保持 1 并发。
+- context size：4096。
+- parallel slots：1；App 层 LLM 调用仍由全局 gate 保持 1 并发。
 - GPU layers：99。
-- logical batch size：2048。
-- physical microbatch size：2048。
+- logical batch size：4096。
+- physical microbatch size：4096。
 - flash attention：不显式设置 `--flash-attn`，使用 llama.cpp 默认策略。
 - KV cache：`q4_1`。
 - memory lock：启用 `--mlock`，请求系统尽量让模型和 runtime 相关内存常驻，减少内存压缩或换页造成的推理长尾延迟；代价是常驻内存压力更高，低内存环境下可能影响系统余量。
-- prompt cache：默认启用，`--cache-reuse 64`、`--cache-ram 512`。
+- prompt cache：暂不启用；默认不传 `--cache-prompt`、`--cache-reuse`、`--cache-ram`，请求体也不传 llama.cpp 私有的 `id_slot` / `cache_prompt`。
 
 内置模型请求使用 Qwen 官方推荐的非思考 VL 采样参数：`temperature=0.7`、`top_p=0.8`、`top_k=20`、`min_p=0.0`、`presence_penalty=1.5`、`repeat_penalty=1.0`。其中 `repeat_penalty` 是 llama.cpp 对 Qwen 推荐 `repetition_penalty` 的对应请求字段。
 
-当前配置是多 slot prompt cache 实验配置，每个 slot 约 4096 context。内置 llama.cpp 请求会显式绑定 slot：presence=0、alignment=1、progress=2、target judgment 和 session review comment 共用 auxiliary=3，并在请求体发送 `id_slot` 与 `cache_prompt=true`。诊断日志会输出 `*LLMSlotID`，并继续用 `*CacheN`、`*CachedTokens`、`*PromptMS`、`*DurationMS` 判断真实收益。代价是 KV/context 常驻内存压力高于单槽配置；如果 `2048 / 2048` 使 cache 掉回 0，或内存/长尾明显恶化，需要回退到上一版不显式设置 batch / microbatch 且 `--cache-reuse 64` 的配置。
+当前配置暂停 prompt cache 实验，回到单 slot runtime，并优先测试更大的 prefill batch / microbatch 是否能稳定降低真实任务耗时。诊断仍继续用 `*PromptMS`、`*DurationMS`、input token 和 response 指标判断收益；`*CacheN`、`*CachedTokens` 预期为 0 或缺省。
 
 ## 主页预热
 
@@ -137,8 +137,7 @@ llama.cpp 主要启动参数：
 
 - 启动 runtime。
 - 建立三个 LLM engine：用户在场、任务匹配、任务进展。
-- 预热 prompt cache。
-- 可选运行 prompt cache probe 并记录诊断指标。
+- 完成 readiness 检查。
 
 ## 开始任务时的检查
 

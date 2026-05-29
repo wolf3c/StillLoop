@@ -679,8 +679,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
         var metricsEnabled: Bool
         var promptCacheEnabled: Bool
 
-        static let development = LaunchTuning(metricsEnabled: true, promptCacheEnabled: true)
-        static let production = LaunchTuning(metricsEnabled: false, promptCacheEnabled: true)
+        static let development = LaunchTuning(metricsEnabled: true, promptCacheEnabled: false)
+        static let production = LaunchTuning(metricsEnabled: false, promptCacheEnabled: false)
 
         static var `default`: LaunchTuning {
             resolvedDefault(environment: ProcessInfo.processInfo.environment)
@@ -809,8 +809,8 @@ final class BundledModelRuntime: BundledModelRuntimeManaging, BundledRuntimeDiag
             "--ctx-size", String(spec.recommendedContextSize),
             "--parallel", String(spec.recommendedParallelSlots),
             "--n-gpu-layers", "99",
-            "--batch-size", "2048",
-            "--ubatch-size", "2048",
+            "--batch-size", "4096",
+            "--ubatch-size", "4096",
             "--cache-type-k", spec.recommendedCacheTypeK,
             "--cache-type-v", spec.recommendedCacheTypeV,
             "--mlock"
